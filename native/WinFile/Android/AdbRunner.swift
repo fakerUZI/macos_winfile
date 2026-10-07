@@ -176,9 +176,9 @@ enum AdbRunner {
             throw AdbError.timeout(arguments.joined(separator: " "))
         }
 
-        return AdbResult(stdout: String(data: outData, encoding: .utf8) ?? "",
-                         stderr: String(data: errData, encoding: .utf8) ?? "",
-                         exitCode: process.terminationStatus)
+        let stdout = String(data: outData, encoding: .utf8) ?? ""
+        let stderr = String(data: errData, encoding: .utf8) ?? ""
+        return AdbResult(stdout: stdout, stderr: stderr, exitCode: process.terminationStatus)
     }
 
     /// 执行并要求成功，失败抛错

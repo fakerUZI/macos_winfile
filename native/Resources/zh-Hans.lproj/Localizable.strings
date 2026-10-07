@@ -395,3 +395,4 @@
 
 "view.applications" = "应用程序";
 "appData.originalID" = "容器编号 %@";
+"android.error.badURL" = "无法解析设备路径：%@";

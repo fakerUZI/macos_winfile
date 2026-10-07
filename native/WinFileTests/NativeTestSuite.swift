@@ -831,6 +831,39 @@ enum NativeTestSuite {
                   model.errorMessage == nil, model.errorMessage ?? "无错误")
         }
 
+        // 上级目录：路径回退（用户报告此处弹系统对话框）
+        let parentURL = AndroidURL.make(serial: serial, path: "/storage/emulated")
+        let parentEntries = (try? AndroidFileService(serial: serial).list("/storage/emulated")) ?? []
+        print("  诊断: /storage/emulated 列出 \(parentEntries.count) 项: \(parentEntries.map { $0.name })")
+        check("能列出 /storage/emulated（含 0 与 obb）",
+              parentEntries.contains { $0.name == "0" },
+              parentEntries.map { $0.name }.joined(separator: "/"))
+
+        model.selectFolder(parentURL)
+        let deadline3 = Date().addingTimeInterval(25)
+        while model.isLoadingAndroid && Date() < deadline3 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        print("  诊断: 回退后 items=\(model.items.count) 错误=\(model.errorMessage ?? "无")")
+        check("回退到上级目录后能列出内容", !model.items.isEmpty, "\(model.items.count) 项")
+        check("回退后没有报错", model.errorMessage == nil, model.errorMessage ?? "无")
+
+        // 从上级再回退（/storage）：不应崩溃或误报
+        model.selectFolder(AndroidURL.make(serial: serial, path: "/storage"))
+        let deadline4 = Date().addingTimeInterval(25)
+        while model.isLoadingAndroid && Date() < deadline4 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        print("  诊断: /storage items=\(model.items.count) 错误=\(model.errorMessage ?? "无")")
+        check("回退到 /storage 不报错", model.errorMessage == nil, model.errorMessage ?? "无")
+
+        // 回到存储根，继续后续断言
+        model.selectFolder(dirURL)
+        let deadline5 = Date().addingTimeInterval(25)
+        while model.isLoadingAndroid && Date() < deadline5 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
         // 选中项与安卓条目对应
         if let first = model.items.first {
             model.selectedIDs = [first.id]

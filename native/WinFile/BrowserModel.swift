@@ -454,7 +454,10 @@ final class BrowserModel: ObservableObject {
 
     /// 载入安卓目录（经 adb 列目录）
     func loadAndroidDirectory(_ url: URL) {
-        guard let (serial, path) = AndroidURL.split(url) else { return }
+        guard let (serial, path) = AndroidURL.split(url) else {
+            errorMessage = L("android.error.badURL", "无法解析设备路径：%@", url.absoluteString)
+            return
+        }
         homeTask?.cancel()
         categoryFilter = nil
         categoryResults = []

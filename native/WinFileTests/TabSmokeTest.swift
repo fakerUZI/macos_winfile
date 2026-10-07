@@ -463,6 +463,37 @@ enum TabSmokeTest {
             try? fm.removeItem(at: probe)
         }
 
+        // ---- 安卓路径回退（用户报告此处弹系统对话框）----
+        if let m2 = bridge.tabManager {
+            let probe = AndroidProbe.run()
+            if let serial = probe.readySerials.first {
+                m2.activeModel.selectFolder(AndroidURL.make(serial: serial, path: "/storage/emulated/0/Download"))
+                pump(2.0)
+                lines.append("安卓导航: \(bridge.lastContentKind) 项目=\(m2.activeModel.items.count)")
+
+                // 逐级回退，模拟用户点「向上」
+                for _ in 0..<3 {
+                    m2.activeModel.goUp()
+                    pump(1.5)
+                    lines.append("  回退后: \(m2.activeModel.currentDirectory?.path ?? "无") 项目=\(m2.activeModel.items.count) 错误=\(m2.activeModel.errorMessage ?? "无")")
+                }
+                check("安卓路径多次回退后无错误", m2.activeModel.errorMessage == nil,
+                      m2.activeModel.errorMessage ?? "无")
+                // 已知测量限制：应用内的模型由界面驱动，在 --selftest-tabs 的
+                // 同步运行循环下异步加载不完成；该路径已由模型层测试覆盖
+                // （安卓目录浏览：载入/子目录/上级回退/重复进入）。
+                lines.append("  应用内安卓回退后项目=\(m2.activeModel.items.count)（异步加载在同步测试下不完成，仅记录）")
+
+                // 面包屑点击：回退到中间层级
+                if let dir = m2.activeModel.currentDirectory {
+                    m2.activeModel.selectFolder(dir)
+                    pump(1.2)
+                    check("重复进入同一安卓目录无错误", m2.activeModel.errorMessage == nil,
+                          m2.activeModel.errorMessage ?? "无")
+                }
+            }
+        }
+
         // ---- 文件列表：双击文件夹能否进入（走真实鼠标事件） ----
         let listDir = base.appendingPathComponent("双击测试")
         let inner = listDir.appendingPathComponent("被双击的文件夹")
