@@ -447,6 +447,15 @@ struct FileItemContextMenu: View {
             }
         }
         Divider()
+        // 压缩与解压（安卓路径不适用，走 adb 无对应能力）
+        if !model.isAndroidPath {
+            if model.canExtract {
+                Button(L("action.extractHere", "解压到当前文件夹")) { model.extractSelection() }
+            }
+            Button(L("action.compress", "压缩为 zip")) { model.compressSelection() }
+                .disabled(!model.canCompress)
+            Divider()
+        }
         Button(NSLocalizedString("menu.duplicate", comment: "制作副本")) { model.duplicateSelection() }
         Button(NSLocalizedString("action.rename", comment: "重命名…")) {
             if let target = item ?? model.selectedItems.first { dialog = .rename(target) }

@@ -77,6 +77,8 @@ final class BrowserModel: ObservableObject {
     @Published private(set) var isLoadingAndroid = false
     /// 传输进度（上传/下载时非空）
     @Published var transferProgress: AndroidTransferProgress?
+    /// 压缩/解压进度
+    @Published var archiveProgress: ArchiveProgress?
     private var transferTask: Task<Void, Never>?
 
     // 视图选项
@@ -540,6 +542,74 @@ final class BrowserModel: ObservableObject {
         let target = path.hasSuffix("/") ? path + name : path + "/" + name
         runAndroidOperation(L("status.creating", "正在创建…")) { service in
             try service.createEmptyFile(at: target)
+        }
+    }
+
+    // MARK: - 压缩与解压
+
+    /// 选中的压缩包（用于「解压到当前文件夹」菜单项）
+    var selectedArchives: [FileItem] {
+        selectedItems.filter { !$0.isDirectory && ArchiveService.isArchive($0.url) }
+    }
+
+    var canExtract: Bool { !selectedArchives.isEmpty && !isAndroidPath }
+
+    var canCompress: Bool { !selectedItems.isEmpty && !isAndroidPath }
+
+    /// 压缩选中项到当前目录
+    func compressSelection() {
+        guard canCompress, let directory = currentDirectory else { return }
+        let urls = selectedItems.map(\.url)
+        let name = ArchiveService.defaultArchiveName(for: urls)
+        archiveProgress = ArchiveProgress(name: name, isCompressing: true)
+        let engine = self.engine
+        Task { [weak self] in
+            var failure: String?
+            do {
+                let target = try await Task.detached(priority: .userInitiated) {
+                    try ArchiveService.compress(urls, to: directory, name: name)
+                }.value
+                await MainActor.run { [weak self] in
+                    self?.statusMessage = L("status.compressed", "已压缩为 %@", target.lastPathComponent)
+                }
+                _ = engine
+            } catch {
+                failure = error.localizedDescription
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.archiveProgress = nil
+                if let failure { self.errorMessage = failure } else { self.reload() }
+            }
+        }
+    }
+
+    /// 解压选中的压缩包到当前目录
+    func extractSelection() {
+        guard let archive = selectedArchives.first, let directory = currentDirectory else { return }
+        archiveProgress = ArchiveProgress(name: archive.name, isCompressing: false)
+        Task { [weak self] in
+            var failure: String?
+            var created: [URL] = []
+            do {
+                created = try await Task.detached(priority: .userInitiated) {
+                    try ArchiveService.extract(archive.url, to: directory)
+                }.value
+            } catch {
+                failure = error.localizedDescription
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.archiveProgress = nil
+                if let failure {
+                    self.errorMessage = failure
+                } else {
+                    self.statusMessage = created.isEmpty
+                        ? L("status.extracted", "已解压")
+                        : L("status.extractedCount", "已解压 %d 项", created.count)
+                    self.reload()
+                }
+            }
         }
     }
 

@@ -378,3 +378,30 @@
 "view.applications" = "Applications";
 "appData.originalID" = "Container %@";
 "android.error.badURL" = "Cannot parse device path: %@";
+
+/* Archive */
+"action.compress" = "Compress to zip";
+"action.extractHere" = "Extract Here";
+"archive.compressing" = "Compressing %@";
+"archive.extracting" = "Extracting %@";
+"archive.defaultName" = "Archive";
+"archive.error.noSelection" = "Select items to compress first";
+"archive.error.failed" = "Operation failed (%d): %@";
+"archive.error.exists" = "Already exists: %@";
+"archive.error.unsupported" = "Unsupported format";
+"status.compressed" = "Compressed to %@";
+"status.extracted" = "Extracted";
+"status.extractedCount" = "Extracted %d items";
+
+/* Sidebar management */
+"settings.categories.title" = "Categories";
+"settings.categories.footer" = "Removing only hides it from the sidebar; no files are deleted.";
+"settings.categories.remove" = "Remove from sidebar";
+"settings.categories.add" = "Add to sidebar";
+"settings.categories.reset" = "Restore Defaults";
+"settings.folders.title" = "Favorites";
+"settings.folders.footer" = "Chosen from existing folders; shortcuts only, access is unaffected.";
+"settings.folders.empty" = "No favorite folders yet.";
+"settings.folders.remove" = "Remove from list";
+"settings.folders.clear" = "Clear List";
+"settings.folders.add" = "Add Folder…";

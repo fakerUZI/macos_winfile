@@ -396,3 +396,30 @@
 "view.applications" = "应用程序";
 "appData.originalID" = "容器编号 %@";
 "android.error.badURL" = "无法解析设备路径：%@";
+
+/* 压缩解压 */
+"action.compress" = "压缩为 zip";
+"action.extractHere" = "解压到当前文件夹";
+"archive.compressing" = "正在压缩 %@";
+"archive.extracting" = "正在解压 %@";
+"archive.defaultName" = "归档";
+"archive.error.noSelection" = "请先选择要压缩的项目";
+"archive.error.failed" = "操作失败（%d）：%@";
+"archive.error.exists" = "目标已存在：%@";
+"archive.error.unsupported" = "暂不支持该格式";
+"status.compressed" = "已压缩为 %@";
+"status.extracted" = "已解压";
+"status.extractedCount" = "已解压 %d 项";
+
+/* 侧边栏管理 */
+"settings.categories.title" = "按类型分类";
+"settings.categories.footer" = "移除只是不在侧边栏显示，不会删除任何文件。";
+"settings.categories.remove" = "从侧边栏移除";
+"settings.categories.add" = "加入到侧边栏";
+"settings.categories.reset" = "恢复默认";
+"settings.folders.title" = "个人收藏";
+"settings.folders.footer" = "从已有文件夹中选择；只是快捷入口，不影响可访问范围。";
+"settings.folders.empty" = "尚未添加常用文件夹。";
+"settings.folders.remove" = "从列表移除";
+"settings.folders.clear" = "清空列表";
+"settings.folders.add" = "添加文件夹…";

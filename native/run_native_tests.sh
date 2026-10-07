@@ -20,6 +20,8 @@ CORE=(
   "$SRC/TabManager.swift"
   "$SRC/TabDiagnostics.swift"
   "$SRC/AppDataService.swift"
+  "$SRC/ArchiveService.swift"
+  "$SRC/SidebarPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"
   $(find "$SRC/Android" -name "*.swift" | sort)

@@ -201,3 +201,22 @@ struct AppDataCard: View {
         }
     }
 }
+
+/// 压缩/解压进度横幅
+struct ArchiveProgressBanner: View {
+    let progress: ArchiveProgress
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(progress.title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+        }
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
+        .padding(12)
+    }
+}

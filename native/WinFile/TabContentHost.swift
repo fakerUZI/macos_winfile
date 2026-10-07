@@ -68,8 +68,13 @@ struct TabContentHost: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
         .overlay(alignment: .top) {
-            if let progress = model.transferProgress {
-                AndroidTransferBanner(progress: progress)
+            VStack(spacing: 0) {
+                if let progress = model.transferProgress {
+                    AndroidTransferBanner(progress: progress)
+                }
+                if let progress = model.archiveProgress {
+                    ArchiveProgressBanner(progress: progress)
+                }
             }
         }
         .overlay(alignment: .bottom) {

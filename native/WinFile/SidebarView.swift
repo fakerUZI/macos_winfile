@@ -39,7 +39,7 @@ struct SidebarView: View {
             }
 
             Section(NSLocalizedString("sidebar.categories", comment: "按类型分类")) {
-                ForEach(FileCategory.sidebarOrder) { category in
+                ForEach(SidebarPreferences.shared.visibleCategories) { category in
                     Label {
                         HStack {
                             Text(category.localizedName)

@@ -64,6 +64,8 @@ enum NativeTestSuite {
             testAndroidDevice()
             testAndroidBrowsing()
             testCustomPagesNotReportedEmpty()
+            try testArchive()
+            testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
             TestReporter.shared.failures.append("异常：\(error.localizedDescription)")
@@ -729,6 +731,126 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 压缩与解压
+
+    @MainActor
+    static func testArchive() throws {
+        print("\n[压缩与解压]")
+
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("winfile-archive-\(UUID().uuidString)")
+        let source = base.appendingPathComponent("源目录")
+        let output = base.appendingPathComponent("输出")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
+
+        // 造出：普通文件、子目录、含空格与中文的名字
+        try "内容 A".write(to: source.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        try "内容 B".write(to: source.appendingPathComponent("带 空格.txt"), atomically: true, encoding: .utf8)
+        let sub = source.appendingPathComponent("子目录")
+        try fm.createDirectory(at: sub, withIntermediateDirectories: true)
+        try "内容 C".write(to: sub.appendingPathComponent("中文名.txt"), atomically: true, encoding: .utf8)
+
+        // 压缩
+        let archive = try ArchiveService.compress([source], to: output, name: "test")
+        check("生成了压缩包", fm.fileExists(atPath: archive.path))
+        check("扩展名是 zip", archive.pathExtension == "zip", archive.pathExtension)
+        let size = (try? fm.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
+        check("压缩包非空", (size ?? 0) > 0, "\(size ?? 0) 字节")
+
+        // 压缩包识别
+        check("能识别 zip 为压缩包", ArchiveService.isArchive(archive))
+        check("普通文件不被识别为压缩包",
+              !ArchiveService.isArchive(source.appendingPathComponent("a.txt")))
+
+        // 压缩包结构：顶层应保留「源目录」，而不是把内容铺平
+        let topLevel = ArchiveService.topLevelNames(of: archive)
+        check("能读出压缩包顶层结构", !topLevel.isEmpty, "\(topLevel.count) 项")
+        check("顶层保留被压缩的目录名（解压不铺平）",
+              topLevel.contains("源目录"), topLevel.joined(separator: "/"))
+
+        // 解压到新目录并逐项比对（关键：内容必须完整）
+        let restore = base.appendingPathComponent("还原")
+        try fm.createDirectory(at: restore, withIntermediateDirectories: true)
+        let created = try ArchiveService.extract(archive, to: restore)
+        check("解压返回了顶层项目", !created.isEmpty, "\(created.count) 项")
+
+        let restoredRoot = restore.appendingPathComponent("源目录")
+        check("解压后目录结构正确", fm.fileExists(atPath: restoredRoot.path))
+        let restoredA = restoredRoot.appendingPathComponent("a.txt")
+        let restoredSpace = restoredRoot.appendingPathComponent("带 空格.txt")
+        let restoredChinese = restoredRoot.appendingPathComponent("子目录/中文名.txt")
+        check("普通文件已还原", fm.fileExists(atPath: restoredA.path))
+        check("含空格文件名已还原", fm.fileExists(atPath: restoredSpace.path))
+        check("子目录中的中文名已还原", fm.fileExists(atPath: restoredChinese.path))
+
+        let original = (try? String(contentsOf: source.appendingPathComponent("a.txt"), encoding: .utf8)) ?? ""
+        let restored = (try? String(contentsOf: restoredA, encoding: .utf8)) ?? ""
+        check("文件内容一致", original == restored, "原文=\(original) 还原=\(restored)")
+
+        // 重名处理：再次压缩应生成不冲突的名字
+        let second = try ArchiveService.compress([source], to: output, name: "test")
+        check("同名压缩包不会覆盖", second.lastPathComponent != archive.lastPathComponent,
+              second.lastPathComponent)
+
+        // 默认命名
+        check("单个项目用其名称作压缩包名",
+              ArchiveService.defaultArchiveName(for: [source]) == "源目录",
+              ArchiveService.defaultArchiveName(for: [source]))
+        check("多个项目用统一名称",
+              ArchiveService.defaultArchiveName(for: [source, source]).isEmpty == false)
+
+        // 空选择应报错而非静默失败
+        do {
+            _ = try ArchiveService.compress([], to: output, name: "empty")
+            check("空选择应报错", false, "未报错")
+        } catch {
+            check("空选择报错", true)
+        }
+    }
+
+    // MARK: - 侧边栏分类管理
+
+    @MainActor
+    static func testSidebarCategories() {
+        print("\n[侧边栏分类管理]")
+
+        let prefs = SidebarPreferences.shared
+        prefs.resetToDefault()
+
+        let all = FileCategory.sidebarOrder
+        check("默认显示全部分类", prefs.visibleCategories.count == all.count,
+              "\(prefs.visibleCategories.count)/\(all.count)")
+        check("默认没有被隐藏的分类", prefs.hiddenCategoryList.isEmpty)
+
+        // 移除一个
+        let target = all[0]
+        prefs.hide(target)
+        check("移除后不再显示", !prefs.visibleCategories.contains(target))
+        check("移除后进入可添加列表", prefs.hiddenCategoryList.contains(target))
+        check("移除不影响其它分类",
+              prefs.visibleCategories.count == all.count - 1,
+              "\(prefs.visibleCategories.count)")
+
+        // 加回
+        prefs.show(target)
+        check("加回后重新显示", prefs.visibleCategories.contains(target))
+        check("加回后从可添加列表移除", !prefs.hiddenCategoryList.contains(target))
+
+        // 至少保留一个：全部隐藏后仍应有分类
+        for category in all { prefs.hide(category) }
+        check("全部隐藏后仍保留至少一个分类",
+              !prefs.visibleCategories.isEmpty,
+              "\(prefs.visibleCategories.count) 个")
+
+        // 恢复默认
+        prefs.resetToDefault()
+        check("恢复默认后全部显示", prefs.visibleCategories.count == all.count,
+              "\(prefs.visibleCategories.count)")
+        check("恢复默认后隐藏列表为空", prefs.hiddenCategoryList.isEmpty)
     }
 
     // MARK: - 自定义页面不应误报"空"
