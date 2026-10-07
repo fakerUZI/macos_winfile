@@ -520,20 +520,10 @@ struct MainView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItemGroup(placement: .navigation) {
-            // 新页签：在同一个窗口里再开一个浏览页签
-            Button { newTab() } label: {
-                Label(L("tab.new", "新标签页"), systemImage: "plus.rectangle.on.rectangle")
-            }
-            .help(L("tab.new.help", "新标签页，可同时查看多个位置") + " (⌘T)")
-
-            // 打开/授权文件夹：在**新页签**中打开，不影响当前页签
-            Button { openFolderPanel(newTab: true) } label: {
-                Label(L("action.openFolderInNewTab", "在新页签中打开文件夹"),
-                      systemImage: "folder.badge.plus")
-            }
-            .help(L("action.openFolder.help", "选择文件夹并在新页签中打开（沙盒下同时完成授权）"))
-        }
+        // 左侧导航按钮按要求移除（新标签页、在新页签中打开文件夹）。
+        // 功能入口仍然可用：
+        //   - 新标签页：⌘T，或页签栏右侧的 “+”
+        //   - 打开文件夹：空文件夹页的「打开文件夹」按钮、侧边栏底部「添加文件夹」
         ToolbarItemGroup(placement: .primaryAction) {
             Button { model.openSelection() } label: {
                 Label(NSLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
