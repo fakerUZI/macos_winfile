@@ -61,10 +61,7 @@ struct FileTableView: View {
     }
 
     var body: some View {
-        let _ = TabDiagnostics.shared.record(
-            "fileTable.body",
-            detail: "项目数=\(model.displayedItems.count) 目录=\(model.currentDirectory?.lastPathComponent ?? "-") 布局=\(model.layout.rawValue)")
-        return table
+        table
             // 行以下空白处的右键菜单（Windows 资源管理器行为）
             .background(
                 EmptyAreaContextMenu(
@@ -344,34 +341,61 @@ struct FileIconGridView: View {
     /// 列表容器标记（用于把空白右键限定在本列表内）
     @State private var listMarker: NSView?
 
-    private let columns = [GridItem(.adaptive(minimum: 104, maximum: 140), spacing: 10)]
+    /// 列宽与间距（自建网格用）
+    private let tileMinWidth: CGFloat = 104
+    private let tileSpacing: CGFloat = 10
+    /// 网格可用宽度（由 GeometryReader 提供，用于计算列数）
+    @State private var gridWidth: CGFloat = 900
+
+    /// 每行列数：按最小磁贴宽度自适应，上限 8 列
+    private var columnCount: Int {
+        max(1, min(8, Int((gridWidth + tileSpacing) / (tileMinWidth + tileSpacing))))
+    }
+
+    /// 按列分组后的行
+    private var rows: [[FileItem]] {
+        let items = model.displayedItems
+        guard !items.isEmpty else { return [] }
+        var result: [[FileItem]] = []
+        var index = 0
+        while index < items.count {
+            let end = min(index + columnCount, items.count)
+            result.append(Array(items[index..<end]))
+            index = end
+        }
+        return result
+    }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(model.displayedItems) { item in
-                    FileTile(engine: engine, item: item, selected: model.selectedIDs.contains(item.id))
-                        // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理。
-                        // 标记需覆盖整个磁贴区域（不能是零尺寸），否则无法用坐标判定命中。
-                        .background(
-                            FileTileMarker(item: item) {
-                                model.selectedIDs = [item.id]
-                                model.activate(item)
+        // 自建网格：按列分组、逐行排布。
+        //
+        // 为什么不用 LazyVGrid：实测分类视图有 16 项时，LazyVGrid 只创建了 14 个
+        // 磁贴视图，空白位置连点击都无响应（用户实测确认），且该问题在离屏环境
+        // 无法自动验证。自建网格不依赖懒加载，视图创建数量完全确定。
+        // 文件列表通常几十到几百项，一次性布局的开销可以接受。
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: tileSpacing) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        HStack(alignment: .top, spacing: tileSpacing) {
+                            ForEach(row) { item in
+                                tile(for: item)
+                                    .frame(maxWidth: .infinity)
                             }
-                        )
-                        .onTapGesture {
-                            let flags = NSEvent.modifierFlags
-                            model.select(item, extend: flags.contains(.shift), toggle: flags.contains(.command))
+                            // 补齐本行剩余列，保证各列宽度一致
+                            if row.count < columnCount {
+                                ForEach(0..<(columnCount - row.count), id: \.self) { _ in
+                                    Color.clear.frame(maxWidth: .infinity)
+                                }
+                            }
                         }
-                        .onTapGesture(count: 2) { model.activate(item) }
-                        // 与列表视图共用同一份菜单，保证功能完全一致
-                        .contextMenu {
-                            FileItemContextMenu(engine: engine, model: model,
-                                                dialog: $dialog, item: item)
-                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .padding(14)
             }
-            .padding(14)
+            .onAppear { gridWidth = proxy.size.width }
+            .onChange(of: proxy.size.width) { newValue in gridWidth = newValue }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let directory = model.currentDirectory else { return false }
@@ -404,6 +428,28 @@ struct FileIconGridView: View {
             )
             .frame(width: 0, height: 0)
         )
+    }
+
+    /// 单个磁贴：含双击标记、单击选择、右键菜单
+    @ViewBuilder
+    private func tile(for item: FileItem) -> some View {
+        FileTile(engine: engine, item: item, selected: model.selectedIDs.contains(item.id))
+            // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
+            .background(
+                FileTileMarker(item: item) {
+                    model.selectedIDs = [item.id]
+                    model.activate(item)
+                }
+            )
+            .onTapGesture {
+                let flags = NSEvent.modifierFlags
+                model.select(item, extend: flags.contains(.shift), toggle: flags.contains(.command))
+            }
+            .onTapGesture(count: 2) { model.activate(item) }
+            // 与列表视图共用同一份菜单，保证功能完全一致
+            .contextMenu {
+                FileItemContextMenu(engine: engine, model: model, dialog: $dialog, item: item)
+            }
     }
 }
 

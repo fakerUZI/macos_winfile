@@ -66,6 +66,25 @@ enum ViewTreeDumper {
             walk(table)
         }
 
+        // 统计图标视图实际创建了多少磁贴（用于定位"计数 16 只画 14"）
+        var tileMarkers: [FileTileMarkerView] = []
+        func gatherTileMarkers(_ view: NSView) {
+            if let marker = view as? FileTileMarkerView { tileMarkers.append(marker) }
+            for child in view.subviews { gatherTileMarkers(child) }
+        }
+        gatherTileMarkers(root)
+        let tileNames = tileMarkers.compactMap { $0.item?.name }
+        lines.append("磁贴标记数量: \(tileMarkers.count)")
+        if !tileNames.isEmpty {
+            let uniqueNames = Set(tileNames)
+            lines.append("  名称唯一数: \(uniqueNames.count)")
+            if uniqueNames.count != tileNames.count {
+                let dups = Dictionary(grouping: tileNames, by: { $0 }).filter { $0.value.count > 1 }
+                lines.append("  ⚠️ 重复名称: \(dups.keys.prefix(4).joined(separator: "/"))")
+            }
+        }
+        lines.append("")
+
         lines.append("行视图类型统计: \(rowTypes.isEmpty ? "（未发现行视图）" : "\(rowTypes)")")
         lines.append("单元格类型统计: \(cellTypes.isEmpty ? "（未发现单元格）" : "\(cellTypes)")")
         lines.append("")

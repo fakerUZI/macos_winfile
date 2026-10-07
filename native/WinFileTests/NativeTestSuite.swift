@@ -67,6 +67,8 @@ enum NativeTestSuite {
             try testArchive()
             try testSelectAllConsistency()
             testTileLayoutUniformity()
+            try testCategoryViewIntegrity()
+            testGridRowPartition()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -733,6 +735,122 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 自建网格的分行逻辑
+
+    @MainActor
+    static func testGridRowPartition() {
+        print("\n[自建网格分行]")
+
+        // 分行规则：按列数切分，行数 = ceil(总数/列数)，
+        // 且所有行拼回来必须等于原序列（不丢项、不重复）
+        func partition(_ count: Int, columns: Int) -> [[Int]] {
+            guard count > 0, columns > 0 else { return [] }
+            var result: [[Int]] = []
+            var index = 0
+            while index < count {
+                let end = min(index + columns, count)
+                result.append(Array(index..<end))
+                index = end
+            }
+            return result
+        }
+
+        // 用户截图的数量：16 项、6 列 → 3 行（6/6/4）
+        let rows16 = partition(16, columns: 6)
+        check("16 项 6 列分成 3 行", rows16.count == 3, "\(rows16.count) 行")
+        check("每行不超过列数", rows16.allSatisfy { $0.count <= 6 },
+              rows16.map(\.count).map(String.init).joined(separator: "/"))
+        check("拼接后不丢项不重复",
+              rows16.flatMap { $0 } == Array(0..<16),
+              rows16.flatMap { $0 }.count.description)
+
+        // 常见边界
+        for (count, columns) in [(1, 6), (6, 6), (7, 6), (12, 6), (13, 6), (30, 5), (100, 8)] {
+            let rows = partition(count, columns: columns)
+            let flat = rows.flatMap { $0 }
+            let expectedRows = (count + columns - 1) / columns
+            let ok = flat == Array(0..<count) && rows.count == expectedRows
+            check("\(count) 项 \(columns) 列 → \(expectedRows) 行且不丢项", ok,
+                  "实际 \(rows.count) 行，项数 \(flat.count)")
+        }
+
+        // 空列表
+        check("空列表不产生行", partition(0, columns: 6).isEmpty)
+    }
+
+    // MARK: - 分类视图完整性（是否漏画/重复）
+
+    @MainActor
+    static func testCategoryViewIntegrity() throws {
+        print("\n[分类视图完整性]")
+
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("winfile-cat-\(UUID().uuidString)")
+        // 造出与用户截图相同的情形：16 个 PDF，含重名文件在不同目录
+        let dirA = root.appendingPathComponent("A")
+        let dirB = root.appendingPathComponent("B")
+        try fm.createDirectory(at: dirA, withIntermediateDirectories: true)
+        try fm.createDirectory(at: dirB, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let names = ["lockScreenLiquidDetection.pdf", "ENERGY STAR.pdf",
+                     "reader_complimentary_membership_dialog_image.pdf",
+                     "ReferenceCardForMac.pdf", "ReferenceCard.pdf", "Doc3.pdf",
+                     "Doc2.pdf", "Doc1.pdf"]
+        // A、B 两个目录放同名文件（用户截图里就有重名），凑满 16 个
+        for name in names {
+            try "x".write(to: dirA.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+        for name in names {
+            try "x".write(to: dirB.appendingPathComponent(name), atomically: true, encoding: .utf8)
+        }
+
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engine, startDirectory: nil)
+        model.navigate(to: .category(.pdf))
+
+        let deadline = Date().addingTimeInterval(25)
+        while model.isLoadingCategory && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        let items = model.displayedItems
+        print("  分类结果: \(items.count) 项")
+
+        check("分类列出了全部 16 个 PDF", items.count == 16, "\(items.count) 项")
+
+        // id 唯一性：重复会导致 LazyVGrid 少画（用户报告 16 计数只显示 14 个）
+        let uniqueIDs = Set(items.map(\.id))
+        check("id 全部唯一（重复会让网格少画）",
+              uniqueIDs.count == items.count,
+              "唯一 \(uniqueIDs.count) / 共 \(items.count)")
+        if uniqueIDs.count != items.count {
+            let grouped = Dictionary(grouping: items, by: \.id).filter { $0.value.count > 1 }
+            for (id, dup) in grouped.prefix(3) {
+                print("    重复 id: \(id) → \(dup.count) 次: \(dup.map(\.name).joined(separator: "/"))")
+            }
+        }
+
+        // 路径唯一性
+        let uniquePaths = Set(items.map { $0.url.path })
+        check("路径全部唯一", uniquePaths.count == items.count,
+              "唯一 \(uniquePaths.count) / 共 \(items.count)")
+
+        // 同名文件应来自不同目录（不是同一文件被加两次）
+        let namesCount = Dictionary(grouping: items, by: \.name).mapValues(\.count)
+        let duplicatedNames = namesCount.filter { $0.value > 1 }
+        print("  重名文件 \(duplicatedNames.count) 组（来自不同目录，属正常）")
+        for (name, count) in duplicatedNames.prefix(2) {
+            let paths = items.filter { $0.name == name }.map { $0.url.deletingLastPathComponent().lastPathComponent }
+            print("    \(name) → \(count) 份，目录: \(paths.joined(separator: "/"))")
+        }
+        check("重名文件确实来自不同目录",
+              duplicatedNames.allSatisfy { name, _ in
+                  Set(items.filter { $0.name == name }.map { $0.url.path }).count > 1
+              })
     }
 
     // MARK: - 图标网格对齐

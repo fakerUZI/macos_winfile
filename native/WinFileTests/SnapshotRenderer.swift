@@ -43,13 +43,16 @@ enum SnapshotRenderer {
 
     /// 视图模式：详情 / 大图标 / 主页 / 此电脑
     /// （分类与搜索依赖 Table 异步回填，不适合离屏截图，见文件头说明）
-    enum Mode: String { case details, icons, home, thisPC }
+    enum Mode: String { case details, icons, home, thisPC, category }
 
+    @MainActor
     static func render(path: String, mode: Mode = .details) {
         let fm = FileManager.default
         let demo = makeDemoFolder()
         defer { try? fm.removeItem(at: demo) }
 
+        // 造出与用户截图相似的内容：16 个 PDF，含重名与长短名
+        makePDFSamples(in: demo)
         // 授权示例目录，使界面有真实内容
         let engine = FSEngine()
         engine.restrictScopeForTesting([demo])   // 分类检索范围限定在示例目录
@@ -73,6 +76,15 @@ enum SnapshotRenderer {
             }
         case .home, .thisPC:
             engine.restrictScopeForTesting([demo])
+        case .category:
+            // 分类视图：用于验证网格是否完整渲染所有条目
+            engine.restrictScopeForTesting([demo])
+            model.layout = .icons
+            model.navigate(to: .category(.pdf))
+            let catDeadline = Date().addingTimeInterval(15)
+            while model.isLoadingCategory && Date() < catDeadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
         }
         // 刷新分类徽标（与分类视图数量应一致）
         engine.scheduleCategoryCount(force: true)
@@ -170,6 +182,21 @@ enum SnapshotRenderer {
         } catch {
             print("写入失败：\(error.localizedDescription)")
             exit(1)
+        }
+    }
+
+    /// 在示例目录里造出 16 个 PDF（含重名与长短名，用于复现网格问题）
+    private static func makePDFSamples(in root: URL) {
+        let fm = FileManager.default
+        let names = ["lockScreenLiquidDetection.pdf", "ENERGY STAR.pdf",
+                     "reader_complimentary_membership_dialog_image.pdf",
+                     "ReferenceCardForMac.pdf", "ReferenceCard.pdf", "Doc3.pdf",
+                     "Doc2.pdf", "Doc1.pdf"]
+        for (index, name) in names.enumerated() {
+            let directory = root.appendingPathComponent(index < 4 ? "子目录A" : "子目录B")
+            try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? "%PDF-1.4 sample".write(to: directory.appendingPathComponent(name),
+                                         atomically: true, encoding: .utf8)
         }
     }
 }
