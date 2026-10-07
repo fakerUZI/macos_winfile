@@ -22,6 +22,7 @@ CORE=(
   "$SRC/AppDataService.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"
+  $(find "$SRC/Android" -name "*.swift" | sort)
 )
 
 echo "== 1) 命令行测试 =="

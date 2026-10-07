@@ -27,8 +27,11 @@ ICNS="$ROOT/docs/icon/AppIcon.icns"
 echo "== 2/6 编译 SwiftUI 应用（arm64 + x86_64）=="
 mkdir -p "$BUILD"
 
-# 源文件：应用本体 + 测试辅助
+# 源文件：应用本体 + 安卓模块（子目录）+ 测试辅助
 SRC_FILES=("$SRC"/*.swift)
+while IFS= read -r file; do
+  SRC_FILES+=("$file")
+done < <(find "$SRC/Android" -name "*.swift" 2>/dev/null | sort)
 SRC_FILES+=(
   "$ROOT/native/WinFileTests/NativeTestSuite.swift"
   "$ROOT/native/WinFileTests/SnapshotRenderer.swift"
