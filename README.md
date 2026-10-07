@@ -25,20 +25,78 @@ Windows 资源管理器风格的 macOS 文件管理器。
 
 ---
 
-## 1. 快速开始（v2 原生版）
+## 1. 安装
+
+### 环境要求
+
+| 项目 | 要求 |
+| --- | --- |
+| 系统 | macOS 13 (Ventura) 或更高 |
+| 架构 | Apple Silicon 或 Intel（构建产物为通用二进制） |
+| 构建工具 | Xcode Command Line Tools（`xcode-select --install`，免费） |
+| 安卓功能 | `brew install android-platform-tools`（可选，仅安卓相关功能需要） |
+
+> 不需要完整 Xcode，也不需要付费 Apple 开发者账号。
+
+### 方式一：下载预编译包（最省事）
+
+从 [Releases](../../releases) 下载最新的 `WinFile-x.y.z.zip`，解压后把 `WinFile.app`
+拖到「应用程序」文件夹。
+
+**首次打开会被 macOS 拦截**，提示「已损坏，无法打开」或「无法验证开发者」。
+这是**未签名/未公证应用**的正常现象（消除该提示需要付费开发者账号做公证），
+文件本身没有损坏。用下面任一方式放行：
 
 ```bash
-cd ~/Documents/winfile-mac
-
-# 本地版：全盘访问，适合自己用
-./native/build_native.sh --in-place
-
-
-open WinFile.app
+# 方式 A：移除隔离属性（推荐，一次即可）
+xattr -dr com.apple.quarantine /Applications/WinFile.app
+open /Applications/WinFile.app
 ```
 
-构建脚本会自动：生成图标 → 编译 arm64 + x86_64 → 组装 bundle → 复制中英文本地化 →
-按可用身份签名（无身份时用 ad-hoc，本机可运行）。
+方式 B：系统设置 → 隐私与安全性 → 在底部找到被拦截的提示 → 点「仍要打开」。
+
+> 说明：新版本 macOS 已不再支持「右键 → 打开」绕过，请用上面的方式。
+
+### 方式二：从源码构建（推荐开发者）
+
+源码构建在**你自己机器上完成**，产物不携带隔离属性，因此**不会遇到上面的拦截**。
+
+```bash
+git clone https://github.com/<你的用户名>/winfile-mac.git
+cd winfile-mac
+
+# 构建并安装到 /Applications（启动台可见）
+./native/build_native.sh
+
+# 只构建到项目目录，不安装
+./native/build_native.sh --in-place
+
+open /Applications/WinFile.app     # 或 open WinFile.app
+```
+
+构建脚本会自动完成：生成图标 → 编译 arm64 与 x86_64 → 合并通用二进制 →
+组装应用包 → 复制中英文本地化 → 签名（无身份时用 ad-hoc）→ 安装并登记。
+
+### 运行测试
+
+```bash
+./native/run_native_tests.sh
+```
+
+会依次执行：命令行逻辑测试 → 真实应用包内测试 → 界面冒烟测试。
+若连接了已授权的安卓设备，还会自动跑一遍真实的设备文件操作测试。
+
+### 安卓功能准备（可选）
+
+```bash
+brew install android-platform-tools
+```
+
+然后在平板上开启「开发者选项 → USB 调试」，用数据线连接后
+在平板弹窗中点「允许」。应用启动时会自动扫描设备，侧边栏出现「安卓设备」入口。
+
+> macOS 不支持原生访问安卓文件（MTP 无系统支持），因此该功能通过 adb 实现，
+> 是本项目**唯一**使用子进程的部分；本地文件操作全部走原生 API。
 
 ## 2. 功能
 
