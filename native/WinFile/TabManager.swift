@@ -28,6 +28,7 @@ final class WinFileTab: ObservableObject, Identifiable {
         case .thisPC: return "pc"
         case .applications: return "square.grid.2x2.fill"
         case .appData: return "shippingbox.fill"
+        case .androidDevice: return "candybarphone"
         case .category(let category): return category.symbol
         case .folder(let url):
             return url.path == "/" ? "internaldrive.fill" : "folder.fill"

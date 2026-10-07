@@ -8,23 +8,34 @@ import Foundation
 enum AndroidURL {
     static let scheme = "android"
 
-    /// 构造虚拟 URL
+    /// 构造虚拟 URL。
+    ///
+    /// 不用 URLComponents：它会把 host 规范化为小写，
+    /// 而 adb 序列号区分大小写（如 HA2B7QSF），转小写会导致设备匹配失败。
+    /// 这里直接拼字符串，读取时手工拆解。
     static func make(serial: String, path: String) -> URL {
         let normalized = path.hasPrefix("/") ? path : "/" + path
-        var components = URLComponents()
-        components.scheme = scheme
-        components.host = serial
-        components.path = normalized
-        return components.url ?? URL(string: "\(scheme)://\(serial)\(normalized)")!
+        // 路径中可能含空格等字符，按 URL 规则转义；序列号本身是安全字符
+        let encoded = normalized.addingPercentEncoding(
+            withAllowedCharacters: CharacterSet.urlPathAllowed) ?? normalized
+        return URL(string: "\(scheme)://\(serial)\(encoded)")
+            ?? URL(fileURLWithPath: normalized)
     }
 
     /// 是否为安卓地址
     static func isAndroid(_ url: URL) -> Bool { url.scheme == scheme }
 
-    /// 取出序列号与路径
+    /// 取出序列号与路径（与 make 对称，不依赖 URL 的 host 解析）
     static func split(_ url: URL) -> (serial: String, path: String)? {
-        guard isAndroid(url), let serial = url.host else { return nil }
-        return (serial, url.path)
+        guard isAndroid(url) else { return nil }
+        let text = url.absoluteString
+        guard let range = text.range(of: "\(scheme)://") else { return nil }
+        let rest = text[range.upperBound...]
+        guard let slash = rest.firstIndex(of: "/") else { return nil }
+        let serial = String(rest[rest.startIndex..<slash])
+        let path = String(rest[slash...]).removingPercentEncoding ?? String(rest[slash...])
+        guard !serial.isEmpty else { return nil }
+        return (serial, path)
     }
 }
 
@@ -75,26 +86,52 @@ final class AndroidFileService: @unchecked Sendable {
         guard result.ok || !result.stdout.isEmpty else {
             throw AdbError.failed(result.stderr.isEmpty ? "无法读取目录" : result.stderr, result.exitCode)
         }
-        return AndroidEntry.parseListOutput(result.stdout, parent: path)
+        return AndroidEntry.parseListOutput(result.stdout, parent: path, serial: serial)
     }
 
     /// 读取单个路径的信息
     func stat(_ path: String) throws -> AndroidEntry? {
         let result = try AdbRunner.run(["-s", serial, "shell", "ls", "-lad", shellQuote(path)], timeout: 15)
         guard result.ok else { return nil }
-        return AndroidEntry.parseListOutput(result.stdout, parent: (path as NSString).deletingLastPathComponent).first
+        return AndroidEntry.parseListOutput(result.stdout,
+                                            parent: (path as NSString).deletingLastPathComponent,
+                                            serial: serial).first
     }
 
     // MARK: - 读写
 
-    /// 从设备复制到本地
-    func pull(remote: String, to local: URL) throws {
-        try AdbRunner.runChecked(["-s", serial, "pull", remote, local.path], timeout: 600)
+    /// 从设备复制到本地（带进度）
+    func pull(remote: String, to local: URL,
+              onProgress: ((Double?) -> Void)? = nil) throws {
+        let result = try AdbRunner.runWithProgress(
+            ["-s", serial, "pull", remote, local.path], onProgress: { onProgress?($0) })
+        guard result.ok else {
+            throw AdbError.failed(result.stderr.isEmpty ? result.stdout : result.stderr, result.exitCode)
+        }
     }
 
-    /// 从本地上传到设备
-    func push(local: URL, to remoteDirectory: String) throws {
-        try AdbRunner.runChecked(["-s", serial, "push", local.path, remoteDirectory], timeout: 600)
+    /// 从本地上传到设备（带进度）
+    func push(local: URL, to remoteDirectory: String,
+              onProgress: ((Double?) -> Void)? = nil) throws {
+        let result = try AdbRunner.runWithProgress(
+            ["-s", serial, "push", local.path, remoteDirectory], onProgress: { onProgress?($0) })
+        guard result.ok else {
+            throw AdbError.failed(result.stderr.isEmpty ? result.stdout : result.stderr, result.exitCode)
+        }
+    }
+
+    /// 递归统计目录大小与文件数（用于传输前的规模提示）
+    func directoryStats(_ path: String) -> (bytes: Int64, files: Int)? {
+        guard let result = try? AdbRunner.run(
+            ["-s", serial, "shell", "du", "-s", "-k", shellQuote(path)], timeout: 60) else { return nil }
+        let numbers = result.stdout.split(separator: " ").compactMap { Int64($0) }
+        guard let kilobytes = numbers.first else { return nil }
+        guard let countResult = try? AdbRunner.run(
+            ["-s", serial, "shell", "find", shellQuote(path), "-type", "f"], timeout: 120) else {
+            return (kilobytes * 1024, 0)
+        }
+        let files = countResult.stdout.split(separator: "\n").count
+        return (kilobytes * 1024, files)
     }
 
     // MARK: - 修改

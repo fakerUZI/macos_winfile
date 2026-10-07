@@ -132,6 +132,9 @@ struct MainView: View {
                 WindowBridge.shared.tabManager?.activeModel.navigate(to: target)
             }
 
+            // 后台扫描安卓设备（不阻塞界面，检测到后侧边栏自动出现入口）
+            Task { await AndroidDeviceRegistry.shared.refresh() }
+
             guard !skipAutoNavigation else { return }
             let current = model
             if current.currentDirectory == nil, case .none = current.selection {

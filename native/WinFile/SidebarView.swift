@@ -78,27 +78,7 @@ struct SidebarView: View {
                 Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
                     .tag(SidebarSelection.appData)
 
-                ForEach(engine.volumes) { volume in
-                    row(volume)
-                }
-            }
-
-            if !engine.authorizedRoots.isEmpty {
-                Section(L("sidebar.addedFolders", "常用文件夹")) {
-                    ForEach(engine.authorizedRoots, id: \.path) { url in
-                        Label {
-                            Text(url.lastPathComponent)
-                        } icon: {
-                            Image(systemName: "folder.fill").foregroundStyle(Color.accentColor)
-                        }
-                        .tag(SidebarSelection.folder(url))
-                        .contextMenu {
-                            Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) {
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            }
-                        }
-                    }
-                }
+                AndroidSidebarSection()
             }
         }
         .listStyle(.sidebar)
@@ -155,5 +135,45 @@ struct SidebarView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([place.url])
             }
         }
+    }
+}
+
+/// 侧边栏的安卓设备区块
+///
+/// 独立成视图有两个原因：一是避免侧边栏表达式过于复杂导致编译超时，
+/// 二是它自己观察设备注册表，设备插拔后能独立刷新。
+struct AndroidSidebarSection: View {
+    @ObservedObject private var registry = AndroidDeviceRegistry.shared
+
+    var body: some View {
+        if !registry.devices.isEmpty {
+            Section(L("sidebar.android", "安卓设备")) {
+                ForEach(registry.devices) { device in
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(device.displayName)
+                            Text(subtitle(for: device))
+                                .font(.caption2)
+                                .foregroundStyle(device.isReady ? Color.secondary : Color.orange)
+                        }
+                    } icon: {
+                        Image(systemName: "candybarphone")
+                            .foregroundStyle(device.isReady ? Color.accentColor : Color.orange)
+                    }
+                    .tag(SidebarSelection.androidDevice(serial: device.serial))
+                }
+            }
+        }
+    }
+
+    private func subtitle(for device: AndroidDevice) -> String {
+        if !device.isReady {
+            return device.isUnauthorized
+                ? L("android.state.unauthorized", "待授权")
+                : device.state
+        }
+        return device.androidVersion.isEmpty
+            ? device.serial
+            : "Android \(device.androidVersion)"
     }
 }

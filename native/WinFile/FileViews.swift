@@ -141,7 +141,14 @@ struct FileTableView: View {
                     guard row >= 0, row < model.displayedItems.count else { return }
                     let item = model.displayedItems[row]
                     model.selectedIDs = [item.id]
-                    model.activate(item)
+                    // 安卓条目需要用 adb 打开（本地 FileManager 不适用）
+                    if AndroidURL.isAndroid(item.url) {
+                        if let entry = model.androidEntries.first(where: { $0.path == item.url.path }) {
+                            model.activateAndroid(entry)
+                        }
+                    } else {
+                        model.activate(item)
+                    }
                 }
             }
             .frame(width: 0, height: 0)

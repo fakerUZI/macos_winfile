@@ -46,6 +46,8 @@ struct TabContentHost: View {
                 ThisPCView(engine: engine, manager: reader.manager)
             } else if model.isAppDataView {
                 AppDataView(engine: engine, model: model)
+            } else if case .androidDevice(let serial) = model.selection {
+                AndroidDeviceView(engine: engine, model: model, serial: serial)
             } else if model.layout == .details {
                 FileTableView(engine: engine, model: model, dialog: $dialog)
             } else {
@@ -64,6 +66,11 @@ struct TabContentHost: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+        .overlay(alignment: .top) {
+            if let progress = model.transferProgress {
+                AndroidTransferBanner(progress: progress)
+            }
+        }
         .overlay(alignment: .bottom) {
             StatusBarView(engine: engine, model: model)
         }

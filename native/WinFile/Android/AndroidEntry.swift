@@ -16,7 +16,7 @@ struct AndroidEntry: Identifiable, Hashable {
     var id: String { path }
 
     var url: URL { AndroidURL.make(serial: serial, path: path) }
-    /// 所属设备序列号（解析后填入）
+    /// 所属设备序列号（解析时填入；为空会导致虚拟地址缺少设备标识）
     var serial: String = ""
 
     /// 大小文本
@@ -53,7 +53,8 @@ struct AndroidEntry: Identifiable, Hashable {
     ///   -rw-rw----  1 u0_a123 sdcard_rw 12345 2024-05-01 12:00 note.txt
     ///   lrwxrwxrwx  1 root  root          21 2024-05-01 12:00 sdcard -> /storage/self/primary
     /// 注意：文件名可能含空格，因此按"前 7 列固定 + 剩余全部为文件名"解析。
-    static func parseListOutput(_ output: String, parent: String) -> [AndroidEntry] {
+    static func parseListOutput(_ output: String, parent: String,
+                                serial: String = "") -> [AndroidEntry] {
         var entries: [AndroidEntry] = []
         let parentPath = parent.hasSuffix("/") ? String(parent.dropLast()) : parent
 
@@ -108,7 +109,8 @@ struct AndroidEntry: Identifiable, Hashable {
                 size: size,
                 modified: modified,
                 permissions: permissions,
-                isReadable: ownerRead
+                isReadable: ownerRead,
+                serial: serial
             ))
         }
         return entries

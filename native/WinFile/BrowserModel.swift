@@ -10,6 +10,8 @@ enum SidebarSelection: Hashable {
     case folder(URL)
     case applications
     case appData
+    /// 安卓设备页（显示该设备的存储位置）
+    case androidDevice(serial: String)
     case category(FileCategory)
 }
 
@@ -70,6 +72,12 @@ final class BrowserModel: ObservableObject {
     @Published private(set) var appDataItems: [AppDataItem] = []
     @Published private(set) var isLoadingAppData = false
     @Published private(set) var needsFullDiskAccess = false
+    /// 安卓目录条目（保留原始信息用于 adb 操作）
+    @Published private(set) var androidEntries: [AndroidEntry] = []
+    @Published private(set) var isLoadingAndroid = false
+    /// 传输进度（上传/下载时非空）
+    @Published var transferProgress: AndroidTransferProgress?
+    private var transferTask: Task<Void, Never>?
 
     // 视图选项
     @AppStorage("ViewLayout") var layoutRaw: String = ViewLayout.details.rawValue
@@ -135,6 +143,18 @@ final class BrowserModel: ObservableObject {
         return false
     }
 
+    /// 是否处于「安卓设备」视图
+    var isAndroidDeviceView: Bool {
+        if case .androidDevice = selection { return true }
+        return false
+    }
+
+    /// 当前是否为安卓路径（安卓目录浏览由 adb 提供，与本地文件区分处理）
+    var isAndroidPath: Bool {
+        guard let dir = currentDirectory else { return false }
+        return AndroidURL.isAndroid(dir)
+    }
+
     /// 是否处于主页
     var isHomeView: Bool {
         if case .home = selection { return true }
@@ -176,6 +196,9 @@ final class BrowserModel: ObservableObject {
             return L("view.applications", "应用程序")
         case .appData:
             return L("view.appData", "应用数据")
+        case .androidDevice(let serial):
+            return AndroidDeviceRegistry.shared.device(serial: serial)?.displayName
+                ?? L("view.androidDevice", "安卓设备")
         case .category(let category):
             return category.localizedName
         case .folder(let url):
@@ -205,6 +228,8 @@ final class BrowserModel: ObservableObject {
             loadApplications()
         case .appData:
             loadAppData()
+        case .androidDevice(let serial):
+            loadAndroidDevice(serial: serial)
         case .category(let category):
             categoryFilter = category
             loadCategory(category)
@@ -225,6 +250,7 @@ final class BrowserModel: ObservableObject {
         case .thisPC: return "此电脑"
         case .applications: return "应用程序"
         case .appData: return "应用数据"
+        case .androidDevice(let serial): return "安卓设备:\(serial)"
         case .category(let c): return "分类:\(c.rawValue)"
         case .folder(let url): return "文件夹:\(url.lastPathComponent)"
         case nil: return "无"
@@ -261,6 +287,11 @@ final class BrowserModel: ObservableObject {
     }
 
     private func load(directory: URL, resetCategory: Bool = true) {
+        // 安卓路径走 adb 列目录（本地 FileManager 无法访问设备文件）
+        if AndroidURL.isAndroid(directory) {
+            loadAndroidDirectory(directory)
+            return
+        }
         listingTask?.cancel()
         categoryTask?.cancel()
         currentDirectory = directory
@@ -401,6 +432,276 @@ final class BrowserModel: ObservableObject {
                 : L("status.appDataNoAccess", "共 %d 个应用数据目录（其中 %d 个需要完整磁盘访问权限）",
                     scanned.count, scanned.count - readable)
         }
+    }
+
+    /// 载入「安卓设备」页：列出该设备的存储位置
+    // MARK: - 安卓文件浏览
+
+    /// 载入安卓目录（经 adb 列目录）
+    func loadAndroidDirectory(_ url: URL) {
+        guard let (serial, path) = AndroidURL.split(url) else { return }
+        homeTask?.cancel()
+        categoryFilter = nil
+        categoryResults = []
+        isSearching = false
+        searchResults = []
+        currentDirectory = url
+        selectedIDs = []
+        isLoadingAndroid = true
+        isBusy = true
+        statusMessage = L("status.androidLoading", "正在读取设备目录…")
+        let showHidden = self.showHidden
+
+        homeTask = Task { [weak self] in
+            let result: Result<[AndroidEntry], Error> = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let service = AndroidFileService(serial: serial)
+                    do {
+                        var entries = try service.list(path)
+                        if !showHidden {
+                            entries = entries.filter { !$0.name.hasPrefix(".") }
+                        }
+                        continuation.resume(returning: .success(entries))
+                    } catch {
+                        continuation.resume(returning: .failure(error))
+                    }
+                }
+            }
+            guard let self, !Task.isCancelled else { return }
+            switch result {
+            case .success(let entries):
+                self.androidEntries = entries
+                self.items = entries.map { $0.asFileItem() }
+                self.applySort()
+                self.isLoadingAndroid = false
+                self.isBusy = false
+                self.statusMessage = L("status.androidCount", "%d 个项目", entries.count)
+            case .failure(let error):
+                self.androidEntries = []
+                self.items = []
+                self.isLoadingAndroid = false
+                self.isBusy = false
+                self.errorMessage = error.localizedDescription
+                self.statusMessage = L("status.androidFailed", "读取失败")
+            }
+        }
+    }
+
+    /// 打开安卓设备上的项目（文件夹进入，文件用系统默认方式打开不支持 → 提示）
+    /// 安卓端删除选中项
+    func deleteAndroidSelection() {
+        let entries = selectedAndroidEntries
+        guard !entries.isEmpty else { return }
+        guard let (serial, _) = AndroidURL.split(currentDirectory ?? entries[0].url) else { return }
+        runAndroidOperation(L("status.deleting", "正在删除…")) { service in
+            for entry in entries { try service.remove(entry.path) }
+        }
+    }
+
+    /// 安卓端重命名
+    func renameAndroid(_ entry: AndroidEntry, to newName: String) {
+        guard let (serial, _) = AndroidURL.split(entry.url) else { return }
+        runAndroidOperation(L("status.renaming", "正在重命名…")) { service in
+            try service.rename(entry.path, to: newName)
+        }
+    }
+
+    /// 安卓端新建文件夹 / 空文件
+    func createAndroidFolder(named name: String) {
+        guard let directory = currentDirectory,
+              let (_, path) = AndroidURL.split(directory) else { return }
+        let target = path.hasSuffix("/") ? path + name : path + "/" + name
+        runAndroidOperation(L("status.creating", "正在创建…")) { service in
+            try service.createFolder(at: target)
+        }
+    }
+
+    func createAndroidFile(named name: String) {
+        guard let directory = currentDirectory,
+              let (_, path) = AndroidURL.split(directory) else { return }
+        let target = path.hasSuffix("/") ? path + name : path + "/" + name
+        runAndroidOperation(L("status.creating", "正在创建…")) { service in
+            try service.createEmptyFile(at: target)
+        }
+    }
+
+    /// 把剪贴板内容粘贴到当前安卓目录
+    ///
+    /// - 剪贴板是本机文件 → 上传
+    /// - 剪贴板是安卓文件 → 设备内复制/移动
+    func pasteIntoAndroid() {
+        guard let directory = currentDirectory,
+              let (serial, remotePath) = AndroidURL.split(directory) else { return }
+
+        // 情况一：本机文件 → 上传
+        let localURLs = (clipboard?.urls ?? []).filter { !AndroidURL.isAndroid($0) }
+        if !localURLs.isEmpty {
+            uploadToAndroid(localURLs, to: directory)
+            return
+        }
+
+        // 情况二：安卓文件 → 设备内复制/移动
+        guard let payload = androidClipboard else { return }
+        let move = payload.isCut
+        transferProgress = AndroidTransferProgress(name: payload.entry.name,
+                                                   direction: .upload)
+        transferTask = Task { [weak self] in
+            let error: Error? = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let service = AndroidFileService(serial: serial)
+                    do {
+                        if move {
+                            try service.move(payload.entry.path, to: remotePath)
+                        } else {
+                            try service.copy(payload.entry.path, to: remotePath)
+                        }
+                        continuation.resume(returning: nil)
+                    } catch {
+                        continuation.resume(returning: error)
+                    }
+                }
+            }
+            guard let self else { return }
+            self.transferProgress = nil
+            if let error {
+                self.errorMessage = error.localizedDescription
+                self.statusMessage = L("status.pasteFailed", "粘贴失败")
+            } else {
+                self.statusMessage = move
+                    ? L("status.moved", "已移动")
+                    : L("status.copied", "已复制")
+                if move { self.androidClipboard = nil }
+                if let dir = self.currentDirectory { self.loadAndroidDirectory(dir) }
+            }
+        }
+    }
+
+    /// 在后台执行一次安卓操作，完成后刷新目录
+    private func runAndroidOperation(_ title: String,
+                                     _ body: @escaping (AndroidFileService) throws -> Void) {
+        guard let directory = currentDirectory,
+              let (serial, _) = AndroidURL.split(directory) else { return }
+        statusMessage = title
+        transferTask?.cancel()
+        transferTask = Task { [weak self] in
+            let error: Error? = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try body(AndroidFileService(serial: serial))
+                        continuation.resume(returning: nil)
+                    } catch {
+                        continuation.resume(returning: error)
+                    }
+                }
+            }
+            guard let self else { return }
+            if let error {
+                self.errorMessage = error.localizedDescription
+            } else if let dir = self.currentDirectory {
+                self.loadAndroidDirectory(dir)
+            }
+        }
+    }
+
+    /// 安卓内部的剪贴板（与本机剪贴板分开，避免混淆）
+    struct AndroidClipboardPayload {
+        let entry: AndroidEntry
+        let isCut: Bool
+    }
+    @Published var androidClipboard: AndroidClipboardPayload?
+
+    /// 当前选中的安卓条目
+    var selectedAndroidEntries: [AndroidEntry] {
+        let paths = Set(selectedItems.map { $0.url.path })
+        return androidEntries.filter { paths.contains($0.path) }
+    }
+
+    func activateAndroid(_ entry: AndroidEntry) {
+        if entry.isDirectory {
+            selectFolder(entry.url)
+        } else {
+            errorMessage = L("android.hint.downloadFirst",
+                             "安卓上的文件需要先下载到本机才能打开。请复制到本地目录后再打开。")
+        }
+    }
+
+    /// 把安卓文件/目录下载到本地目录（带进度）
+    func downloadFromAndroid(_ entry: AndroidEntry, to localDirectory: URL) {
+        guard let (serial, _) = AndroidURL.split(entry.url) else { return }
+        transferProgress = AndroidTransferProgress(name: entry.name, direction: .download)
+        let service = AndroidFileService(serial: serial)
+        transferTask = Task { [weak self] in
+            let error: Error? = await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try service.pull(remote: entry.path, to: localDirectory) { fraction in
+                            Task { @MainActor in self?.transferProgress?.fraction = fraction }
+                        }
+                        continuation.resume(returning: nil)
+                    } catch {
+                        continuation.resume(returning: error)
+                    }
+                }
+            }
+            guard let self else { return }
+            self.transferProgress = nil
+            if let error {
+                self.errorMessage = error.localizedDescription
+                self.statusMessage = L("status.downloadFailed", "下载失败")
+            } else {
+                self.statusMessage = L("status.downloaded", "已下载：%@", entry.name)
+                self.reload()
+            }
+        }
+    }
+
+    /// 把本地文件/目录上传到安卓目录（带进度）
+    func uploadToAndroid(_ urls: [URL], to androidDirectory: URL) {
+        guard let (serial, remotePath) = AndroidURL.split(androidDirectory) else { return }
+        let service = AndroidFileService(serial: serial)
+        transferProgress = AndroidTransferProgress(
+            name: urls.map(\.lastPathComponent).joined(separator: "、"), direction: .upload)
+        transferTask = Task { [weak self] in
+            var failed: Error?
+            for url in urls {
+                let error: Error? = await withCheckedContinuation { continuation in
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        do {
+                            try service.push(local: url, to: remotePath) { fraction in
+                                Task { @MainActor in self?.transferProgress?.fraction = fraction }
+                            }
+                            continuation.resume(returning: nil)
+                        } catch {
+                            continuation.resume(returning: error)
+                        }
+                    }
+                }
+                if let error { failed = error; break }
+            }
+            guard let self else { return }
+            self.transferProgress = nil
+            if let failed {
+                self.errorMessage = failed.localizedDescription
+                self.statusMessage = L("status.uploadFailed", "上传失败")
+            } else {
+                self.statusMessage = L("status.uploaded", "已上传 %d 项", urls.count)
+                self.loadAndroidDirectory(androidDirectory)
+            }
+        }
+    }
+
+    func loadAndroidDevice(serial: String) {
+        homeTask?.cancel()
+        if case .androidDevice = selection {} else { selection = .androidDevice(serial: serial) }
+        categoryFilter = nil
+        categoryResults = []
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        selectedIDs = []
+        isBusy = false
+        statusMessage = L("status.androidDevice", "正在读取设备存储…")
     }
 
     func loadThisPC() {
@@ -596,6 +897,15 @@ final class BrowserModel: ObservableObject {
     func copySelectionToClipboard() {
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
+        // 安卓条目无法写入系统剪贴板（不是本地文件），单独记录
+        if isAndroidPath {
+            if let entry = selectedAndroidEntries.first {
+                androidClipboard = AndroidClipboardPayload(entry: entry, isCut: false)
+                clipboard = nil
+                statusMessage = L("clipboard.copied", "已复制")
+            }
+            return
+        }
         clipboard = ClipboardPayload(mode: .copy, urls: urls)
         // 同时写入系统剪贴板，可直接粘到其它应用
         let pasteboard = NSPasteboard.general
@@ -607,6 +917,14 @@ final class BrowserModel: ObservableObject {
     func cutSelectionToClipboard() {
         let urls = selectedItems.map(\.url)
         guard !urls.isEmpty else { return }
+        if isAndroidPath {
+            if let entry = selectedAndroidEntries.first {
+                androidClipboard = AndroidClipboardPayload(entry: entry, isCut: true)
+                clipboard = nil
+                statusMessage = L("clipboard.cut", "已剪切")
+            }
+            return
+        }
         clipboard = ClipboardPayload(mode: .cut, urls: urls)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -634,6 +952,11 @@ final class BrowserModel: ObservableObject {
     }
 
     func paste() {
+        // 目标是安卓目录时走 adb（上传或设备内复制/移动）
+        if isAndroidPath {
+            pasteIntoAndroid()
+            return
+        }
         guard let clipboard, let directory = currentDirectory else { return }
         let urls = clipboard.urls
         let mode: FSEngine.TransferMode = clipboard.mode == .copy ? .copy : .move
@@ -669,6 +992,11 @@ final class BrowserModel: ObservableObject {
     func deleteSelection(permanently: Bool = false) {
         let items = selectedItems
         guard !items.isEmpty else { return }
+        // 安卓条目走 adb 删除（本地 FileManager 不适用）
+        if isAndroidPath {
+            deleteAndroidSelection()
+            return
+        }
         isBusy = true
         Task { [weak self] in
             guard let self else { return }
@@ -716,6 +1044,12 @@ final class BrowserModel: ObservableObject {
     }
 
     func rename(_ item: FileItem, to newName: String) {
+        // 安卓条目走 adb 重命名
+        if AndroidURL.isAndroid(item.url),
+           let entry = androidEntries.first(where: { $0.path == item.url.path }) {
+            renameAndroid(entry, to: newName)
+            return
+        }
         do {
             _ = try engine.rename(item, to: newName)
             statusMessage = NSLocalizedString("status.renamed", comment: "已重命名")
@@ -726,6 +1060,10 @@ final class BrowserModel: ObservableObject {
     }
 
     func createFolder(named name: String) {
+        if isAndroidPath {
+            createAndroidFolder(named: name)
+            return
+        }
         guard let directory = currentDirectory else { return }
         do {
             let url = try engine.createFolder(in: directory, named: name)

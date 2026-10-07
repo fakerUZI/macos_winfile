@@ -62,6 +62,7 @@ enum NativeTestSuite {
             testRowAreaRightClick()
             testAndroidParsing()
             testAndroidDevice()
+            testAndroidBrowsing()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
             TestReporter.shared.failures.append("异常：\(error.localizedDescription)")
@@ -627,6 +628,18 @@ enum NativeTestSuite {
         check("虚拟地址可拆回路径", split?.path == "/sdcard/Download", split?.path ?? "无")
         check("本地地址不被识别为安卓", !AndroidURL.isAndroid(URL(fileURLWithPath: "/tmp")))
 
+        // 序列号必须保留大小写（adb 区分大小写，URLComponents 会转小写）
+        let mixedCase = AndroidURL.make(serial: "HA2B7QSF", path: "/storage/emulated/0")
+        let roundTrip = AndroidURL.split(mixedCase)
+        check("序列号大小写被保留", roundTrip?.serial == "HA2B7QSF", roundTrip?.serial ?? "无")
+        check("嵌套路径可往返",
+              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/b/c"))?.path == "/a/b/c")
+        check("含空格路径可往返",
+              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path == "/a/My Documents",
+              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path ?? "无")
+        check("含中文路径可往返",
+              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/文档"))?.path == "/a/文档")
+
         // adb 可用性（本机已安装）
         check("检测到 adb", AdbRunner.isAvailable, AdbRunner.adbPath() ?? "未找到")
     }
@@ -714,6 +727,85 @@ enum NativeTestSuite {
         } catch {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
+        }
+    }
+
+    // MARK: - 安卓目录浏览（模型层）
+
+    @MainActor
+    static func testAndroidBrowsing() {
+        print("\n[安卓目录浏览]")
+
+        let probe = AndroidProbe.run()
+        guard probe.isUsable, let serial = probe.readySerials.first,
+              let root = probe.storageRoot else {
+            print("  跳过（\(probe.summary)）")
+            return
+        }
+
+        let model = BrowserModel(engine: FSEngine(), startDirectory: nil)
+        let dirURL = AndroidURL.make(serial: serial, path: root)
+        model.selectFolder(dirURL)
+
+        // 等待异步加载
+        let deadline = Date().addingTimeInterval(25)
+        while model.isLoadingAndroid && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+
+        check("安卓目录能被模型载入", !model.items.isEmpty, "\(model.items.count) 项")
+        check("当前路径被识别为安卓", model.isAndroidPath)
+        check("条目保留了安卓原始信息", !model.androidEntries.isEmpty,
+              "\(model.androidEntries.count) 项")
+
+        // 条目属性
+        if let first = model.items.first {
+            check("条目使用 android:// 虚拟地址", AndroidURL.isAndroid(first.url), first.url.absoluteString)
+            check("条目有名称", !first.name.isEmpty, first.name)
+        }
+
+        // 目录优先排序（与本地一致）
+        let dirsFirst = model.items.first?.isDirectory ?? false
+        let hasDir = model.items.contains { $0.isDirectory }
+        check("存在目录时目录排在前", !hasDir || dirsFirst,
+              "首项=\(model.items.first?.name ?? "无") 是否目录=\(dirsFirst)")
+
+        // 进入子目录
+        if let sub = model.androidEntries.first(where: { $0.isDirectory }) {
+            model.selectFolder(sub.url)
+            let deadline2 = Date().addingTimeInterval(25)
+            while model.isLoadingAndroid && Date() < deadline2 {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            }
+                check("能进入安卓子目录",
+                  model.currentDirectory?.path == sub.path,
+                  model.currentDirectory?.path ?? "无")
+            check("子目录有内容或为空但无报错",
+                  model.errorMessage == nil, model.errorMessage ?? "无错误")
+        }
+
+        // 选中项与安卓条目对应
+        if let first = model.items.first {
+            model.selectedIDs = [first.id]
+            check("选中项能映射回安卓条目",
+                  model.selectedAndroidEntries.count == 1,
+                  "\(model.selectedAndroidEntries.count) 项")
+        }
+
+        // 复制到剪贴板：安卓条目应记录到安卓剪贴板而非系统剪贴板
+        if let first = model.items.first {
+            model.selectedIDs = [first.id]
+            model.copySelectionToClipboard()
+            check("安卓复制记录到安卓剪贴板", model.androidClipboard != nil)
+            check("安卓复制不写入本机剪贴板", model.clipboard == nil)
+        }
+
+        // 安卓上的文件不能直接打开，应给出提示
+        if let file = model.androidEntries.first(where: { !$0.isDirectory }) {
+            model.errorMessage = nil
+            model.activateAndroid(file)
+            check("安卓文件提示需先下载", model.errorMessage != nil,
+                  model.errorMessage ?? "无提示")
         }
     }
 

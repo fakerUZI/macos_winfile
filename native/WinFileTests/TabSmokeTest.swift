@@ -142,6 +142,7 @@ enum TabSmokeTest {
             case .thisPC: view = "此电脑"
             case .applications: view = "应用程序"
             case .appData: view = "应用数据"
+            case .androidDevice: view = "安卓设备"
             case .category(let c): view = "分类:\(c.rawValue)"
             case .folder(let url): view = "文件夹:\(url.lastPathComponent)"
             case nil: view = "无"

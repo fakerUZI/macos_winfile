@@ -71,6 +71,68 @@ enum AdbRunner {
 
     static var isAvailable: Bool { adbPath() != nil }
 
+    /// 带进度上报的执行（用于 push/pull 这类耗时操作）。
+    ///
+    /// adb 的传输进度输出在 stderr，形如 `[ 45%] /path`，
+    /// 这里逐行解析并回调，让界面能显示真实进度而不是"假死"。
+    /// - Parameter onProgress: 0…1 的进度（无法解析时为 nil）
+    static func runWithProgress(_ arguments: [String],
+                                timeout: TimeInterval = 3600,
+                                onProgress: @escaping (Double?) -> Void) throws -> AdbResult {
+        guard let adb = adbPath() else { throw AdbError.notInstalled }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: adb)
+        process.arguments = arguments
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        // adb 的进度写在 stderr；逐行读取并及时回调
+        var collected = Data()
+        errPipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            collected.append(chunk)
+            if let text = String(data: chunk, encoding: .utf8) {
+                for line in text.split(separator: "\n") {
+                    if let percent = parsePercent(String(line)) {
+                        onProgress(percent)
+                    }
+                }
+            }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            errPipe.fileHandleForReading.readabilityHandler = nil
+            throw AdbError.failed(error.localizedDescription, -1)
+        }
+
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        errPipe.fileHandleForReading.readabilityHandler = nil
+        let errText = String(data: collected, encoding: .utf8) ?? ""
+
+        return AdbResult(stdout: String(data: outData, encoding: .utf8) ?? "",
+                         stderr: errText,
+                         exitCode: process.terminationStatus)
+    }
+
+    /// 从 adb 输出行中解析百分比（如 `[ 45%] /sdcard/a.bin`）
+    static func parsePercent(_ line: String) -> Double? {
+        guard let open = line.firstIndex(of: "["),
+              let percentIndex = line.firstIndex(of: "%"),
+              open < percentIndex else { return nil }
+        let numberPart = line[line.index(after: open)..<percentIndex]
+            .trimmingCharacters(in: .whitespaces)
+        guard let value = Double(numberPart), value >= 0, value <= 100 else { return nil }
+        return value / 100
+    }
+
     /// 执行 adb 命令
     /// - Parameters:
     ///   - arguments: 不含 adb 本身的参数
