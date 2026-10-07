@@ -99,30 +99,22 @@ def _vgradient(size: int, top: tuple, bottom: tuple, box: tuple):
     return grad.resize((width, height), Image.BILINEAR)
 
 
+# 无底板形态下内容的缩放策略（1.0 = 保持原始布局大小）。
+# 原布局内容占画布约 60%，放大到约 74% 更接近 macOS 图标的内容占比。
+SCALE_WITHOUT_PLATE = 0.74 / 0.60   # ≈1.23：放大到画布 74%
+
+
 def draw(size: int = 1024):
     from PIL import Image, ImageDraw
 
     s = size / 1024
     canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
 
-    # ---- 底：浅蓝圆角方形（macOS 图标形状）
-    margin = int(88 * s)
-    radius = int(236 * s)
-    bg = ImageDraw.Draw(canvas)
-    bg.rounded_rectangle(
-        (margin, margin, size - margin, size - margin),
-        radius=radius,
-        fill=(226, 238, 252, 255),
-        outline=(183, 205, 232, 255),
-        width=max(1, int(6 * s)),
-    )
-    # 背景柔和渐变
-    sheen = _vgradient(size, (255, 255, 255), (214, 231, 250), (margin, margin, size - margin, size - margin))
-    sheen_mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(sheen_mask).rounded_rectangle(
-        (margin, margin, size - margin, size - margin), radius=radius, fill=255
-    )
-    canvas.paste(sheen, (margin, margin), sheen_mask.crop((margin, margin, size - margin, size - margin)))
+    # ---- 背景：不加底板 ----
+    #
+    # 这里刻意不绘制浅蓝圆角底板：图标只保留文件夹本身，
+    # 其余区域透明，形成"镂空"效果（按要求去掉最外侧底色）。
+    # 若将来需要恢复 macOS 惯例的圆角底板，在此处补回绘制即可。
 
     # ---- 文件夹几何
     left = int(206 * s)
@@ -162,6 +154,21 @@ def draw(size: int = 1024):
         fill=(255, 247, 214, 170),
     )
     draw.rounded_rectangle(body, radius=r_out, outline=(203, 137, 20, 255), width=max(1, int(5 * s)))
+
+    # ---- 放大到合适比例 ----
+    # 去掉底板后，文件夹在原布局里只占约 60% 宽度，视觉上偏小。
+    # 这里按内容包围盒居中放大，使其占据画布约 74%（贴近 macOS 图标的内容占比）。
+    if SCALE_WITHOUT_PLATE != 1.0:
+        bbox = canvas.getchannel("A").getbbox()
+        if bbox:
+            content = canvas.crop(bbox)
+            # 目标宽度占比：0.74（原为 0.60）
+            target = int(size * 0.74)
+            ratio = min(target / content.width, target / content.height)
+            new_size = (max(1, int(content.width * ratio)), max(1, int(content.height * ratio)))
+            content = content.resize(new_size, Image.LANCZOS)
+            canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            canvas.alpha_composite(content, ((size - new_size[0]) // 2, (size - new_size[1]) // 2))
 
     return canvas
 
