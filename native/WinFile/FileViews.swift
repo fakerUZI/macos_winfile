@@ -416,7 +416,7 @@ struct FileItemContextMenu: View {
     /// 被右键的那一项（单选时用于「打开方式」「重命名」）
     let item: FileItem?
     /// 当前选中项（多选时部分操作作用于全部选中项）
-    var selectedCount: Int { model.selectedItems.count }
+    var selectedCount: Int { model.selectedCount }
 
     var body: some View {
         Button(NSLocalizedString("action.open", comment: "打开")) { model.openSelection() }
@@ -479,11 +479,14 @@ struct FileTile: View {
     var body: some View {
         VStack(spacing: 5) {
             FileIconView(engine: engine, item: item, size: 44)
+            // 名称固定占两行高度（见 FileItem.tileNameAreaHeight）。
+            // 若按内容自适应，同一行里矮的磁贴下方会留出空白。
             Text(item.name)
                 .font(.caption)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .truncationMode(.middle)
+                .frame(height: FileItem.tileNameAreaHeight, alignment: .top)
             Text(item.isContainer ? item.typeDescription : item.sizeText)
                 .font(.caption2)
                 .foregroundStyle(.secondary)

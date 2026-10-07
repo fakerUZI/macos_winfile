@@ -344,7 +344,7 @@ struct MainView: View {
                 Label(NSLocalizedString("action.rename", comment: "重命名"), systemImage: "pencil")
             }
             .help(NSLocalizedString("action.rename", comment: "重命名"))
-            .disabled(model.selectedIDs.count != 1)
+            .disabled(model.selectedCount != 1)
 
             Button(role: .destructive) {
                 confirmDelete()
@@ -546,7 +546,7 @@ struct MainView: View {
             } label: {
                 Label(NSLocalizedString("action.openWith", comment: "打开方式"), systemImage: "square.grid.2x2.fill")
             }
-            .disabled(model.selectedIDs.count != 1)
+            .disabled(model.selectedCount != 1)
         }
     }
 
@@ -577,7 +577,7 @@ struct MainView: View {
     }
 
     private func confirmDelete() {
-        let count = model.selectedIDs.count
+        let count = model.selectedCount
         guard count > 0 else { return }
         let alert = NSAlert()
         alert.messageText = count == 1
@@ -629,9 +629,12 @@ struct StatusBarView: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(model.statusMessage)
-            if !model.selectedIDs.isEmpty {
+            // 计数统一用 selectedItems（与检查器一致）。
+            // 若这里用 selectedIDs，会与检查器出现不同数字：
+            // Table 自身维护一套高亮状态，程序化改选时两者可能短暂不一致。
+            if !model.selectedItems.isEmpty {
                 Divider().frame(height: 12)
-                Text(String(format: NSLocalizedString("status.selected", comment: "已选择"), model.selectedIDs.count))
+                Text(String(format: NSLocalizedString("status.selected", comment: "已选择"), model.selectedItems.count))
                 if !model.selectionSummary.isEmpty {
                     Text(model.selectionSummary)
                 }

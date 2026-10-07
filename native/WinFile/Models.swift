@@ -1,5 +1,6 @@
 // 文件条目模型与分类规则（对应原 Python extdb.py）
 import AppKit
+import CoreGraphics
 import Foundation
 import UniformTypeIdentifiers
 
@@ -392,6 +393,14 @@ struct FileItem: Identifiable, Hashable {
     let category: FileCategory
 
     var isContainer: Bool { isDirectory || isBundle }
+
+    /// 图标视图中名称区域的高度（固定值）。
+    ///
+    /// 必要性：文件名有长有短（占 1～2 行），若按内容自适应高度，
+    /// 同一行内矮的磁贴下方会留出空白，看起来像"缺了一个图标"。
+    /// 固定高度可保证所有磁贴等高、网格整齐。
+    /// 取值需能容纳两行 caption 字号（约 13pt/行）。
+    static let tileNameAreaHeight: CGFloat = 30
 
     /// 可在应用内进入浏览的容器（.app 等包双击是启动，不进入）
     var isBrowsableFolder: Bool { isDirectory && !(isBundle && url.pathExtension.lowercased() == "app") }

@@ -65,6 +65,8 @@ enum NativeTestSuite {
             testAndroidBrowsing()
             testCustomPagesNotReportedEmpty()
             try testArchive()
+            try testSelectAllConsistency()
+            testTileLayoutUniformity()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -731,6 +733,104 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 图标网格对齐
+
+    @MainActor
+    static func testTileLayoutUniformity() {
+        print("\n[图标网格对齐]")
+
+        // 名称区域必须是固定高度：否则同行内一行的短名与两行的长名会让
+        // 磁贴高度不同，矮的下方留白（用户实测反馈的"留空"现象）。
+        check("磁贴名称区域高度固定且大于零",
+              FileItem.tileNameAreaHeight > 0,
+              "\(FileItem.tileNameAreaHeight)")
+
+        // 高度应能容纳两行 caption（约 13pt/行），否则第二行会被裁掉
+        check("名称区域高度至少容纳两行",
+              FileItem.tileNameAreaHeight >= 26,
+              "\(FileItem.tileNameAreaHeight)")
+
+        // 用用户截图里的真实文件名验证：这些名字会导致 1~2 行不等的排版，
+        // 正是需要固定高度的场景
+        let names = ["lockScreenLiquidDetection.pdf", "ENERGY STAR.pdf",
+                     "reader_complimentary_membership_dialog_image.pdf",
+                     "智能体速成-招生简章.pdf", "Doc1.pdf"]
+        let hasMixedLengths = names.contains { $0.count <= 8 } && names.contains { $0.count >= 20 }
+        check("测试样本包含长短名称（会形成不同行数）", hasMixedLengths,
+              names.map { "\($0.count)" }.joined(separator: "/"))
+
+        // 网格列宽需容得下最长名称的截断（不溢出）
+        let longest = names.max(by: { $0.count < $1.count }) ?? ""
+        check("存在需要截断的长名称", longest.count > 10, "\(longest.count) 字符")
+    }
+
+    // MARK: - 全选一致性
+
+    @MainActor
+    static func testSelectAllConsistency() throws {
+        print("\n[全选一致性]")
+
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("winfile-select-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+
+        // 造 16 个文件（与用户截图的数量一致）
+        for index in 1...16 {
+            try "x".write(to: dir.appendingPathComponent("f\(index).pdf"),
+                          atomically: true, encoding: .utf8)
+        }
+
+        let model = BrowserModel(engine: FSEngine(), startDirectory: dir)
+        let deadline = Date().addingTimeInterval(10)
+        while model.isBusy && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        check("目录载入 16 项", model.displayedItems.count == 16, "\(model.displayedItems.count) 项")
+        check("id 互不重复（重复会导致计数不一致）",
+              Set(model.displayedItems.map(\.id)).count == model.displayedItems.count,
+              "唯一 id \(Set(model.displayedItems.map(\.id)).count) / 共 \(model.displayedItems.count)")
+
+        model.selectAll()
+        check("全选后 selectedIDs 等于项目数",
+              model.selectedIDs.count == model.displayedItems.count,
+              "selectedIDs=\(model.selectedIDs.count) 项目=\(model.displayedItems.count)")
+        check("全选后 selectedItems 等于项目数",
+              model.selectedItems.count == model.displayedItems.count,
+              "selectedItems=\(model.selectedItems.count)")
+        check("两个计数一致（状态栏与检查器由此取数）",
+              model.selectedIDs.count == model.selectedItems.count,
+              "IDs=\(model.selectedIDs.count) items=\(model.selectedItems.count)")
+
+        // 选择摘要不应为空
+        check("多选摘要有内容", !model.selectionSummary.isEmpty, model.selectionSummary)
+
+        // 关键：全选后每个项目的 id 都必须真的在 selectedIDs 里
+        let missing = model.displayedItems.filter { !model.selectedIDs.contains($0.id) }
+        check("全选后没有任何项目漏选", missing.isEmpty,
+              "漏选 \(missing.count) 项：\(missing.prefix(3).map(\.name).joined(separator: "/"))")
+
+        // selectedItems 必须与 displayedItems 完全对应（数量与顺序）
+        check("selectedItems 与 displayedItems 数量一致",
+              model.selectedItems.count == model.displayedItems.count,
+              "\(model.selectedItems.count) vs \(model.displayedItems.count)")
+
+        // 模拟界面读到的两个数字应当一致
+        let statusBarCount = model.selectedIDs.count
+        let inspectorCount = model.selectedItems.count
+        check("状态栏与检查器读到的数字一致", statusBarCount == inspectorCount,
+              "状态栏=\(statusBarCount) 检查器=\(inspectorCount)")
+
+        // 逐个取消选择，两者应始终同步
+        var mismatch = 0
+        for item in model.displayedItems {
+            model.selectedIDs.remove(item.id)
+            if model.selectedIDs.count != model.selectedItems.count { mismatch += 1 }
+        }
+        check("逐个取消过程中两个计数始终同步", mismatch == 0, "不一致 \(mismatch) 次")
     }
 
     // MARK: - 压缩与解压

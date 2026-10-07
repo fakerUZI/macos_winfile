@@ -262,7 +262,7 @@ struct WinFileCommands: Commands {
                 NotificationCenter.default.post(name: .winFileBeginRename, object: nil)
             }
             .keyboardShortcut(.return, modifiers: [])
-            .disabled((model?.selectedIDs.count ?? 0) != 1)
+            .disabled((model?.selectedCount ?? 0) != 1)
         }
 
         // 显示

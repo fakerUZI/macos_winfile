@@ -199,6 +199,13 @@ final class BrowserModel: ObservableObject {
         displayedItems.filter { selectedIDs.contains($0.id) }
     }
 
+    /// 选中数量。
+    ///
+    /// 界面各处统一用它取数：此前状态栏用 selectedIDs.count、检查器用
+    /// selectedItems.count，两者在 Table 高亮与模型状态短暂不同步时会显示
+    /// 不同数字（用户实测遇到 14 与 16 并存）。统一后不会再有这种矛盾。
+    var selectedCount: Int { selectedItems.count }
+
     var effectiveDirectory: URL? {
         currentDirectory ?? engine.authorizedRoots.first
     }
