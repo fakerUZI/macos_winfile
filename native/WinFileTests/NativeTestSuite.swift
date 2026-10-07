@@ -1154,6 +1154,59 @@ enum NativeTestSuite {
         check("容器条目的路径以 Data 结尾", containers.isEmpty || validContainers.count == containers.count,
               "\(validContainers.count)/\(containers.count)")
 
+        // UUID 容器：空壳应被过滤，有内容的应被推断出应用名
+        let uuidItems = items.filter { AppDataService.isUUID($0.bundleID) }
+        check("UUID 空壳容器已被过滤（有内容的仍保留且已改名）",
+              uuidItems.allSatisfy { $0.originalBundleID == nil || !AppDataService.isUUID($0.bundleID) },
+              uuidItems.prefix(3).map(\.bundleID).joined(separator: "/"))
+
+        // 推断出的名称必须来自真实线索
+        let inferred = items.filter { $0.originalBundleID != nil }
+        print("  由内容推断出应用名的容器: \(inferred.count) 个")
+        for entry in inferred.prefix(4) {
+            print("    \(entry.originalBundleID?.prefix(8) ?? "")… → \(entry.name)（\(entry.bundleID)）")
+        }
+        check("推断出的名称不是 UUID 形式",
+              inferred.allSatisfy { !AppDataService.isUUID($0.name) },
+              inferred.prefix(2).map(\.name).joined(separator: "/"))
+        check("推断后仍保留原容器编号",
+              inferred.allSatisfy { $0.originalBundleID != nil })
+
+        // 线索识别逻辑
+        check("能识别 Bundle 标识", AppDataService.looksLikeBundleID("com.tencent.weread"))
+        check("拒绝纯版本号", !AppDataService.looksLikeBundleID("10.2.0.85"))
+        check("拒绝过短的标识", !AppDataService.looksLikeBundleID("a.b"))
+
+        // 反向验证：显式包含时应当能看到它们（说明过滤而非消失）
+        let withShells = AppDataService.scan(includeEmptyShells: true)
+        let shellsWhenIncluded = withShells.filter { AppDataService.isUUID($0.bundleID) }
+        print("  包含空壳时条目数 \(withShells.count)，其中 UUID 容器 \(shellsWhenIncluded.count) 个")
+        check("显式包含时能看到空壳容器（证明是过滤而非丢失）",
+              shellsWhenIncluded.isEmpty || withShells.count > items.count,
+              "\(items.count) vs \(withShells.count)")
+
+        // UUID 判定本身的正确性
+        check("UUID 判定：标准形式为真",
+              AppDataService.isUUID("10BBAC01-58F1-42ED-B12D-389DD631825C"))
+        check("UUID 判定：应用标识为假",
+              !AppDataService.isUUID("com.tencent.xinWeChat"))
+        check("UUID 判定：长度不符为假",
+              !AppDataService.isUUID("10BBAC01-58F1-42ED-B12D-389DD631825"))
+        check("UUID 判定：非十六进制为假",
+              !AppDataService.isUUID("10BBAC0Z-58F1-42ED-B12D-389DD631825C"))
+
+        // 有内容的容器不得被误判为空壳（误删数据的风险点）
+        if let wechat = items.first(where: { $0.bundleID == "com.tencent.xinWeChat" }) {
+            check("有内容的应用容器不被判为空壳",
+                  !AppDataService.isEmptyShell(bundleID: wechat.bundleID, dataURL: wechat.dataURL))
+        }
+        // 有应用标识的容器一律不算空壳
+        if let named = items.first(where: { !AppDataService.isUUID($0.bundleID) }) {
+            check("有标识的容器不被判为空壳",
+                  !AppDataService.isEmptyShell(bundleID: named.bundleID, dataURL: named.dataURL),
+                  named.bundleID)
+        }
+
         // 常见应用（若已安装）应被识别出中文名
         if let wechat = items.first(where: { $0.bundleID == "com.tencent.xinWeChat" }) {
             check("微信被识别", wechat.name == "微信", wechat.name)

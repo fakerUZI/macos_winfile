@@ -394,3 +394,4 @@
 "android.hint.revealUnsupported" = "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。";
 
 "view.applications" = "应用程序";
+"appData.originalID" = "容器编号 %@";

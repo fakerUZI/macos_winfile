@@ -376,3 +376,4 @@
 "android.chooseSaveFolder" = "Download Here";
 "android.hint.revealUnsupported" = "Files on the device cannot be shown in Finder. Copy them to a local folder first.";
 "view.applications" = "Applications";
+"appData.originalID" = "Container %@";

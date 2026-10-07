@@ -137,6 +137,13 @@ struct AppDataCard: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    // 由容器内容推断出应用名时，保留原编号便于排查
+                    if let original = item.originalBundleID {
+                        Text(L("appData.originalID", "容器编号 %@", String(original.prefix(8)) + "…"))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                     if !item.isReadable {
                         Text(L("appData.badge.locked", "无权限访问"))
                             .font(.caption2)
