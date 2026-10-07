@@ -1,0 +1,349 @@
+/* WinFile 简体中文字符串（开发语言） */
+"app.name" = "WinFile 文件管理器";
+
+/* 侧边栏 */
+"sidebar.favorites" = "个人收藏";
+"sidebar.categories" = "按类型分类";
+"sidebar.locations" = "位置";
+"sidebar.authorized" = "已授权文件夹";
+"sidebar.counting" = "正在统计…";
+
+"place.desktop" = "桌面";
+"place.downloads" = "下载";
+"place.documents" = "文稿";
+"place.pictures" = "图片";
+"place.movies" = "影片";
+"place.music" = "音乐";
+"place.home" = "个人文件夹";
+"place.applications" = "应用程序";
+"place.shared" = "共享";
+"place.macintoshHD" = "Macintosh HD";
+
+/* 分类 */
+"category.folder" = "文件夹";
+"category.image" = "图片";
+"category.video" = "视频";
+"category.audio" = "音乐";
+"category.document" = "文档";
+"category.spreadsheet" = "表格";
+"category.presentation" = "演示文稿";
+"category.pdf" = "PDF";
+"category.archive" = "压缩包";
+"category.code" = "代码";
+"category.app" = "应用程序";
+"category.font" = "字体";
+"category.disk" = "磁盘映像";
+"category.executable" = "可执行文件";
+"category.database" = "数据库";
+"category.ebook" = "电子书";
+"category.design" = "设计素材";
+"category.other" = "其他";
+
+/* 类型描述 */
+"type.folder" = "文件夹";
+"type.symlinkFolder" = "替身文件夹";
+"type.symlink" = "替身";
+"type.file" = "文件";
+"type.applicationBundle" = "应用程序";
+
+/* 命令栏与操作 */
+"action.new" = "新建";
+"action.newFolder" = "新建文件夹";
+"action.newFile" = "新建文本文档";
+"action.open" = "打开";
+"action.openWith" = "打开方式";
+"action.openWithEllipsis" = "打开方式…";
+"action.reveal" = "在访达中显示";
+"action.copy" = "复制";
+"action.cut" = "剪切";
+"action.paste" = "粘贴";
+"action.pasteInto" = "粘贴到此处";
+"action.copyAs" = "复制为";
+"action.copyPath" = "复制完整路径";
+"action.copyName" = "复制文件名";
+"action.copyDir" = "复制所在目录";
+"action.rename" = "重命名";
+"action.renameEllipsis" = "重命名…";
+"action.delete" = "删除";
+"action.moveToTrash" = "移到废纸篓";
+"action.getInfo" = "显示简介";
+"action.reload" = "重新载入";
+"action.toggleHidden" = "显示/隐藏隐藏文件";
+"action.toggleSortOrder" = "切换升序/降序";
+"action.toggleInspector" = "显示详细信息";
+"action.openFolder" = "打开文件夹";
+"action.openFolder.help" = "授权并打开一个文件夹";
+"action.authorizeFolder" = "授权文件夹";
+"action.pasteClipboardAsFile" = "把剪贴板文本存成文件";
+"action.pasted" = "已粘贴";
+"action.moved" = "已移动";
+
+/* 排序与列 */
+"sort.name" = "名称";
+"sort.modified" = "修改日期";
+"sort.type" = "类型";
+"sort.size" = "大小";
+"column.name" = "名称";
+"column.modified" = "修改日期";
+"column.type" = "类型";
+"column.size" = "大小";
+
+"layout.details" = "详细信息";
+"layout.icons" = "大图标";
+
+/* 菜单 */
+"menu.newFolder" = "新建文件夹";
+"menu.newTab" = "在访达中打开当前文件夹";
+"menu.copyPath" = "复制路径";
+"menu.copyName" = "复制文件名";
+"menu.duplicate" = "制作副本";
+"menu.rename" = "重命名";
+"menu.toggleHidden" = "显示隐藏文件";
+"menu.layout" = "视图方式";
+"menu.go" = "前往";
+"menu.back" = "后退";
+"menu.forward" = "前进";
+"menu.up" = "上一级";
+"menu.home" = "个人文件夹";
+"menu.applications" = "应用程序";
+"menu.chooseFolder" = "打开文件夹…";
+"menu.help" = "WinFile 帮助";
+
+/* 搜索与路径 */
+"search.placeholder" = "在当前文件夹中搜索";
+"search.inFolder" = "搜索结果";
+"path.placeholder" = "输入路径，例如 ~/Documents";
+"path.hint" = "双击可编辑路径，支持 Tab 补全";
+
+/* 状态栏 */
+"status.itemCount" = "%d 个项目（%d 个文件夹，%d 个文件）";
+"status.appCount" = "共 %d 个应用程序";
+"status.categoryLoading" = "正在归类「%@」…";
+"status.categoryCount" = "%@：%d 个文件（来自整个浏览范围）";
+"status.categoryCount.truncated" = "%@：显示前 %d 个（已达上限）";
+"status.categoryEmpty" = "%@：没有找到文件";
+"status.selected" = "已选择 %d 项";
+"status.volume" = "%@ 可用，共 %@";
+"status.searchResult" = "找到 %d 个匹配“%@”的项目";
+"status.copied" = "已复制 %d 项到剪贴板";
+"status.cut" = "已剪切 %d 项到剪贴板";
+"status.pathCopied" = "路径已复制";
+"status.nameCopied" = "名称已复制";
+"status.deleted" = "已删除 %d 项";
+"status.duplicated" = "已生成 %d 个副本";
+"status.renamed" = "已重命名";
+"status.created" = "已创建“%@”";
+
+/* 详情窗格 */
+"inspector.currentFolder" = "当前文件夹";
+"inspector.multiSelect" = "已选择 %d 个项目";
+"inspector.folderSize" = "文件夹大小";
+"inspector.computing" = "正在统计…";
+"inspector.count" = "项目数：%d";
+"inspector.totalSize" = "总大小：%@";
+"inspector.items" = "项目数：%d";
+"inspector.folders" = "文件夹：%d";
+"inspector.volumeFree" = "可用空间：%@";
+"inspector.volumeTotal" = "总容量：%@";
+"inspector.noSelection" = "未选择任何项目";
+
+"attr.kind" = "种类";
+"attr.size" = "大小";
+"attr.modified" = "修改时间";
+"attr.created" = "创建时间";
+"attr.where" = "位置";
+"attr.bundleID" = "标识符";
+
+/* 对话框 */
+"dialog.rename.title" = "重命名";
+"dialog.rename.hint" = "只修改名称即可，扩展名会保留。";
+"dialog.newFolder.title" = "新建文件夹";
+"dialog.newFile.title" = "新建文本文档";
+"dialog.name" = "名称";
+"dialog.openWith.title" = "打开方式 — %@";
+"dialog.openWith.default" = "系统默认：%@";
+"dialog.openWith.search" = "搜索可用的应用";
+"dialog.openWith.empty" = "没有匹配的应用";
+"dialog.openWith.confirm" = "用选中的应用打开";
+"dialog.openWith.badge" = "默认";
+"default.newFolderName" = "新建文件夹";
+
+"button.ok" = "好";
+"button.cancel" = "取消";
+"button.create" = "创建";
+
+"alert.error.title" = "操作未完成";
+"alert.delete.title" = "要把“%@”移到废纸篓吗？";
+"alert.delete.title.multiple" = "要把这 %d 个项目移到废纸篓吗？";
+"alert.delete.message" = "可以从废纸篓恢复。";
+
+/* 空状态与授权 */
+"empty.folder" = "此文件夹为空";
+"empty.noSearchResult" = "没有匹配的项目";
+"empty.needAuthorization" = "尚未授权任何文件夹";
+"empty.authorize.hint" = "出于安全考虑，应用只能访问你明确授权的文件夹。点击下方按钮选择要浏览的文件夹。";
+"empty.hint" = "这个文件夹里没有内容。";
+"panel.authorize" = "授权访问";
+"panel.authorize.message" = "选择要在此应用中浏览的文件夹";
+
+/* 引擎说明 */
+"engine.sandboxed" = "沙盒模式：仅可访问已授权文件夹";
+"engine.notSandboxed" = "本地模式：可访问全部磁盘";
+
+/* 设置 */
+"settings.general" = "通用";
+"settings.privacy" = "隐私与授权";
+"settings.about" = "关于";
+"settings.layout" = "默认视图";
+"settings.showHidden" = "显示隐藏文件";
+"settings.startFolder" = "启动时打开";
+"settings.startFolder.default" = "上次使用的位置";
+"settings.choose" = "选择…";
+"settings.clear" = "清除";
+"settings.privacy.explain" = "WinFile 遵循 macOS 沙盒规范：只能读取你通过“打开文件夹”明确授权的位置。授权信息以安全作用域书签保存，可随时在此撤销。";
+"settings.privacy.mode" = "运行模式";
+"settings.privacy.count" = "已授权文件夹";
+"settings.privacy.authorize" = "授权新文件夹…";
+"settings.privacy.revoke" = "撤销全部授权";
+"settings.version" = "版本 %@";
+"settings.about.description" = "Windows 资源管理器风格的 macOS 文件管理器。原生 SwiftUI 实现，无外部进程、不联网、数据全部留在本机。";
+
+/* 帮助 */
+"help.title" = "WinFile 使用提示";
+"help.intro" = "WinFile 提供 Windows 资源管理器式的操作习惯，同时遵循 macOS 的沙盒与键盘规范。以下是最常用的操作。";
+"help.copyPaste" = "复制 / 粘贴所选文件（复制的同时会写入系统剪贴板）";
+"help.copyPath" = "复制所选文件的完整路径";
+"help.rename" = "重命名所选项目";
+"help.delete" = "把所选项目移到废纸篓";
+"help.newFolder" = "新建文件夹";
+"help.backForward" = "后退 / 前进";
+"help.up" = "返回上一级文件夹";
+"help.hidden" = "显示或隐藏隐藏文件";
+
+/* 日期与单位 */
+"date.todayFormat" = "今天 HH:mm";
+"date.yesterdayFormat" = "昨天 HH:mm";
+"unit.items" = "项";
+"unit.files" = "个文件";
+"unit.folders" = "个文件夹";
+
+/* 错误 */
+"error.notFound" = "“%@”不存在";
+"error.notDirectory" = "“%@”不是文件夹";
+"error.notAuthorized" = "该位置尚未授权访问，请先通过“打开文件夹”授权。";
+"error.invalidName" = "名称不合法";
+"error.nameExists" = "已存在名为“%@”的项目";
+"error.recursiveTransfer" = "不能把“%@”放进它自己或它的子文件夹中";
+"error.openFailed" = "无法打开该项目";
+"error.bookmarkFailed" = "无法保存对该文件夹的授权";
+
+/* 沙盒授权引导 */
+"sidebar.needAuth" = "沙盒模式：请先授权要浏览的文件夹。";
+"empty.authorize.hint" = "出于安全考虑，WinFile 只能访问你明确授权的文件夹。点击下方按钮选择要浏览的文件夹（可多选，例如桌面、文稿、下载）。授权会被记住，下次启动仍然有效。";
+
+/* 沙盒默认目录说明 */
+"sidebar.needAuth" = "沙盒模式：当前仅可浏览容器与应用程序，点 + 授权更多文件夹。";
+
+/* 分类视图与空状态说明 */
+"empty.category" = "该分类下没有文件";
+"empty.categoryLoading" = "正在扫描并归类，请稍候…";
+"empty.category.hint" = "「%@」分类会扫描你当前可浏览的全部范围。若这里为空，说明这些位置里还没有这类文件——可先通过左侧「授权文件夹」添加更多位置。";
+"empty.folder.hint" = "这个文件夹里没有可见项目。如果确实有文件，可能是隐藏文件，可点击下方按钮显示。";
+
+/* 主页（Home） */
+"view.home" = "主页";
+"view.thisPC" = "此电脑";
+"home.quickAccess" = "快速访问";
+"home.quickAccess.subtitle" = "常用文件夹";
+"home.favorites" = "收藏夹";
+"home.favorites.subtitle" = "已固定的文件夹（%d）";
+"home.unpin" = "取消固定";
+"home.pin" = "固定到收藏夹";
+"home.recent" = "最近使用";
+"home.recent.subtitle" = "最近修改与打开过的文件";
+"home.recent.empty" = "最近没有修改或打开过文件。";
+"home.loading" = "正在整理…";
+"home.clearHistory" = "清除打开记录";
+"home.showMore" = "展开全部 %d 项";
+"home.showLess" = "收起";
+"home.openContaining" = "打开所在文件夹";
+"recent.opened" = "打开于 %@";
+"recent.modified" = "修改于 %@";
+"recent.openedBadge" = "已打开";
+"status.loadingHome" = "正在整理主页…";
+"status.homeEmpty" = "最近没有修改或打开过文件";
+"status.homeCount" = "最近使用 %d 项";
+
+/* 此电脑（This PC） */
+"thispc.drives" = "设备和驱动器";
+"thispc.drives.subtitle" = "%d 个驱动器";
+"thispc.loading" = "正在读取…";
+"thispc.authorized" = "已授权文件夹";
+"drive.kind.system" = "系统磁盘";
+"drive.kind.removable" = "可移动磁盘";
+"drive.kind.external" = "外置磁盘";
+"drive.kind" = "类型";
+"drive.free" = "%@ 可用";
+"drive.total" = "共 %@";
+"drive.capacity" = "容量";
+"drive.used" = "已用";
+"drive.available" = "可用";
+"drive.fileSystem" = "文件系统";
+"drive.info" = "获取信息";
+"drive.eject" = "弹出";
+"drive.openInFinder" = "在访达中打开";
+"status.loadingDrives" = "正在读取磁盘信息…";
+"status.driveCount" = "%d 个驱动器";
+"status.ejected" = "已弹出「%@」";
+"error.ejectFailed" = "无法弹出「%@」";
+"drive.kind.diskImage" = "磁盘映像（只读）";
+"drive.imageHint" = "只读映像 · 大小 %@";
+
+/* 空白处右键菜单 */
+"menu.sortBy" = "排序方式";
+"menu.ascending" = "升序";
+"menu.descending" = "降序";
+"action.revealHere" = "在访达中显示当前文件夹";
+"action.copyCurrentPath" = "复制当前文件夹路径";
+"action.pasteInto" = "粘贴到此处";
+"action.getInfo" = "显示简介";
+"thispc.refresh" = "刷新磁盘信息";
+"thispc.showAll" = "显示全部驱动器";
+
+/* 页签 */
+"tab.new" = "新标签页";
+"tab.new.help" = "新标签页，可同时查看多个位置";
+"tab.close" = "关闭标签页";
+"tab.closeOthers" = "关闭其它标签页";
+"tab.duplicate" = "复制标签页";
+"tab.untitled" = "新标签页";
+"action.openFolderInNewTab" = "在新页签中打开文件夹";
+"panel.open" = "打开";
+"panel.open.message" = "选择要打开的文件夹";
+
+/* 诊断 */
+"menu.openDiagnostics" = "打开诊断日志";
+"menu.revealDiagnostics" = "在访达中显示日志";
+"settings.diagnostics.explain" = "遇到页签点击没反应等问题时，可先复现一次，再把日志发给我定位。";
+"settings.diagnostics.open" = "打开诊断日志";
+"settings.diagnostics.reveal" = "在访达中显示";
+"settings.diagnostics.clear" = "清空日志";
+
+/* 应用数据 */
+"view.appData" = "应用数据";
+"appData.title" = "应用数据";
+"appData.subtitle" = "选择应用即可浏览它保存的文件（附件、缓存、导出内容等）";
+"appData.needAccess.title" = "需要「完整磁盘访问权限」才能读取其它应用的数据";
+"appData.needAccess.detail" = "macOS 会保护其它应用的数据目录，此权限只能由你手动授予，应用无法自行申请。\n路径：系统设置 → 隐私与安全性 → 完整磁盘访问权限 → 勾选 WinFile，然后重新打开应用。";
+"appData.openSettings" = "打开系统设置";
+"appData.rescan" = "重新扫描";
+"appData.hideHint" = "不再提示";
+"appData.scanning" = "正在扫描…";
+"appData.empty" = "没有发现可浏览的应用数据目录。";
+"appData.badge.container" = "容器";
+"appData.badge.locked" = "无权限访问";
+"appData.openApp" = "打开应用";
+"appData.copyBundleID" = "复制 Bundle 标识";
+"status.scanningAppData" = "正在扫描应用数据目录…";
+"status.appDataCount" = "共 %d 个应用数据目录";
+"status.appDataNoAccess" = "共 %d 个应用数据目录（其中 %d 个需要完整磁盘访问权限）";

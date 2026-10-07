@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>WinFile</string>
+	<key>CFBundleDisplayName</key>
+	<string>WinFile 文件管理器</string>
+	<key>CFBundleExecutable</key>
+	<string>WinFile</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.winfile.mac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>本地文件管理器，仅在本机运行</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>WinFile 需要通过 Finder 把文件移到废纸篓，以及在终端中打开目录。</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>WinFile 需要浏览你的桌面文件。</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>WinFile 需要浏览你的文稿文件。</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>WinFile 需要浏览你的下载文件。</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>WinFile 需要浏览外置磁盘上的文件。</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>

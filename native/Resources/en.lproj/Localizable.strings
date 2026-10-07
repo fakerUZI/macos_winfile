@@ -1,0 +1,332 @@
+/* WinFile English strings */
+"app.name" = "WinFile";
+
+"sidebar.favorites" = "Favorites";
+"sidebar.categories" = "Categories";
+"sidebar.locations" = "Locations";
+"sidebar.authorized" = "Authorized Folders";
+"sidebar.counting" = "Counting…";
+
+"place.desktop" = "Desktop";
+"place.downloads" = "Downloads";
+"place.documents" = "Documents";
+"place.pictures" = "Pictures";
+"place.movies" = "Movies";
+"place.music" = "Music";
+"place.home" = "Home";
+"place.applications" = "Applications";
+"place.shared" = "Shared";
+"place.macintoshHD" = "Macintosh HD";
+
+"category.folder" = "Folder";
+"category.image" = "Images";
+"category.video" = "Videos";
+"category.audio" = "Music";
+"category.document" = "Documents";
+"category.spreadsheet" = "Spreadsheets";
+"category.presentation" = "Presentations";
+"category.pdf" = "PDF";
+"category.archive" = "Archives";
+"category.code" = "Code";
+"category.app" = "Applications";
+"category.font" = "Fonts";
+"category.disk" = "Disk Images";
+"category.executable" = "Executables";
+"category.database" = "Databases";
+"category.ebook" = "E-Books";
+"category.design" = "Design Files";
+"category.other" = "Other";
+
+"type.folder" = "Folder";
+"type.symlinkFolder" = "Alias Folder";
+"type.symlink" = "Alias";
+"type.file" = "File";
+"type.applicationBundle" = "Application";
+
+"action.new" = "New";
+"action.newFolder" = "New Folder";
+"action.newFile" = "New Text File";
+"action.open" = "Open";
+"action.openWith" = "Open With";
+"action.openWithEllipsis" = "Open With…";
+"action.reveal" = "Reveal in Finder";
+"action.copy" = "Copy";
+"action.cut" = "Cut";
+"action.paste" = "Paste";
+"action.pasteInto" = "Paste Into";
+"action.copyAs" = "Copy As";
+"action.copyPath" = "Full Path";
+"action.copyName" = "File Name";
+"action.copyDir" = "Containing Folder";
+"action.rename" = "Rename";
+"action.renameEllipsis" = "Rename…";
+"action.delete" = "Delete";
+"action.moveToTrash" = "Move to Trash";
+"action.getInfo" = "Get Info";
+"action.reload" = "Reload";
+"action.toggleHidden" = "Show/Hide Hidden Files";
+"action.toggleSortOrder" = "Toggle Sort Order";
+"action.toggleInspector" = "Show Inspector";
+"action.openFolder" = "Open Folder";
+"action.openFolder.help" = "Authorize and open a folder";
+"action.authorizeFolder" = "Authorize Folder";
+"action.pasteClipboardAsFile" = "Save Clipboard Text as File";
+"action.pasted" = "Pasted";
+"action.moved" = "Moved";
+
+"sort.name" = "Name";
+"sort.modified" = "Date Modified";
+"sort.type" = "Kind";
+"sort.size" = "Size";
+"column.name" = "Name";
+"column.modified" = "Date Modified";
+"column.type" = "Kind";
+"column.size" = "Size";
+
+"layout.details" = "Details";
+"layout.icons" = "Icons";
+
+"menu.newFolder" = "New Folder";
+"menu.newTab" = "Open Current Folder in Finder";
+"menu.copyPath" = "Copy Path";
+"menu.copyName" = "Copy File Name";
+"menu.duplicate" = "Duplicate";
+"menu.rename" = "Rename";
+"menu.toggleHidden" = "Show Hidden Files";
+"menu.layout" = "View As";
+"menu.go" = "Go";
+"menu.back" = "Back";
+"menu.forward" = "Forward";
+"menu.up" = "Enclosing Folder";
+"menu.home" = "Home";
+"menu.applications" = "Applications";
+"menu.chooseFolder" = "Open Folder…";
+"menu.help" = "WinFile Help";
+
+"search.placeholder" = "Search this folder";
+"search.inFolder" = "Search Results";
+"path.placeholder" = "Enter a path, e.g. ~/Documents";
+"path.hint" = "Double-click to edit the path; Tab completes";
+
+"status.itemCount" = "%d items (%d folders, %d files)";
+"status.appCount" = "%d applications";
+"status.categoryLoading" = "Sorting “%@”…";
+"status.categoryCount" = "%@: %d files (from all browsable locations)";
+"status.categoryCount.truncated" = "%@: showing first %d (limit reached)";
+"status.categoryEmpty" = "%@: no files found";
+"status.selected" = "%d selected";
+"status.volume" = "%@ available of %@";
+"status.searchResult" = "%d items matching “%@”";
+"status.copied" = "Copied %d items to the clipboard";
+"status.cut" = "Cut %d items to the clipboard";
+"status.pathCopied" = "Path copied";
+"status.nameCopied" = "Name copied";
+"status.deleted" = "Deleted %d items";
+"status.duplicated" = "Created %d duplicates";
+"status.renamed" = "Renamed";
+"status.created" = "Created “%@”";
+
+"inspector.currentFolder" = "Current Folder";
+"inspector.multiSelect" = "%d items selected";
+"inspector.folderSize" = "Folder Size";
+"inspector.computing" = "Calculating…";
+"inspector.count" = "Items: %d";
+"inspector.totalSize" = "Total size: %@";
+"inspector.items" = "Items: %d";
+"inspector.folders" = "Folders: %d";
+"inspector.volumeFree" = "Available: %@";
+"inspector.volumeTotal" = "Capacity: %@";
+"inspector.noSelection" = "Nothing selected";
+
+"attr.kind" = "Kind";
+"attr.size" = "Size";
+"attr.modified" = "Modified";
+"attr.created" = "Created";
+"attr.where" = "Where";
+"attr.bundleID" = "Bundle ID";
+
+"dialog.rename.title" = "Rename";
+"dialog.rename.hint" = "The extension is preserved.";
+"dialog.newFolder.title" = "New Folder";
+"dialog.newFile.title" = "New Text File";
+"dialog.name" = "Name";
+"dialog.openWith.title" = "Open With — %@";
+"dialog.openWith.default" = "Default: %@";
+"dialog.openWith.search" = "Search applications";
+"dialog.openWith.empty" = "No matching applications";
+"dialog.openWith.confirm" = "Open with Selected App";
+"dialog.openWith.badge" = "Default";
+"default.newFolderName" = "untitled folder";
+
+"button.ok" = "OK";
+"button.cancel" = "Cancel";
+"button.create" = "Create";
+
+"alert.error.title" = "Could Not Complete";
+"alert.delete.title" = "Move “%@” to the Trash?";
+"alert.delete.title.multiple" = "Move these %d items to the Trash?";
+"alert.delete.message" = "You can restore them from the Trash.";
+
+"empty.folder" = "This folder is empty";
+"empty.noSearchResult" = "No matching items";
+"empty.needAuthorization" = "No folder authorized yet";
+"empty.authorize.hint" = "For your security the app can only access folders you explicitly authorize. Click below to choose a folder.";
+"empty.hint" = "This folder has no items.";
+"panel.authorize" = "Authorize";
+"panel.authorize.message" = "Choose a folder to browse in this app";
+
+"engine.sandboxed" = "Sandboxed: authorized folders only";
+"engine.notSandboxed" = "Local mode: full disk access";
+
+"settings.general" = "General";
+"settings.privacy" = "Privacy";
+"settings.about" = "About";
+"settings.layout" = "Default view";
+"settings.showHidden" = "Show hidden files";
+"settings.startFolder" = "Open at launch";
+"settings.startFolder.default" = "Last used location";
+"settings.choose" = "Choose…";
+"settings.clear" = "Clear";
+"settings.privacy.explain" = "WinFile follows the macOS sandbox: it can only read locations you explicitly authorize. Authorizations are stored as security-scoped bookmarks and can be revoked here.";
+"settings.privacy.mode" = "Mode";
+"settings.privacy.count" = "Authorized folders";
+"settings.privacy.authorize" = "Authorize Folder…";
+"settings.privacy.revoke" = "Revoke All";
+"settings.version" = "Version %@";
+"settings.about.description" = "A Windows Explorer–style file manager for macOS. Native SwiftUI, no external processes, no network access, everything stays on your Mac.";
+
+"help.title" = "WinFile Tips";
+"help.intro" = "WinFile brings Windows Explorer habits to macOS while respecting the sandbox and standard keyboard shortcuts.";
+"help.copyPaste" = "Copy / paste selected files (also writes them to the system clipboard)";
+"help.copyPath" = "Copy the full path of the selection";
+"help.rename" = "Rename the selected item";
+"help.delete" = "Move the selection to the Trash";
+"help.newFolder" = "New folder";
+"help.backForward" = "Back / forward";
+"help.up" = "Go to the enclosing folder";
+"help.hidden" = "Show or hide hidden files";
+
+"date.todayFormat" = "'Today' HH:mm";
+"date.yesterdayFormat" = "'Yesterday' HH:mm";
+"unit.items" = "items";
+"unit.files" = "files";
+"unit.folders" = "folders";
+
+"error.notFound" = "“%@” does not exist";
+"error.notDirectory" = "“%@” is not a folder";
+"error.notAuthorized" = "That location is not authorized. Use “Open Folder” first.";
+"error.invalidName" = "Invalid name";
+"error.nameExists" = "An item named “%@” already exists";
+"error.recursiveTransfer" = "“%@” cannot be placed inside itself or its subfolders";
+"error.openFailed" = "Could not open the item";
+"error.bookmarkFailed" = "Could not save authorization for that folder";
+
+/* Sandbox authorization guidance */
+"sidebar.needAuth" = "Sandboxed: authorize folders to browse.";
+"empty.authorize.hint" = "For your security WinFile can only access folders you explicitly authorize. Click below to choose folders (multiple selection allowed, e.g. Desktop, Documents, Downloads). Authorizations are remembered across launches.";
+
+"sidebar.needAuth" = "Sandboxed: only the container and Applications are available. Click + to authorize more folders.";
+
+/* Category view & empty states */
+"empty.category" = "No files in this category";
+"empty.categoryLoading" = "Scanning and sorting, please wait…";
+"empty.category.hint" = "The “%@” category scans everything you can currently browse. If it is empty, there are no such files in those locations yet — authorize more folders from the sidebar.";
+"empty.folder.hint" = "This folder has no visible items. If you expect files here, they may be hidden — use the button below to show them.";
+
+/* Home */
+"view.home" = "Home";
+"view.thisPC" = "This PC";
+"home.quickAccess" = "Quick access";
+"home.quickAccess.subtitle" = "Frequently used folders";
+"home.favorites" = "Favorites";
+"home.favorites.subtitle" = "Pinned folders (%d)";
+"home.unpin" = "Unpin";
+"home.pin" = "Pin to Favorites";
+"home.recent" = "Recent";
+"home.recent.subtitle" = "Recently modified and opened files";
+"home.recent.empty" = "No recently modified or opened files.";
+"home.loading" = "Gathering…";
+"home.clearHistory" = "Clear open history";
+"home.showMore" = "Show all %d items";
+"home.showLess" = "Show less";
+"home.openContaining" = "Open Containing Folder";
+"recent.opened" = "Opened %@";
+"recent.modified" = "Modified %@";
+"recent.openedBadge" = "Opened";
+"status.loadingHome" = "Building Home…";
+"status.homeEmpty" = "No recently modified or opened files";
+"status.homeCount" = "%d recent items";
+
+/* This PC */
+"thispc.drives" = "Devices and drives";
+"thispc.drives.subtitle" = "%d drives";
+"thispc.loading" = "Reading…";
+"thispc.authorized" = "Authorized Folders";
+"drive.kind.system" = "System drive";
+"drive.kind.removable" = "Removable drive";
+"drive.kind.external" = "External drive";
+"drive.kind" = "Kind";
+"drive.free" = "%@ free";
+"drive.total" = "%@ total";
+"drive.capacity" = "Capacity";
+"drive.used" = "Used";
+"drive.available" = "Available";
+"drive.fileSystem" = "File system";
+"drive.info" = "Get Info";
+"drive.eject" = "Eject";
+"drive.openInFinder" = "Open in Finder";
+"status.loadingDrives" = "Reading drives…";
+"status.driveCount" = "%d drives";
+"status.ejected" = "Ejected “%@”";
+"error.ejectFailed" = "Could not eject “%@”";
+"drive.kind.diskImage" = "Disk image (read-only)";
+"drive.imageHint" = "Read-only image · %@";
+
+/* Background context menu */
+"menu.sortBy" = "Sort By";
+"menu.ascending" = "Ascending";
+"menu.descending" = "Descending";
+"action.revealHere" = "Reveal Current Folder in Finder";
+"action.copyCurrentPath" = "Copy Folder Path";
+"action.pasteInto" = "Paste Into";
+"action.getInfo" = "Get Info";
+"thispc.refresh" = "Refresh Drives";
+"thispc.showAll" = "Show All Drives";
+
+/* Tabs */
+"tab.new" = "New Tab";
+"tab.new.help" = "New tab — browse several locations at once";
+"tab.close" = "Close Tab";
+"tab.closeOthers" = "Close Other Tabs";
+"tab.duplicate" = "Duplicate Tab";
+"tab.untitled" = "New Tab";
+"action.openFolderInNewTab" = "Open Folder in New Tab";
+"panel.open" = "Open";
+"panel.open.message" = "Choose a folder to open";
+
+/* Diagnostics */
+"menu.openDiagnostics" = "Open Diagnostics Log";
+"menu.revealDiagnostics" = "Reveal Diagnostics Log";
+"settings.diagnostics.explain" = "If tabs do not respond, reproduce the issue once and send me the log.";
+"settings.diagnostics.open" = "Open Diagnostics Log";
+"settings.diagnostics.reveal" = "Reveal in Finder";
+"settings.diagnostics.clear" = "Clear Log";
+
+/* App Data */
+"view.appData" = "App Data";
+"appData.title" = "App Data";
+"appData.subtitle" = "Pick an app to browse the files it stores (attachments, caches, exports).";
+"appData.needAccess.title" = "Full Disk Access is required to read other apps' data";
+"appData.needAccess.detail" = "macOS protects other apps' data directories. Only you can grant this permission.\nPath: System Settings → Privacy & Security → Full Disk Access → enable WinFile, then relaunch.";
+"appData.openSettings" = "Open System Settings";
+"appData.rescan" = "Rescan";
+"appData.hideHint" = "Don't show again";
+"appData.scanning" = "Scanning…";
+"appData.empty" = "No browsable app data directories found.";
+"appData.badge.container" = "Container";
+"appData.badge.locked" = "No access";
+"appData.openApp" = "Open App";
+"appData.copyBundleID" = "Copy Bundle ID";
+"status.scanningAppData" = "Scanning app data directories…";
+"status.appDataCount" = "%d app data directories";
+"status.appDataNoAccess" = "%d app data directories (%d need Full Disk Access)";

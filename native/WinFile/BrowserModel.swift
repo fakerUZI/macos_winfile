@@ -1,0 +1,834 @@
+// 浏览状态：导航历史、排序、选择、剪贴板、视图模式
+import AppKit
+import Combine
+import Foundation
+import SwiftUI
+
+enum SidebarSelection: Hashable {
+    case home
+    case thisPC
+    case folder(URL)
+    case applications
+    case appData
+    case category(FileCategory)
+}
+
+enum ViewLayout: String {
+    case details, icons
+}
+
+enum SortField: String, CaseIterable {
+    case name, modified, type, size
+
+    var localizedTitle: String {
+        switch self {
+        case .name: return NSLocalizedString("sort.name", comment: "按名称")
+        case .modified: return NSLocalizedString("sort.modified", comment: "按修改日期")
+        case .type: return NSLocalizedString("sort.type", comment: "按类型")
+        case .size: return NSLocalizedString("sort.size", comment: "按大小")
+        }
+    }
+}
+
+struct ClipboardPayload {
+    enum Mode { case copy, cut }
+    var mode: Mode
+    var urls: [URL]
+
+    var localizedVerb: String {
+        mode == .copy
+            ? NSLocalizedString("clipboard.copied", comment: "已复制")
+            : NSLocalizedString("clipboard.cut", comment: "已剪切")
+    }
+}
+
+@MainActor
+final class BrowserModel: ObservableObject {
+
+    // 导航
+    @Published var selection: SidebarSelection?
+    @Published private(set) var currentDirectory: URL?
+    @Published private(set) var items: [FileItem] = []
+    @Published var selectedIDs: Set<String> = []
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchResults: [FileItem] = []
+    /// 分类视图结果（在整个可浏览范围内按类型收集）
+    @Published private(set) var categoryResults: [FileItem] = []
+    @Published private(set) var isLoadingCategory = false
+
+    // 主页（Home）
+    @Published private(set) var quickAccess: [SidebarPlace] = []
+    @Published private(set) var pinnedFolders: [URL] = []
+    @Published private(set) var recentEntries: [RecentEntry] = []
+    @Published private(set) var isLoadingHome = false
+    @Published var showAllRecent = false
+
+    // 此电脑（This PC）
+    @Published private(set) var drives: [DriveInfo] = []
+    @Published private(set) var isLoadingDrives = false
+    /// 应用数据目录列表与加载状态
+    @Published private(set) var appDataItems: [AppDataItem] = []
+    @Published private(set) var isLoadingAppData = false
+    @Published private(set) var needsFullDiskAccess = false
+
+    // 视图选项
+    @AppStorage("ViewLayout") var layoutRaw: String = ViewLayout.details.rawValue
+    @AppStorage("ShowHiddenFiles") var showHidden: Bool = false
+    @AppStorage("SortField") private var sortFieldRaw: String = SortField.name.rawValue
+    @AppStorage("SortAscending") private var sortAscending: Bool = true
+
+    // 剪贴板
+    @Published private(set) var clipboard: ClipboardPayload?
+    @Published var statusMessage: String = ""
+    @Published var errorMessage: String?
+    @Published var isBusy = false
+    @Published var categoryFilter: FileCategory?
+
+    let engine: FSEngine
+    private var backStack: [SidebarSelection] = []
+    private var forwardStack: [SidebarSelection] = []
+    private var listingTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
+    private var categoryTask: Task<Void, Never>?
+    private var homeTask: Task<Void, Never>?
+
+    init(engine: FSEngine, startDirectory: URL?) {
+        self.engine = engine
+        if let start = startDirectory {
+            currentDirectory = start
+            selection = .folder(start)
+            reload()
+        }
+    }
+
+    var layout: ViewLayout {
+        get { ViewLayout(rawValue: layoutRaw) ?? .details }
+        set { layoutRaw = newValue.rawValue }
+    }
+
+    var sortField: SortField {
+        get { SortField(rawValue: sortFieldRaw) ?? .name }
+        set { sortFieldRaw = newValue.rawValue; applySort() }
+    }
+
+    var sortAscendingFlag: Bool {
+        get { sortAscending }
+        set { sortAscending = newValue; applySort() }
+    }
+
+    // MARK: - 数据源
+
+    /// 当前展示的条目：分类视图 > 搜索结果 > 当前目录
+    /// （主页与此电脑有自己的专用视图，不使用列表）
+    var displayedItems: [FileItem] {
+        if categoryFilter != nil { return categoryResults }
+        if isSearching { return searchResults }
+        return items
+    }
+
+    /// 是否处于分类视图
+    var isCategoryView: Bool { categoryFilter != nil }
+
+    /// 是否处于「应用数据」视图
+    var isAppDataView: Bool {
+        if case .appData = selection { return true }
+        return false
+    }
+
+    /// 是否处于主页
+    var isHomeView: Bool {
+        if case .home = selection { return true }
+        return false
+    }
+
+    /// 是否处于「此电脑」
+    var isThisPCView: Bool {
+        if case .thisPC = selection { return true }
+        return false
+    }
+
+    var canGoBack: Bool { !backStack.isEmpty }
+    var canGoForward: Bool { !forwardStack.isEmpty }
+
+    /// 分类视图是否为空（用于提示文案）
+    var categoryIsEmpty: Bool { categoryFilter != nil && !isLoadingCategory && categoryResults.isEmpty }
+
+    var canGoUp: Bool {
+        guard let dir = currentDirectory else { return false }
+        return dir.path != "/" && !dir.path.isEmpty
+    }
+
+    var selectedItems: [FileItem] {
+        displayedItems.filter { selectedIDs.contains($0.id) }
+    }
+
+    var effectiveDirectory: URL? {
+        currentDirectory ?? engine.authorizedRoots.first
+    }
+
+    var windowSubtitle: String {
+        switch selection {
+        case .home:
+            return L("view.home", "主页")
+        case .thisPC:
+            return L("view.thisPC", "此电脑")
+        case .applications:
+            return L("view.applications", "应用程序")
+        case .appData:
+            return L("view.appData", "应用数据")
+        case .category(let category):
+            return category.localizedName
+        case .folder(let url):
+            return url.lastPathComponent
+        case nil:
+            return ""
+        }
+    }
+
+    // MARK: - 导航
+
+    func navigate(to target: SidebarSelection, recordHistory: Bool = true) {
+        if recordHistory, let current = selection, current != target {
+            backStack.append(current)
+            forwardStack.removeAll()
+        }
+        TabDiagnostics.shared.record("navigate", detail: "目标=\(describe(target)) 旧=\(describe(selection))")
+        selection = target
+        switch target {
+        case .home:
+            loadHome()
+        case .thisPC:
+            loadThisPC()
+        case .folder(let url):
+            load(directory: url)
+        case .applications:
+            loadApplications()
+        case .appData:
+            loadAppData()
+        case .category(let category):
+            categoryFilter = category
+            loadCategory(category)
+        }
+    }
+
+    func selectFolder(_ url: URL) {
+        categoryFilter = nil
+        navigate(to: .folder(url))
+        TabDiagnostics.shared.record("selectFolder.done",
+                                     detail: "目录=\(currentDirectory?.lastPathComponent ?? "-") 选择=\(describe(selection))")
+    }
+
+    /// 便于诊断：把选中项描述成短字符串
+    private func describe(_ value: SidebarSelection?) -> String {
+        switch value {
+        case .home: return "主页"
+        case .thisPC: return "此电脑"
+        case .applications: return "应用程序"
+        case .appData: return "应用数据"
+        case .category(let c): return "分类:\(c.rawValue)"
+        case .folder(let url): return "文件夹:\(url.lastPathComponent)"
+        case nil: return "无"
+        }
+    }
+
+    func goBack() {
+        guard let previous = backStack.popLast() else { return }
+        if let current = selection { forwardStack.append(current) }
+        selection = nil
+        navigate(to: previous, recordHistory: false)
+    }
+
+    func goForward() {
+        guard let next = forwardStack.popLast() else { return }
+        if let current = selection { backStack.append(current) }
+        selection = nil
+        navigate(to: next, recordHistory: false)
+    }
+
+    func goUp() {
+        guard let dir = currentDirectory, canGoUp else { return }
+        selectFolder(dir.deletingLastPathComponent())
+    }
+
+    // MARK: - 加载
+
+    func reload() {
+        guard let dir = currentDirectory else {
+            if case .applications = selection { loadApplications() }
+            return
+        }
+        load(directory: dir, resetCategory: false)
+    }
+
+    private func load(directory: URL, resetCategory: Bool = true) {
+        listingTask?.cancel()
+        categoryTask?.cancel()
+        currentDirectory = directory
+        isSearching = false
+        searchResults = []
+        if resetCategory {
+            categoryFilter = nil
+            categoryResults = []
+            isLoadingCategory = false
+        }
+        isLoadingHome = false
+        isLoadingDrives = false
+        isBusy = true
+        let showHidden = showHidden
+        let engine = self.engine
+        listingTask = Task { [weak self] in
+            var loaded: [FileItem] = []
+            var failure: String?
+            do {
+                loaded = try await Task.detached(priority: .userInitiated) {
+                    try FileSystemService.list(directory, showHidden: showHidden)
+                }.value
+            } catch {
+                failure = error.localizedDescription
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.items = loaded
+                self.selectedIDs = self.selectedIDs.filter { id in loaded.contains { $0.id == id } }
+                self.isBusy = false
+                if let failure {
+                    self.errorMessage = failure
+                    self.statusMessage = failure
+                } else {
+                    self.updateStatus()
+                }
+            }
+        }
+    }
+
+    // MARK: - 主页（Home）
+
+    func loadHome() {
+        homeTask?.cancel()
+        if case .home = selection {} else { selection = .home }
+        categoryFilter = nil
+        categoryResults = []
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        selectedIDs = []
+        isLoadingHome = true
+        isBusy = true
+        statusMessage = L("status.loadingHome", "正在整理主页…")
+        refreshFavorites()
+        let roots = engine.browsableRoots
+        homeTask = Task { [weak self] in
+            let entries = await Task.detached(priority: .userInitiated) {
+                PlacesService.recentEntries(under: roots, limit: 40)
+            }.value
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.recentEntries = entries
+                self.isLoadingHome = false
+                self.isBusy = false
+                self.quickAccess = PlacesService.quickAccessFolders()
+                self.statusMessage = entries.isEmpty
+                    ? L("status.homeEmpty", "最近没有修改或打开过文件")
+                    : L("status.homeCount", "最近使用 %d 项", entries.count)
+            }
+        }
+    }
+
+    /// 刷新收藏夹与快速访问（固定/取消固定后调用）
+    func refreshFavorites() {
+        pinnedFolders = FavoritesStore.shared.pinnedFolders
+        quickAccess = PlacesService.quickAccessFolders()
+    }
+
+    func togglePin(_ url: URL) {
+        FavoritesStore.shared.togglePin(url)
+        refreshFavorites()
+    }
+
+    func isPinned(_ url: URL) -> Bool {
+        pinnedFolders.contains { $0.path == url.standardizedFileURL.path }
+    }
+
+    /// 打开主页里的条目（会记录到「最近打开」）
+    func openRecent(_ entry: RecentEntry) {
+        activate(entry.item)
+    }
+
+    func clearRecentHistory() {
+        FavoritesStore.shared.clearOpened()
+        loadHome()
+    }
+
+    // MARK: - 此电脑（This PC）
+
+    /// 载入「应用数据」列表。
+    ///
+    /// 说明：读取其它应用的容器需要「完整磁盘访问权限」，
+    /// 该权限只能由用户在系统设置中手动授予。未授权时相关目录不可读，
+    /// 这里会置起 needsFullDiskAccess 以便界面给出明确指引。
+    func loadAppData() {
+        homeTask?.cancel()
+        if case .appData = selection {} else { selection = .appData }
+        categoryFilter = nil
+        categoryResults = []
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        selectedIDs = []
+        isLoadingAppData = true
+        isBusy = true
+        statusMessage = L("status.scanningAppData", "正在扫描应用数据目录…")
+
+        homeTask = Task { [weak self] in
+            let scanned = await Task.detached(priority: .userInitiated) {
+                AppDataService.scan()
+            }.value
+            let sufficient = await Task.detached(priority: .userInitiated) {
+                AppDataService.hasSufficientAccess(scanned)
+            }.value
+            guard let self, !Task.isCancelled else { return }
+            self.needsFullDiskAccess = !sufficient
+            self.appDataItems = scanned
+            self.isLoadingAppData = false
+            self.isBusy = false
+            let readable = scanned.filter { $0.isReadable }.count
+            self.statusMessage = sufficient
+                ? L("status.appDataCount", "共 %d 个应用数据目录（%d 个可浏览）", scanned.count, readable)
+                : L("status.appDataNoAccess", "共 %d 个应用数据目录（其中 %d 个需要完整磁盘访问权限）",
+                    scanned.count, scanned.count - readable)
+        }
+    }
+
+    func loadThisPC() {
+        homeTask?.cancel()
+        if case .thisPC = selection {} else { selection = .thisPC }
+        categoryFilter = nil
+        categoryResults = []
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        selectedIDs = []
+        isLoadingDrives = true
+        isBusy = true
+        statusMessage = L("status.loadingDrives", "正在读取磁盘信息…")
+        homeTask = Task { [weak self] in
+            let found = await Task.detached(priority: .userInitiated) {
+                PlacesService.drives()
+            }.value
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.drives = found
+                self.isLoadingDrives = false
+                self.isBusy = false
+                self.statusMessage = L("status.driveCount", "%d 个驱动器", found.count)
+            }
+        }
+    }
+
+    @discardableResult
+    func eject(_ drive: DriveInfo) -> Bool {
+        let ok = PlacesService.eject(drive)
+        if ok {
+            statusMessage = L("status.ejected", "已弹出「%@」", drive.name)
+            loadThisPC()
+        } else {
+            errorMessage = L("error.ejectFailed", "无法弹出「%@」", drive.name)
+        }
+        return ok
+    }
+
+    /// 记录「最近打开」——由打开动作调用
+    func noteOpened(_ url: URL) {
+        FavoritesStore.shared.recordOpened(url)
+    }
+
+    /// 在整个可浏览范围内按类型收集文件（Windows 式「按类型分类」视图）
+    func loadCategory(_ category: FileCategory) {
+        categoryTask?.cancel()
+        categoryFilter = category
+        isSearching = false
+        searchResults = []
+        categoryResults = []
+        isLoadingCategory = true
+        isBusy = true
+        statusMessage = L("status.categoryLoading", "正在归类「%@」…", category.localizedName)
+        let roots = engine.browsableRoots
+        categoryTask = Task { [weak self] in
+            let found = await Task.detached(priority: .userInitiated) {
+                FileSystemService.categoryFiles(category, under: roots)
+            }.value
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.categoryFilter == category else { return }
+                self.categoryResults = found
+                self.isLoadingCategory = false
+                self.isBusy = false
+                self.selectedIDs = []
+                if found.isEmpty {
+                    self.statusMessage = L("status.categoryEmpty", "%@：没有找到文件", category.localizedName)
+                } else {
+                    let truncated = found.count >= FileSystemService.categoryBudget
+                    let key = truncated ? "status.categoryCount.truncated" : "status.categoryCount"
+                    let fallback = truncated
+                        ? "%@：显示前 %d 个（已达上限，可在文件夹中查看更精确的结果）"
+                        : "%@：%d 个文件（来自整个浏览范围）"
+                    self.statusMessage = L(key, fallback, category.localizedName, found.count)
+                }
+            }
+        }
+    }
+
+    func loadApplications() {
+        listingTask?.cancel()
+        categoryTask?.cancel()
+        currentDirectory = nil
+        isSearching = false
+        categoryFilter = nil
+        categoryResults = []
+        isLoadingCategory = false
+        isBusy = true
+        let roots = engine.authorizedRoots
+        listingTask = Task { [weak self] in
+            let apps = await Task.detached(priority: .userInitiated) {
+                FileSystemService.listApplications(allowedRoots: roots)
+            }.value
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.items = apps
+                self.selectedIDs = []
+                self.isBusy = false
+                self.statusMessage = String(format: NSLocalizedString("status.appCount", comment: "应用数量"), apps.count)
+            }
+        }
+    }
+
+    func toggleHiddenFiles() {
+        showHidden.toggle()
+        reload()
+    }
+
+    func setLayout(_ newLayout: ViewLayout) {
+        layout = newLayout
+    }
+
+    func setCategoryFilter(_ category: FileCategory?) {
+        if let category {
+            selection = .category(category)
+            loadCategory(category)
+        } else {
+            categoryFilter = nil
+            categoryResults = []
+            isLoadingCategory = false
+            if let dir = currentDirectory {
+                selection = .folder(dir)
+                load(directory: dir)
+            }
+        }
+    }
+
+    // MARK: - 排序
+
+    private func applySort() {
+        items = FileSystemService.sort(items, field: sortField, ascending: sortAscending)
+    }
+
+    // MARK: - 选择
+
+    func select(_ item: FileItem, extend: Bool = false, toggle: Bool = false) {
+        if toggle {
+            if selectedIDs.contains(item.id) { selectedIDs.remove(item.id) } else { selectedIDs.insert(item.id) }
+        } else if extend {
+            selectedIDs.insert(item.id)
+        } else {
+            selectedIDs = [item.id]
+        }
+    }
+
+    func selectAll() {
+        selectedIDs = Set(displayedItems.map(\.id))
+    }
+
+    func clearSelection() {
+        selectedIDs.removeAll()
+    }
+
+    // MARK: - 操作
+
+    func activate(_ item: FileItem) {
+        TabDiagnostics.shared.record("activate", detail: "项目=\(item.name) 目录=\(item.isDirectory)")
+        // .app 包双击启动；普通文件夹进入浏览
+        if item.isBundle && item.url.pathExtension.lowercased() == "app" {
+            noteOpened(item.url)
+            engine.open(item)
+            return
+        }
+        if item.isDirectory {
+            selectFolder(item.url)
+            return
+        }
+        noteOpened(item.url)
+        engine.open(item)
+    }
+
+    func openSelection() {
+        for item in selectedItems { activate(item) }
+    }
+
+    func openSelection(withApplicationAt appURL: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        for item in selectedItems {
+            NSWorkspace.shared.open([item.url], withApplicationAt: appURL, configuration: config) { _, error in
+                if let error { Task { @MainActor in self.errorMessage = error.localizedDescription } }
+            }
+        }
+    }
+
+    func revealSelection() {
+        engine.revealInFinder(selectedItems)
+    }
+
+    func copySelectionToClipboard() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        clipboard = ClipboardPayload(mode: .copy, urls: urls)
+        // 同时写入系统剪贴板，可直接粘到其它应用
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        statusMessage = String(format: NSLocalizedString("status.copied", comment: "已复制到剪贴板"), urls.count)
+    }
+
+    func cutSelectionToClipboard() {
+        let urls = selectedItems.map(\.url)
+        guard !urls.isEmpty else { return }
+        clipboard = ClipboardPayload(mode: .cut, urls: urls)
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.writeObjects(urls as [NSURL])
+        statusMessage = String(format: NSLocalizedString("status.cut", comment: "已剪切到剪贴板"), urls.count)
+    }
+
+    /// 复制选中的文件路径文本到剪贴板
+    func copyPathToClipboard(includeDirectory: Bool = false) {
+        let urls = selectedItems.map { includeDirectory ? $0.url.deletingLastPathComponent() : $0.url }
+        guard !urls.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
+        statusMessage = NSLocalizedString("status.pathCopied", comment: "路径已复制")
+    }
+
+    func copyNameToClipboard() {
+        let names = selectedItems.map(\.name)
+        guard !names.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(names.joined(separator: "\n"), forType: .string)
+        statusMessage = NSLocalizedString("status.nameCopied", comment: "名称已复制")
+    }
+
+    func paste() {
+        guard let clipboard, let directory = currentDirectory else { return }
+        let urls = clipboard.urls
+        let mode: FSEngine.TransferMode = clipboard.mode == .copy ? .copy : .move
+        isBusy = true
+        Task { [weak self] in
+            guard let self else { return }
+            var failure: String?
+            do {
+                let items = urls.compactMap { url -> FileItem? in
+                    FileItem(url: url, resourceKeys: FSEngine.resourceKeys, showHidden: true)
+                }
+                _ = try self.engine.transfer(items, to: directory, mode: mode)
+            } catch {
+                failure = error.localizedDescription
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isBusy = false
+                if let failure {
+                    self.errorMessage = failure
+                } else {
+                    let verb = mode == .copy
+                        ? NSLocalizedString("action.pasted", comment: "已粘贴")
+                        : NSLocalizedString("action.moved", comment: "已移动")
+                    self.statusMessage = "\(verb) \(urls.count) \(NSLocalizedString("unit.items", comment: "项"))"
+                    if mode == .move { self.clipboard = nil }
+                }
+                self.reload()
+            }
+        }
+    }
+
+    func deleteSelection(permanently: Bool = false) {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        isBusy = true
+        Task { [weak self] in
+            guard let self else { return }
+            var failure: String?
+            do {
+                if permanently {
+                    for item in items { try FileManager.default.removeItem(at: item.url) }
+                } else {
+                    try self.engine.moveToTrash(items)
+                }
+            } catch {
+                failure = error.localizedDescription
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isBusy = false
+                if let failure {
+                    self.errorMessage = failure
+                } else {
+                    self.statusMessage = String(format: NSLocalizedString("status.deleted", comment: "已删除"), items.count)
+                    self.selectedIDs.removeAll()
+                }
+                self.reload()
+            }
+        }
+    }
+
+    func duplicateSelection() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        isBusy = true
+        Task { [weak self] in
+            guard let self else { return }
+            var failure: String?
+            do { _ = try self.engine.duplicate(items) } catch { failure = error.localizedDescription }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isBusy = false
+                if let failure { self.errorMessage = failure } else {
+                    self.statusMessage = String(format: NSLocalizedString("status.duplicated", comment: "已生成副本"), items.count)
+                }
+                self.reload()
+            }
+        }
+    }
+
+    func rename(_ item: FileItem, to newName: String) {
+        do {
+            _ = try engine.rename(item, to: newName)
+            statusMessage = NSLocalizedString("status.renamed", comment: "已重命名")
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func createFolder(named name: String) {
+        guard let directory = currentDirectory else { return }
+        do {
+            let url = try engine.createFolder(in: directory, named: name)
+            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func createTextFile(named name: String, contents: String = "") {
+        guard let directory = currentDirectory else { return }
+        do {
+            let url = try engine.createTextFile(in: directory, named: name, contents: contents)
+            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            reload()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// 把系统剪贴板里的文字保存成文件
+    func saveClipboardTextAsFile() -> String? {
+        guard let directory = currentDirectory else { return nil }
+        guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return nil }
+        let firstLine = text.split(separator: "\n").first.map(String.init) ?? "剪贴板文本"
+        let safe = firstLine.replacingOccurrences(of: "/", with: "_").prefix(40)
+        do {
+            let url = try engine.createTextFile(in: directory, named: "\(safe).txt", contents: text)
+            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            reload()
+            return url.lastPathComponent
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    var clipboardHasText: Bool {
+        NSPasteboard.general.string(forType: .string)?.isEmpty == false
+    }
+
+    // MARK: - 搜索
+
+    func search(_ text: String) {
+        searchTask?.cancel()
+        categoryFilter = nil
+        categoryResults = []
+        isLoadingCategory = false
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty, let root = currentDirectory else {
+            isSearching = false
+            searchResults = []
+            updateStatus()
+            return
+        }
+        isSearching = true
+        isBusy = true
+        let engine = self.engine
+        searchTask = Task { [weak self] in
+            let found = await Task.detached(priority: .userInitiated) {
+                FileSystemService.search(under: root, matching: needle)
+            }.value
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.searchResults = found
+                self.isBusy = false
+                self.statusMessage = String(format: NSLocalizedString("status.searchResult", comment: "搜索结果"), found.count, needle)
+            }
+        }
+    }
+
+    func clearSearch() {
+        searchTask?.cancel()
+        isSearching = false
+        searchResults = []
+        updateStatus()
+    }
+
+    // MARK: - 状态
+
+    private func updateStatus() {
+        let folders = items.filter(\.isContainer).count
+        let files = items.count - folders
+        statusMessage = String(format: NSLocalizedString("status.itemCount", comment: "项目统计"), items.count, folders, files)
+    }
+
+    var selectionSummary: String {
+        let selected = selectedItems
+        guard !selected.isEmpty else { return "" }
+        let bytes = selected.compactMap(\.size).reduce(Int64(0), +)
+        if selected.count == 1 {
+            return selected[0].sizeText
+        }
+        return FileItem.formatSize(bytes)
+    }
+
+    /// 当前文件夹的磁盘信息
+    func volumeInfo(for url: URL) -> (free: String, total: String)? {
+        guard let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
+              let free = values.volumeAvailableCapacityForImportantUsage,
+              let total = values.volumeTotalCapacity else { return nil }
+        return (FileItem.formatSize(free),
+                FileItem.formatSize(Int64(total)))
+    }
+}

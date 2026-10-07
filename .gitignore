@@ -1,0 +1,37 @@
+# ===== 构建产物 =====
+# 应用包与中间目标文件（可由 build_native.sh 重新生成）
+WinFile.app/
+native/native-build/
+native/build/
+*.o
+*.dSYM/
+
+# 图标由 tools/make_icon.py 从 AppIcon-1024.png 重新生成
+docs/icon/AppIcon.icns
+
+# ===== 运行时数据 =====
+# 诊断日志等本机状态（不入库）
+*.log
+*.ips
+
+# ===== 系统与编辑器 =====
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+*.swp
+*~
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# ===== Node（v1 网页版工具）=====
+node_modules/
+
+# ===== 本地配置 =====
+.env
+.env.local
