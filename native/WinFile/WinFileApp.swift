@@ -104,6 +104,9 @@ final class WindowBridge {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// 标签页保护定时器（补齐后来创建的窗口）
+    private var tabbingGuardTimer: Timer?
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -116,6 +119,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //
         // 必须在窗口创建前设置，因此放在 willFinishLaunching（而非 didFinish）。
         NSWindow.allowsAutomaticWindowTabbing = false
+        // 应用级设置可能被 SwiftUI 在创建窗口时覆盖，因此再加一道窗口级保险
+        installTabbingGuard()
+    }
+
+    /// 逐个窗口禁止标签页。
+    ///
+    /// 仅靠 `NSWindow.allowsAutomaticWindowTabbing = false` 在 SwiftUI 下不总是生效 ——
+    /// WindowGroup 创建窗口时会重新配置标题栏，⊕ 按钮可能仍然出现。
+    /// 这里对每个窗口显式设置 `tabbingMode = .disallowed`，
+    /// 并在有新窗口时补设（含稍后打开的窗口）。
+    private func installTabbingGuard() {
+        for window in NSApp.windows {
+            window.tabbingMode = .disallowed
+            window.tabbingIdentifier = ""
+        }
+        // SwiftUI 可能稍后才创建/恢复窗口，这里持续补设（幂等，开销可忽略）
+        tabbingGuardTimer?.invalidate()
+        tabbingGuardTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            for window in NSApp.windows where window.tabbingMode != .disallowed {
+                window.tabbingMode = .disallowed
+                window.tabbingIdentifier = ""
+            }
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

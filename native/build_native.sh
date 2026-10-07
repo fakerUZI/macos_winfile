@@ -1,8 +1,8 @@
 #!/bin/bash
 # 构建原生 SwiftUI 版 WinFile.app
 #
-#   ./native/build_native.sh                # 构建到项目目录
-#   ./native/build_native.sh --in-place     # 同上（保留参数以兼容旧命令）
+#   ./native/build_native.sh                # 构建并安装到 /Applications（启动台可见）
+#   ./native/build_native.sh --in-place     # 只构建到项目目录，不安装
 #
 # 本地使用形态：未沙盒，可直接访问整个磁盘。
 set -euo pipefail
@@ -12,10 +12,11 @@ NAME="WinFile"
 SRC="$ROOT/native/WinFile"
 BUILD="$ROOT/native/native-build"
 APP="$ROOT/$NAME.app"
+INSTALL_DIR="/Applications"
 
 for arg in "$@"; do
   case "$arg" in
-    --in-place) APP="$ROOT/$NAME.app" ;;
+    --in-place) INSTALL_DIR="" ;;
   esac
 done
 
@@ -107,3 +108,22 @@ echo "构建完成: $APP"
 du -sh "$APP"
 echo
 echo "本构建为本地使用形态：未沙盒，可直接访问整个磁盘。"
+
+# 安装到 /Applications：启动台据此显示应用
+if [ -n "$INSTALL_DIR" ]; then
+  echo
+  echo "== 安装到 $INSTALL_DIR =="
+  # 先退出正在运行的实例，避免替换时文件被占用
+  pkill -f "$INSTALL_DIR/$NAME.app/Contents/MacOS/$NAME" 2>/dev/null || true
+  sleep 1
+  rm -rf "$INSTALL_DIR/$NAME.app"
+  cp -R "$APP" "$INSTALL_DIR/$NAME.app"
+  # 让 LaunchServices 立即登记（启动台据此显示）
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+    -f "$INSTALL_DIR/$NAME.app" 2>/dev/null || true
+  echo "   已安装：$INSTALL_DIR/$NAME.app"
+  echo "   可在启动台 / 聚焦搜索中找到「WinFile 文件管理器」"
+else
+  echo
+  echo "仅构建未安装（--in-place）：$APP"
+fi
