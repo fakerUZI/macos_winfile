@@ -149,6 +149,21 @@ final class BrowserModel: ObservableObject {
         return false
     }
 
+    /// 是否处于「应用程序」视图（同样不使用文件列表）
+    var isApplicationsView: Bool {
+        if case .applications = selection { return true }
+        return false
+    }
+
+    /// 当前视图是否由文件列表承载。
+    ///
+    /// 主页、此电脑、应用数据、安卓设备、应用程序这些页面各自渲染自定义内容，
+    /// `displayedItems` 对它们恒为空 —— 若不排除，空状态提示会叠在页面上。
+    var showsFileList: Bool {
+        !isHomeView && !isThisPCView && !isAppDataView
+            && !isAndroidDeviceView && !isApplicationsView
+    }
+
     /// 当前是否为安卓路径（安卓目录浏览由 adb 提供，与本地文件区分处理）
     var isAndroidPath: Bool {
         guard let dir = currentDirectory else { return false }
@@ -525,6 +540,23 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    /// 把选中的安卓条目下载到本机（弹出目录选择）
+    func downloadSelectedToLocalFolder() {
+        let entries = selectedAndroidEntries
+        guard !entries.isEmpty else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.prompt = L("android.chooseSaveFolder", "下载到此文件夹")
+        panel.directoryURL = FileSystemService.realHomeDirectory()
+            .appendingPathComponent("Downloads")
+        guard panel.runModal() == .OK, let target = panel.url else { return }
+        // 逐个下载（共享同一个进度显示）
+        for (index, entry) in entries.enumerated() {
+            downloadFromAndroid(entry, to: target, announce: index == entries.count - 1)
+        }
+    }
+
     /// 把剪贴板内容粘贴到当前安卓目录
     ///
     /// - 剪贴板是本机文件 → 上传
@@ -626,7 +658,8 @@ final class BrowserModel: ObservableObject {
     }
 
     /// 把安卓文件/目录下载到本地目录（带进度）
-    func downloadFromAndroid(_ entry: AndroidEntry, to localDirectory: URL) {
+    func downloadFromAndroid(_ entry: AndroidEntry, to localDirectory: URL,
+                             announce: Bool = true) {
         guard let (serial, _) = AndroidURL.split(entry.url) else { return }
         transferProgress = AndroidTransferProgress(name: entry.name, direction: .download)
         let service = AndroidFileService(serial: serial)
@@ -650,7 +683,7 @@ final class BrowserModel: ObservableObject {
                 self.statusMessage = L("status.downloadFailed", "下载失败")
             } else {
                 self.statusMessage = L("status.downloaded", "已下载：%@", entry.name)
-                self.reload()
+                if announce { self.reload() }
             }
         }
     }
@@ -863,6 +896,13 @@ final class BrowserModel: ObservableObject {
 
     func activate(_ item: FileItem) {
         TabDiagnostics.shared.record("activate", detail: "项目=\(item.name) 目录=\(item.isDirectory)")
+        // 安卓条目不能交给 NSWorkspace（android:// 不是本机可打开的地址）
+        if AndroidURL.isAndroid(item.url) {
+            if let entry = androidEntries.first(where: { $0.path == item.url.path }) {
+                activateAndroid(entry)
+            }
+            return
+        }
         // .app 包双击启动；普通文件夹进入浏览
         if item.isBundle && item.url.pathExtension.lowercased() == "app" {
             noteOpened(item.url)
@@ -891,6 +931,12 @@ final class BrowserModel: ObservableObject {
     }
 
     func revealSelection() {
+        // 安卓条目在访达里没有对应位置，只能提示（或定位到本机下载目录）
+        if isAndroidPath {
+            errorMessage = L("android.hint.revealUnsupported",
+                             "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。")
+            return
+        }
         engine.revealInFinder(selectedItems)
     }
 

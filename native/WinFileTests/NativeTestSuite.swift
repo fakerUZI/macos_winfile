@@ -63,6 +63,7 @@ enum NativeTestSuite {
             testAndroidParsing()
             testAndroidDevice()
             testAndroidBrowsing()
+            testCustomPagesNotReportedEmpty()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
             TestReporter.shared.failures.append("异常：\(error.localizedDescription)")
@@ -730,6 +731,52 @@ enum NativeTestSuite {
         }
     }
 
+    // MARK: - 自定义页面不应误报"空"
+
+    @MainActor
+    static func testCustomPagesNotReportedEmpty() {
+        print("\n[自定义页面空状态判定]")
+
+        let model = BrowserModel(engine: FSEngine(), startDirectory: nil)
+
+        // 主页
+        model.navigate(to: .home)
+        check("主页不显示文件列表空状态", !model.showsFileList)
+
+        // 此电脑
+        model.navigate(to: .thisPC)
+        check("此电脑不显示文件列表空状态", !model.showsFileList)
+
+        // 应用数据（用户报告的误报场景）
+        model.navigate(to: .appData)
+        check("应用数据页不显示文件列表空状态", !model.showsFileList,
+              "displayedItems=\(model.displayedItems.count)")
+
+        // 应用程序
+        model.navigate(to: .applications)
+        check("应用程序页不显示文件列表空状态", !model.showsFileList)
+
+        // 安卓设备
+        model.navigate(to: .androidDevice(serial: "TEST"))
+        check("安卓设备页不显示文件列表空状态", !model.showsFileList)
+
+        // 普通文件夹应当显示（空目录时给提示是正确的）
+        // 注意：必须用自建的空目录，系统临时目录里通常已有大量文件
+        let temp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("winfile-empty-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temp) }
+        // 用全新模型加载，避免前面导航遗留的异步任务干扰
+        let fresh = BrowserModel(engine: FSEngine(), startDirectory: temp)
+        let deadline = Date().addingTimeInterval(12)
+        while fresh.isBusy && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        check("普通文件夹仍由文件列表承载", fresh.showsFileList)
+        check("空文件夹确实没有内容", fresh.displayedItems.isEmpty,
+              "\(fresh.displayedItems.count) 项，目录=\(fresh.currentDirectory?.lastPathComponent ?? "无")")
+    }
+
     // MARK: - 安卓目录浏览（模型层）
 
     @MainActor
@@ -806,6 +853,35 @@ enum NativeTestSuite {
             model.activateAndroid(file)
             check("安卓文件提示需先下载", model.errorMessage != nil,
                   model.errorMessage ?? "无提示")
+
+            // 通过 activate 走同一保护（不得交给 NSWorkspace，否则会弹出系统"未设定打开方式"对话框）
+            model.errorMessage = nil
+            let item = file.asFileItem()
+            model.activate(item)
+            check("activate 对安卓文件同样只给提示（不调用 NSWorkspace）",
+                  model.errorMessage != nil, model.errorMessage ?? "无提示")
+        }
+
+        // 在访达中显示：安卓条目应提示而非报错
+        if let first = model.items.first {
+            model.selectedIDs = [first.id]
+            model.errorMessage = nil
+            model.revealSelection()
+            check("安卓条目「在访达中显示」给出提示", model.errorMessage != nil,
+                  model.errorMessage ?? "无提示")
+        }
+
+        // 图标：安卓条目的分类应能提供符号图标（不再依赖 NSWorkspace）
+        if let video = model.androidEntries.first(where: {
+            $0.name.lowercased().hasSuffix(".mp4") || $0.name.lowercased().hasSuffix(".mov")
+        }) {
+            let item = video.asFileItem()
+            check("安卓视频被归入视频分类", item.category == .video, item.category.rawValue)
+            check("安卓视频有可用的符号图标", !item.category.symbol.isEmpty, item.category.symbol)
+        }
+        if let folder = model.androidEntries.first(where: { $0.isDirectory }) {
+            let item = folder.asFileItem()
+            check("安卓文件夹是容器（用于取文件夹图标）", item.isContainer)
         }
     }
 

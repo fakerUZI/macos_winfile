@@ -69,7 +69,7 @@ struct SidebarView: View {
 
             Section(NSLocalizedString("sidebar.locations", comment: "位置")) {
                 Label {
-                    Text(NSLocalizedString("view.applications", comment: "应用程序"))
+                    Text(L("place.applications", "应用程序"))
                 } icon: {
                     Image(systemName: "square.grid.2x2.fill").foregroundStyle(.blue)
                 }

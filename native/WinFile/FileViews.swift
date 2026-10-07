@@ -25,6 +25,12 @@ struct FileIconView: View {
         }
         .frame(width: size, height: size)
         .task(id: item.id) {
+            // 安卓条目是设备上的路径，本机 NSWorkspace 读不到，只会返回通用文档图标；
+            // 因此改用按类型/分类的符号图标（下方 Group 的 else 分支）。
+            if AndroidURL.isAndroid(item.url) {
+                image = nil
+                return
+            }
             // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
             let url = item.url
             let target = size * 2
@@ -414,11 +420,18 @@ struct FileItemContextMenu: View {
 
     var body: some View {
         Button(NSLocalizedString("action.open", comment: "打开")) { model.openSelection() }
-        if selectedCount <= 1, let item {
+        // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
+        if selectedCount <= 1, let item, !AndroidURL.isAndroid(item.url) {
             Button(NSLocalizedString("action.openWith", comment: "打开方式…")) { dialog = .openWith(item) }
         }
         Divider()
-        Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) { model.revealSelection() }
+        if let item, AndroidURL.isAndroid(item.url) {
+            Button(L("android.downloadToLocal", "下载到本机…")) {
+                model.downloadSelectedToLocalFolder()
+            }
+        } else {
+            Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) { model.revealSelection() }
+        }
         Divider()
         Button(NSLocalizedString("action.cut", comment: "剪切")) { model.cutSelectionToClipboard() }
         Button(NSLocalizedString("action.copy", comment: "复制")) { model.copySelectionToClipboard() }

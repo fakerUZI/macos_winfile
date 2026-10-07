@@ -371,3 +371,8 @@
 "android.probe.noDevice" = "No Android device detected";
 "android.probe.noStorage" = "Cannot read device storage";
 "android.probe.ready" = "%d device(s) connected";
+
+"android.downloadToLocal" = "Download to This Mac…";
+"android.chooseSaveFolder" = "Download Here";
+"android.hint.revealUnsupported" = "Files on the device cannot be shown in Finder. Copy them to a local folder first.";
+"view.applications" = "Applications";

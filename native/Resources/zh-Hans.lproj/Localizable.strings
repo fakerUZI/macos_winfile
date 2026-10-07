@@ -388,3 +388,9 @@
 "android.probe.noDevice" = "未检测到安卓设备";
 "android.probe.noStorage" = "无法读取设备存储";
 "android.probe.ready" = "已连接 %d 台设备";
+
+"android.downloadToLocal" = "下载到本机…";
+"android.chooseSaveFolder" = "下载到此文件夹";
+"android.hint.revealUnsupported" = "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。";
+
+"view.applications" = "应用程序";

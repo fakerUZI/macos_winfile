@@ -53,8 +53,9 @@ struct TabContentHost: View {
             } else {
                 FileIconGridView(engine: engine, model: model, dialog: $dialog)
             }
-            if model.displayedItems.isEmpty && !model.isBusy
-                && !model.isHomeView && !model.isThisPCView {
+            // 仅文件列表视图才显示空状态；自定义页面（主页/此电脑/应用数据/
+            // 安卓设备/应用程序）不使用 displayedItems，否则会误报"此文件夹为空"
+            if model.showsFileList && model.displayedItems.isEmpty && !model.isBusy {
                 EmptyStateView(engine: engine, model: model, openPanel: openFolderPanel)
             }
             if model.isBusy {
