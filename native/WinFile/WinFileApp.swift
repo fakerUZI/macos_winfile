@@ -106,6 +106,18 @@ final class WindowBridge {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // 关闭 macOS 自带的窗口标签页。
+        //
+        // 原因：本应用已有一套完整的页签实现（TabManager + 内容区页签栏），
+        // 系统的标签页是**另一份独立的窗口实例**，两者数据不互通。
+        // 若同时存在，标题栏会出现 ⊕ 按钮，点它新建的是"另一个 WinFile 窗口"，
+        // 结果两套页签栏堆叠、状态归属混乱，快捷键也会与应用的 ⌘T 冲突。
+        //
+        // 必须在窗口创建前设置，因此放在 willFinishLaunching（而非 didFinish）。
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 每次启动重置页签交互日志（便于"你操作、我读日志"）
         try? FileManager.default.removeItem(at: TabDiagnostics.liveURL)
