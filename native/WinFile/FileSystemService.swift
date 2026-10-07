@@ -192,7 +192,25 @@ enum FileSystemService {
             walk(root, level: 0)
             if results.count >= budget { break }
         }
-        return sort(results, field: .modified, ascending: false)
+        // 按路径去重。
+        //
+        // 必要性：可浏览范围是 ["/Users/mac", "/"]，前者包含在后者内，
+        // 因此 / 的遍历会再次走到家目录下的文件。此前只拼接各范围结果而不查重，
+        // 导致同一条目出现两次（用户实测：分类计数 16 但只有 14 个不同文件，
+        // 图标视图只画出 14 个，且点一个会同时选中两个 —— 它们共享同一路径即同一 id）。
+        let unique = deduplicateByPath(results)
+        return sort(unique, field: .modified, ascending: false)
+    }
+
+    /// 按文件路径去重，保持原有顺序
+    static func deduplicateByPath(_ items: [FileItem]) -> [FileItem] {
+        var seen = Set<String>()
+        var result: [FileItem] = []
+        result.reserveCapacity(items.count)
+        for item in items where seen.insert(item.url.path).inserted {
+            result.append(item)
+        }
+        return result
     }
 
     /// 分类计数（受搜索范围限制）
@@ -231,7 +249,10 @@ enum FileSystemService {
             guard fm.fileExists(atPath: root.path) else { continue }
             walk(root, level: 0)
         }
-        let sorted = collected.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
+        // 同样需要按路径去重：范围 ["/Users/mac", "/"] 存在包含关系，
+        // 否则最近使用列表里会出现重复条目
+        let unique = deduplicateByPath(collected)
+        let sorted = unique.sorted { ($0.modified ?? .distantPast) > ($1.modified ?? .distantPast) }
         return Array(sorted.prefix(budget))
     }
 
@@ -239,6 +260,7 @@ enum FileSystemService {
     /// 保证侧边栏徽标数字与点进去看到的条目数完全一致。
     static func categoryCounts(under roots: [URL], depth: Int = 4, budget: Int = 800) -> [FileCategory: Int] {
         var counts: [FileCategory: Int] = [:]
+        var counted = Set<String>()   // 已计入的文件路径，避免重复计数
         let fm = FileManager.default
 
         func walk(_ directory: URL, level: Int) {
@@ -255,7 +277,11 @@ enum FileSystemService {
                     walk(url, level: level + 1)
                     continue
                 }
-                let info = FileTypeDB.info(name: url.lastPathComponent, isDirectory: false,
+                guard let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: false) else { continue }
+                // 按路径去重后再计数：范围存在包含关系（/Users/mac ⊂ /），
+                // 否则同一个文件会被计两次，徽标数字虚高
+                guard counted.insert(item.url.path).inserted else { continue }
+                let info = FileTypeDB.info(name: item.name, isDirectory: false,
                                            isSymlink: values.isSymbolicLink ?? false, isBundle: false)
                 let next = (counts[info.category] ?? 0) + 1
                 counts[info.category] = min(next, budget)

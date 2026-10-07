@@ -69,6 +69,7 @@ enum NativeTestSuite {
             testTileLayoutUniformity()
             try testCategoryViewIntegrity()
             testGridRowPartition()
+            testRealCategoryDuplicates()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -735,6 +736,80 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 真实磁盘分类结果是否有重复
+
+    @MainActor
+    static func testRealCategoryDuplicates() {
+        print("\n[真实磁盘分类重复检查]")
+
+        // 用真实可浏览范围（与界面一致），而非自造目录 ——
+        // 自造目录干净无重复，掩盖了用户遇到的"两个磁贴同 id"问题
+        let engine = FSEngine()
+        let roots = engine.browsableRoots
+        print("  扫描范围: \(roots.map(\.path).joined(separator: "、"))")
+
+        // 范围存在包含关系（/Users/mac ⊂ /），合并结果必须已去重：
+        // 单独扫描各范围之和 ≥ 合并结果，且合并后 id 必须唯一
+        let homeOnly = FileSystemService.categoryFiles(.pdf, under: [roots[0]])
+        let rootOnly = FileSystemService.categoryFiles(.pdf, under: [roots[1]])
+        let merged = FileSystemService.categoryFiles(.pdf, under: roots)
+        check("合并结果不超过各范围之和",
+              merged.count <= homeOnly.count + rootOnly.count,
+              "\(merged.count) vs \(homeOnly.count + rootOnly.count)")
+        check("范围重叠时合并结果已去重（唯一 id 等于项数）",
+              Set(merged.map(\.id)).count == merged.count,
+              "唯一 \(Set(merged.map(\.id)).count) / 共 \(merged.count)")
+
+        for category in [FileCategory.pdf, .image] {
+            let found = FileSystemService.categoryFiles(category, under: roots)
+            let ids = found.map(\.id)
+            let uniqueIDs = Set(ids)
+            let paths = found.map { $0.url.path }
+            let uniquePaths = Set(paths)
+
+            print("  \(category.localizedName): \(found.count) 项，唯一 id \(uniqueIDs.count)，唯一路径 \(uniquePaths.count)")
+
+            // 徽标计数同样不应重复（此前虚高：16 vs 实际 14）
+            let counts = FileSystemService.categoryCounts(under: roots)
+            print("  \(category.localizedName) 徽标计数: \(counts[category] ?? 0)")
+
+            if uniqueIDs.count != found.count {
+                let dups = Dictionary(grouping: found, by: \.id).filter { $0.value.count > 1 }
+                print("    ⚠️ 发现 \(dups.count) 组重复 id：")
+                for (id, group) in dups.prefix(3) {
+                    print("      \(id) → \(group.count) 次，名称 \(group.map(\.name).joined(separator: "/"))")
+                }
+                check("真实磁盘上 \(category.localizedName) 的分类结果 id 唯一", false,
+                      "\(dups.count) 组重复")
+            } else {
+                check("真实磁盘上 \(category.localizedName) 的分类结果 id 唯一", true)
+            }
+
+            // 计数与列表项数必须一致（两者都去重后应相等）
+            if let badge = counts[category] {
+                // 徽标受 budget 限制，列表也受同样限制，故应相等
+                check("\(category.localizedName) 徽标数与列表项数一致",
+                      badge == found.count, "徽标 \(badge) vs 列表 \(found.count)")
+            }
+        }
+
+        // 最近使用列表也不应有重复路径
+        let recent = FileSystemService.recentFiles(under: roots)
+        let recentPaths = recent.map { $0.url.path }
+        check("最近使用列表无重复路径",
+              Set(recentPaths).count == recentPaths.count,
+              "唯一 \(Set(recentPaths).count) / 共 \(recentPaths.count)")
+
+        // 去重函数本身
+        let items = [("/a/x.txt"), ("/b/y.txt"), ("/a/x.txt")].compactMap {
+            FileItem(url: URL(fileURLWithPath: $0), resourceKeys: [], showHidden: true)
+        }
+        let deduped = FileSystemService.deduplicateByPath(items)
+        check("去重函数保留首次出现并保持顺序",
+              deduped.count == 2 && deduped[0].url.path == "/a/x.txt" && deduped[1].url.path == "/b/y.txt",
+              deduped.map(\.url.path).joined(separator: "/"))
     }
 
     // MARK: - 自建网格的分行逻辑
