@@ -19,6 +19,17 @@ struct SidebarView: View {
                 model.navigate(to: newValue)
             }
         )) {
+            // 管理入口：放在最上方，便于随时调整侧边栏内容与顺序
+            Section {
+                Button {
+                    showSidebarManager = true
+                } label: {
+                    Label(L("sidebar.manage", "管理侧边栏…"), systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+            }
+
             // Windows 资源管理器顶部两个页面
             Section {
                 Label {
@@ -48,17 +59,6 @@ struct SidebarView: View {
                 }
             }
 
-            Section {
-                // 分类管理入口（多选框形式）
-                Button {
-                    showSidebarManager = true
-                } label: {
-                    Label(L("sidebar.manageCategories", "管理分类…"), systemImage: "checklist")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-
             Section(NSLocalizedString("sidebar.categories", comment: "按类型分类")) {
                 ForEach(SidebarPreferences.shared.visibleCategories) { category in
                     Label {
@@ -85,7 +85,7 @@ struct SidebarView: View {
                         Divider()
                         Button(L("sidebar.remove", "从侧边栏移除")) { preferences.hide(category) }
                             .disabled(preferences.visibleCategories.count <= 1)
-                        Button(L("sidebar.manage", "管理分类…")) { showSidebarManager = true }
+                        Button(L("sidebar.manage", "管理侧边栏…")) { showSidebarManager = true }
                     }
                 }
                 if engine.countingCategories {

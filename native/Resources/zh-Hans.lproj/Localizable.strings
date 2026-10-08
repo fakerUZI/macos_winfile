@@ -429,7 +429,7 @@
 "sidebar.moveDown" = "下移";
 "sidebar.remove" = "从侧边栏移除";
 "sidebar.addFolder" = "添加文件夹…";
-"sidebar.manage" = "管理分类…";
+"sidebar.manage" = "管理侧边栏…";
 "sidebar.manageCategories" = "管理分类…";
 "sidebar.favorites.empty" = "右键可管理收藏";
 "sidebarManager.title" = "管理侧边栏";
