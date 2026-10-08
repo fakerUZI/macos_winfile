@@ -361,7 +361,7 @@ struct FileItem: Identifiable, Hashable {
     /// 安卓路径用 `android://` 虚拟地址表示，本地 FileManager 不参与，
     /// 因此这里不做资源属性读取，直接用 adb 已取得的信息填充。
     init(androidEntry entry: AndroidEntry) {
-        self.id = entry.url.absoluteString
+        self.id = entry.url.absoluteString   // 安卓：虚拟地址本身即唯一标识
         self.url = entry.url
         self.name = entry.name
         self.isDirectory = entry.isDirectory
@@ -393,6 +393,11 @@ struct FileItem: Identifiable, Hashable {
     let category: FileCategory
 
     var isContainer: Bool { isDirectory || isBundle }
+
+    /// 统一的 id 计算：解析符号链接，保证同一文件得到同一个 id
+    static func canonicalID(for url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
 
     /// 图标视图中名称区域的高度（固定值）。
     ///
@@ -463,7 +468,12 @@ extension FileItem {
         let bundle = FileTypeDB.isBundle(url, isDirectory: isDirectory)
         let info = FileTypeDB.info(name: name, isDirectory: isDirectory, isSymlink: isSymlink, isBundle: bundle)
 
-        self.id = url.path
+        // id 使用规范化路径。
+        //
+        // 必要性：/var 是 /private/var 的符号链接，同一文件经由不同途径
+        // （分类扫描 vs 目录枚举）得到的路径可能不同，导致 id 不相等 ——
+        // 表现为「跳转到文件所在目录后选不中该文件」，去重与选择也会错乱。
+        self.id = FileItem.canonicalID(for: url)
         self.url = url
         self.name = name
         self.isDirectory = isDirectory

@@ -70,6 +70,7 @@ enum NativeTestSuite {
             try testCategoryViewIntegrity()
             testGridRowPartition()
             testRealCategoryDuplicates()
+            try testOpenContainingFolder()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -736,6 +737,71 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 跳转到文件所在文件夹
+
+    @MainActor
+    static func testOpenContainingFolder() throws {
+        print("\n[打开所在文件夹]")
+
+        let fm = FileManager.default
+        let base = fm.temporaryDirectory.appendingPathComponent("winfile-locate-\(UUID().uuidString)")
+        let deep = base.appendingPathComponent("层一/层二")
+        try fm.createDirectory(at: deep, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: base) }
+
+        let target = deep.appendingPathComponent("目标文件.pdf")
+        try "%PDF".write(to: target, atomically: true, encoding: .utf8)
+        try "x".write(to: base.appendingPathComponent("无关文件.txt"), atomically: true, encoding: .utf8)
+
+        let model = BrowserModel(engine: FSEngine(), startDirectory: base)
+        let deadline = Date().addingTimeInterval(10)
+        while model.isBusy && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        check("起始目录载入完成", !model.displayedItems.isEmpty, "\(model.displayedItems.count) 项")
+
+        // 构造该文件对应的 FileItem（模拟来自分类视图的条目）
+        guard let item = FileItem(url: target, resourceKeys: FSEngine.resourceKeys, showHidden: false) else {
+            check("构造目标文件条目", false)
+            return
+        }
+
+        model.openContainingFolder(of: item)
+
+        // 等目录加载完成
+        let deadline2 = Date().addingTimeInterval(10)
+        while model.isBusy && Date() < deadline2 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        check("跳转到文件所在目录",
+              model.currentDirectory?.path == deep.path,
+              model.currentDirectory?.path ?? "无")
+        check("待选中项已记录", model.pendingSelectionID == item.id,
+              model.pendingSelectionID ?? "无")
+        // 路径规范化：同一文件经由分类扫描与目录枚举应得到同一个 id
+        // （/var 是 /private/var 的符号链接，不规范化会不相等）
+        if let listed = model.displayedItems.first {
+            check("路径规范化后 id 一致（符号链接不影响）",
+                  listed.id == item.id,
+                  "列表=\(listed.id.prefix(20))… 目标=\(item.id.prefix(20))…")
+        }
+        check("目标文件确实在该目录中",
+              model.displayedItems.contains { $0.id == item.id })
+
+        // 界面读取后应清空，避免影响后续导航
+        let consumed = model.consumePendingSelection()
+        check("取出待选中项后清空", consumed == item.id && model.pendingSelectionID == nil,
+              "取出=\(consumed ?? "无") 剩余=\(model.pendingSelectionID ?? "无")")
+
+        // 非聚合视图（普通目录浏览）不需要该入口
+        check("普通目录浏览不算聚合视图", !model.isAggregatedView)
+
+        // 分类视图算聚合视图
+        model.navigate(to: .category(.pdf))
+        check("分类视图属于聚合视图", model.isAggregatedView)
     }
 
     // MARK: - 真实磁盘分类结果是否有重复

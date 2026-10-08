@@ -419,3 +419,4 @@
 "sidebarManager.categoryHint" = "Checked items appear in the sidebar";
 "sidebarManager.favoriteHint" = "Checked items appear in the sidebar; any folder can be added";
 "button.done" = "Done";
+"action.openContainingFolder" = "Open Containing Folder";

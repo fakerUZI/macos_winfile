@@ -437,3 +437,4 @@
 "sidebarManager.categoryHint" = "勾选即在侧边栏显示";
 "sidebarManager.favoriteHint" = "勾选即在侧边栏显示；可添加任意文件夹";
 "button.done" = "完成";
+"action.openContainingFolder" = "打开所在文件夹";

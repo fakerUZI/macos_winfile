@@ -78,6 +78,12 @@ struct FileTableView: View {
 
     var body: some View {
         table
+            // 从分类/搜索跳转过来时，定位并选中目标文件
+            .onReceive(model.$pendingSelectionID.compactMap { $0 }) { id in
+                guard model.displayedItems.contains(where: { $0.id == id }) else { return }
+                model.selectedIDs = [id]
+                _ = model.consumePendingSelection()
+            }
             // 行以下空白处的右键菜单（Windows 资源管理器行为）
             .background(
                 EmptyAreaContextMenu(
@@ -390,6 +396,7 @@ struct FileIconGridView: View {
         // 无法自动验证。自建网格不依赖懒加载，视图创建数量完全确定。
         // 文件列表通常几十到几百项，一次性布局的开销可以接受。
         GeometryReader { proxy in
+            ScrollViewReader { scroller in
             ScrollView {
                 VStack(alignment: .leading, spacing: tileSpacing) {
                     ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
@@ -397,6 +404,7 @@ struct FileIconGridView: View {
                             ForEach(row) { item in
                                 tile(for: item)
                                     .frame(maxWidth: .infinity)
+                                    .id(item.id)
                             }
                             // 补齐本行剩余列，保证各列宽度一致
                             if row.count < columnCount {
@@ -412,6 +420,14 @@ struct FileIconGridView: View {
             }
             .onAppear { gridWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { newValue in gridWidth = newValue }
+            // 从分类/搜索跳转过来时，滚动到目标并选中
+            .onReceive(model.$pendingSelectionID.compactMap { $0 }) { id in
+                guard model.displayedItems.contains(where: { $0.id == id }) else { return }
+                model.selectedIDs = [id]
+                withAnimation { scroller.scrollTo(id, anchor: .center) }
+                _ = model.consumePendingSelection()
+            }
+            }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let directory = model.currentDirectory else { return false }
@@ -485,6 +501,12 @@ struct FileItemContextMenu: View {
         // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
         if selectedCount <= 1, let item, !AndroidURL.isAndroid(item.url) {
             Button(NSLocalizedString("action.openWith", comment: "打开方式…")) { dialog = .openWith(item) }
+        }
+        // 分类视图与搜索结果中的文件不在当前目录，提供"回到真实位置"的入口
+        if let item, model.isAggregatedView, !AndroidURL.isAndroid(item.url) {
+            Button(L("action.openContainingFolder", "打开所在文件夹")) {
+                model.openContainingFolder(of: item)
+            }
         }
         Divider()
         if let item, AndroidURL.isAndroid(item.url) {

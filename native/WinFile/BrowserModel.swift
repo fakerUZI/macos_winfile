@@ -514,6 +514,36 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    // MARK: - 跳转到文件所在目录
+
+    /// 当前视图是否为「跨目录聚合」：分类与搜索结果来自多个目录，
+    /// 因此需要「打开所在文件夹」才能回到文件的真实位置。
+    var isAggregatedView: Bool { isCategoryView || isSearching }
+
+    /// 跳到指定文件所在的文件夹，并把它选中。
+    ///
+    /// 用途：分类视图与搜索结果里的文件不在当前目录下，
+    /// 用户需要一键回到它的真实位置（Windows 的「打开文件位置」）。
+    func openContainingFolder(of item: FileItem) {
+        if AndroidURL.isAndroid(item.url) {
+            errorMessage = L("android.hint.revealUnsupported",
+                             "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。")
+            return
+        }
+        let directory = item.url.deletingLastPathComponent()
+        pendingSelectionID = item.id
+        selectFolder(directory)
+    }
+
+    /// 待选中项：跳到目录后由列表/网格读取并滚动定位，用完即清
+    @Published var pendingSelectionID: String?
+
+    /// 取出并清空待选中项
+    func consumePendingSelection() -> String? {
+        defer { pendingSelectionID = nil }
+        return pendingSelectionID
+    }
+
     /// 打开安卓设备上的项目（文件夹进入，文件用系统默认方式打开不支持 → 提示）
     /// 安卓端删除选中项
     func deleteAndroidSelection() {
