@@ -1139,11 +1139,48 @@ enum NativeTestSuite {
               !prefs.visibleCategories.isEmpty,
               "\(prefs.visibleCategories.count) 个")
 
+        // 排序：上移/下移
+        prefs.resetToDefault()
+        let ordered = prefs.allCategoriesInOrder
+        check("默认顺序与 sidebarOrder 一致",
+              ordered.prefix(all.count) == ArraySlice(all),
+              ordered.prefix(3).map(\.rawValue).joined(separator: "/"))
+
+        let first = ordered[0]
+        let second = ordered[1]
+        check("首项不可上移", !prefs.canMove(first, by: -1))
+        check("末项不可下移", !prefs.canMove(ordered[ordered.count - 1], by: 1))
+        check("中间项可上下移动", prefs.canMove(second, by: -1) && prefs.canMove(second, by: 1))
+
+        prefs.move(second, by: -1)
+        check("上移后位置互换",
+              prefs.allCategoriesInOrder[0] == second && prefs.allCategoriesInOrder[1] == first,
+              prefs.allCategoriesInOrder.prefix(2).map(\.rawValue).joined(separator: "/"))
+
+        prefs.move(second, by: 1)
+        check("下移后恢复原位",
+              prefs.allCategoriesInOrder[0] == first && prefs.allCategoriesInOrder[1] == second,
+              prefs.allCategoriesInOrder.prefix(2).map(\.rawValue).joined(separator: "/"))
+
+        // 排序不影响显示集合，且移动后仍包含全部分类（不丢项）
+        check("移动不丢分类", Set(prefs.allCategoriesInOrder) == Set(all),
+              "\(prefs.allCategoriesInOrder.count)/\(all.count)")
+
+        // 移除某项后，其余项顺序保持
+        prefs.hide(second)
+        let visibleAfterHide = prefs.visibleCategories
+        check("移除后可见列表不含该项", !visibleAfterHide.contains(second))
+        check("移除后其余项顺序不变",
+              visibleAfterHide == prefs.allCategoriesInOrder.filter { $0 != second },
+              visibleAfterHide.prefix(3).map(\.rawValue).joined(separator: "/"))
+
         // 恢复默认
         prefs.resetToDefault()
         check("恢复默认后全部显示", prefs.visibleCategories.count == all.count,
               "\(prefs.visibleCategories.count)")
         check("恢复默认后隐藏列表为空", prefs.hiddenCategoryList.isEmpty)
+        check("恢复默认后顺序回到默认",
+              prefs.allCategoriesInOrder.prefix(all.count) == ArraySlice(all))
     }
 
     // MARK: - 自定义页面不应误报"空"

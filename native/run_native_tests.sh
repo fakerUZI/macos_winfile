@@ -21,6 +21,7 @@ CORE=(
   "$SRC/TabDiagnostics.swift"
   "$SRC/AppDataService.swift"
   "$SRC/ArchiveService.swift"
+  "$SRC/ThumbnailService.swift"
   "$SRC/SidebarPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"

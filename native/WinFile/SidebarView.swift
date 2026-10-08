@@ -2,8 +2,12 @@
 import SwiftUI
 
 struct SidebarView: View {
+    @State private var showSidebarManager = false
+    @State private var showAddFolder = false
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
+    /// 分类的显示与顺序（右键菜单与拖拽排序共用）
+    @ObservedObject private var preferences = SidebarPreferences.shared
 
     var body: some View {
         // 选中态完全由当前页签的模型驱动：
@@ -33,9 +37,26 @@ struct SidebarView: View {
             }
 
             Section(NSLocalizedString("sidebar.favorites", comment: "个人收藏")) {
-                ForEach(engine.places) { place in
-                    row(place)
+                ForEach(Array(engine.authorizedRoots.enumerated()), id: \.element.path) { index, url in
+                    favoriteRow(url, index: index)
                 }
+                // 空列表时给出提示，避免看起来像坏了
+                if engine.authorizedRoots.isEmpty {
+                    Text(L("sidebar.favorites.empty", "右键可管理收藏"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section {
+                // 分类管理入口（多选框形式）
+                Button {
+                    showSidebarManager = true
+                } label: {
+                    Label(L("sidebar.manageCategories", "管理分类…"), systemImage: "checklist")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
 
             Section(NSLocalizedString("sidebar.categories", comment: "按类型分类")) {
@@ -56,6 +77,16 @@ struct SidebarView: View {
                             .foregroundStyle(Color(nsColor: category.tint))
                     }
                     .tag(SidebarSelection.category(category))
+                    .contextMenu {
+                        Button(L("sidebar.moveUp", "上移")) { preferences.move(category, by: -1) }
+                            .disabled(!preferences.canMove(category, by: -1))
+                        Button(L("sidebar.moveDown", "下移")) { preferences.move(category, by: 1) }
+                            .disabled(!preferences.canMove(category, by: 1))
+                        Divider()
+                        Button(L("sidebar.remove", "从侧边栏移除")) { preferences.hide(category) }
+                            .disabled(preferences.visibleCategories.count <= 1)
+                        Button(L("sidebar.manage", "管理分类…")) { showSidebarManager = true }
+                    }
                 }
                 if engine.countingCategories {
                     HStack(spacing: 6) {
@@ -79,6 +110,16 @@ struct SidebarView: View {
                     .tag(SidebarSelection.appData)
 
                 AndroidSidebarSection()
+            }
+        }
+        .sheet(isPresented: $showSidebarManager) {
+            SidebarManagerSheet(engine: engine)
+        }
+        .fileImporter(isPresented: $showAddFolder,
+                      allowedContentTypes: [.folder],
+                      allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result {
+                for url in urls { engine.addFolder(url) }
             }
         }
         .listStyle(.sidebar)
@@ -122,18 +163,28 @@ struct SidebarView: View {
     }
 
     @ViewBuilder
-    private func row(_ place: SidebarPlace) -> some View {
+    /// 收藏行：支持右键上移/下移/移除
+    private func favoriteRow(_ url: URL, index: Int) -> some View {
         Label {
-            Text(place.name)
+            Text(url.lastPathComponent)
         } icon: {
-            Image(systemName: place.symbol)
-                .foregroundStyle(place.kind == .volume ? Color.secondary : Color.accentColor)
+            Image(systemName: "folder.fill")
+                .foregroundStyle(Color.accentColor)
         }
-        .tag(SidebarSelection.folder(place.url))
+        .tag(SidebarSelection.folder(url))
         .contextMenu {
+            Button(L("action.open", "打开")) { model.selectFolder(url) }
             Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) {
-                NSWorkspace.shared.activateFileViewerSelecting([place.url])
+                NSWorkspace.shared.activateFileViewerSelecting([url])
             }
+            Divider()
+            Button(L("sidebar.moveUp", "上移")) { engine.moveFolder(url, by: -1) }
+                .disabled(!engine.canMoveFolder(url, by: -1))
+            Button(L("sidebar.moveDown", "下移")) { engine.moveFolder(url, by: 1) }
+                .disabled(!engine.canMoveFolder(url, by: 1))
+            Divider()
+            Button(L("sidebar.remove", "从侧边栏移除")) { engine.removeFolder(url) }
+            Button(L("sidebar.addFolder", "添加文件夹…")) { showAddFolder = true }
         }
     }
 }

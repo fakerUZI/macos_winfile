@@ -405,3 +405,17 @@
 "settings.folders.remove" = "Remove from list";
 "settings.folders.clear" = "Clear List";
 "settings.folders.add" = "Add Folder…";
+
+/* Sidebar management */
+"sidebar.moveUp" = "Move Up";
+"sidebar.moveDown" = "Move Down";
+"sidebar.remove" = "Remove from Sidebar";
+"sidebar.addFolder" = "Add Folder…";
+"sidebar.manage" = "Manage Categories…";
+"sidebar.manageCategories" = "Manage Categories…";
+"sidebar.favorites.empty" = "Right-click to manage favorites";
+"sidebarManager.title" = "Manage Sidebar";
+"sidebarManager.reset" = "Restore Defaults";
+"sidebarManager.categoryHint" = "Checked items appear in the sidebar";
+"sidebarManager.favoriteHint" = "Checked items appear in the sidebar; any folder can be added";
+"button.done" = "Done";

@@ -25,22 +25,38 @@ struct FileIconView: View {
         }
         .frame(width: size, height: size)
         .task(id: item.id) {
-            // 安卓条目是设备上的路径，本机 NSWorkspace 读不到，只会返回通用文档图标；
-            // 因此改用按类型/分类的符号图标（下方 Group 的 else 分支）。
-            if AndroidURL.isAndroid(item.url) {
-                image = nil
+            await loadImage()
+        }
+    }
+
+    /// 加载图标或缩略图
+    private func loadImage() async {
+        // 安卓条目是设备上的路径，本机读不到，用符号图标兜底
+        if AndroidURL.isAndroid(item.url) {
+            image = nil
+            return
+        }
+
+        // 图片类文件且尺寸足够大时，优先显示真实缩略图。
+        // 小尺寸（列表行内 18pt）没必要生成缩略图，用系统图标即可。
+        let wantsThumbnail = item.category == .image && size >= 32
+        if wantsThumbnail {
+            if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size) {
+                image = thumb
                 return
             }
-            // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
-            let url = item.url
-            let target = size * 2
-            let loaded: NSImage? = await Task.detached(priority: .userInitiated) {
-                let icon = NSWorkspace.shared.icon(forFile: url.path)
-                icon.size = NSSize(width: target, height: target)
-                return icon
-            }.value
-            image = loaded
+            // 生成失败（损坏或未支持的格式）→ 落到系统图标
         }
+
+        // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
+        let url = item.url
+        let target = size * 2
+        let loaded: NSImage? = await Task.detached(priority: .userInitiated) {
+            let icon = NSWorkspace.shared.icon(forFile: url.path)
+            icon.size = NSSize(width: target, height: target)
+            return icon
+        }.value
+        image = loaded
     }
 }
 

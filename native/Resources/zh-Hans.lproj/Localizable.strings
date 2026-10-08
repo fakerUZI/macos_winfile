@@ -423,3 +423,17 @@
 "settings.folders.remove" = "从列表移除";
 "settings.folders.clear" = "清空列表";
 "settings.folders.add" = "添加文件夹…";
+
+/* 侧边栏管理 */
+"sidebar.moveUp" = "上移";
+"sidebar.moveDown" = "下移";
+"sidebar.remove" = "从侧边栏移除";
+"sidebar.addFolder" = "添加文件夹…";
+"sidebar.manage" = "管理分类…";
+"sidebar.manageCategories" = "管理分类…";
+"sidebar.favorites.empty" = "右键可管理收藏";
+"sidebarManager.title" = "管理侧边栏";
+"sidebarManager.reset" = "恢复默认";
+"sidebarManager.categoryHint" = "勾选即在侧边栏显示";
+"sidebarManager.favoriteHint" = "勾选即在侧边栏显示；可添加任意文件夹";
+"button.done" = "完成";

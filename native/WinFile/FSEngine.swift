@@ -46,6 +46,7 @@ final class FSEngine: ObservableObject {
 
     init() {
         loadAddedFolders()
+        seedFavoritesIfNeeded()
         buildPlaces()
         buildVolumes()
         refreshAuthorizedRoots()
@@ -124,6 +125,55 @@ final class FSEngine: ObservableObject {
         refreshAuthorizedRoots()
         scheduleCategoryCount()
         return true
+    }
+
+    /// 首次启动时为收藏列表填入标准文件夹。
+    ///
+    /// 说明：此前侧边栏「个人收藏」固定显示桌面/下载/文稿等标准位置，
+    /// 与可增删的「常用文件夹」重复。现统一为一套可管理的收藏列表，
+    /// 首次运行用标准位置作为初始值，用户随后可自由增删排序。
+    private func seedFavoritesIfNeeded() {
+        let seededKey = "FavoritesSeeded"
+        guard !UserDefaults.standard.bool(forKey: seededKey) else { return }
+        UserDefaults.standard.set(true, forKey: seededKey)
+        guard addedFolderPaths.isEmpty else { return }
+        let home = FileSystemService.realHomeDirectory()
+        let standard = ["Desktop", "Downloads", "Documents", "Pictures", "Movies", "Music"]
+            .map { home.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        addedFolderPaths = standard.map { $0.standardizedFileURL.path }
+        saveAddedFolders()
+    }
+
+    /// 重新填入标准收藏文件夹（管理面板的「恢复默认」使用）
+    func seedStandardFavorites() {
+        let home = FileSystemService.realHomeDirectory()
+        let standard = ["Desktop", "Downloads", "Documents", "Pictures", "Movies", "Music"]
+            .map { home.appendingPathComponent($0) }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+            .map { $0.standardizedFileURL.path }
+        addedFolderPaths = standard
+        saveAddedFolders()
+        refreshAuthorizedRoots()
+        scheduleCategoryCount()
+    }
+
+    /// 移动收藏项（右键「上移/下移」与拖拽排序）
+    func moveFolder(_ url: URL, by offset: Int) {
+        let path = url.standardizedFileURL.path
+        guard let index = addedFolderPaths.firstIndex(of: path) else { return }
+        let target = index + offset
+        guard addedFolderPaths.indices.contains(target) else { return }
+        addedFolderPaths.swapAt(index, target)
+        saveAddedFolders()
+        refreshAuthorizedRoots()
+    }
+
+    /// 是否可移动
+    func canMoveFolder(_ url: URL, by offset: Int) -> Bool {
+        let path = url.standardizedFileURL.path
+        guard let index = addedFolderPaths.firstIndex(of: path) else { return false }
+        return addedFolderPaths.indices.contains(index + offset)
     }
 
     /// 从常用列表移除单个文件夹
