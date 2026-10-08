@@ -71,6 +71,7 @@ enum NativeTestSuite {
             testGridRowPartition()
             testRealCategoryDuplicates()
             try testOpenContainingFolder()
+            testThumbnailScope()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -736,6 +737,44 @@ enum NativeTestSuite {
         } catch {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
+        }
+    }
+
+    // MARK: - 缩略图适用范围
+
+    @MainActor
+    static func testThumbnailScope() {
+        print("\n[缩略图适用范围]")
+
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("winfile-thumb-\(UUID().uuidString)")
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }
+
+        // 按扩展名造出各类文件，检查是否应显示缩略图
+        let samples: [(String, Bool)] = [
+            ("照片.jpg", true), ("照片.png", true), ("照片.heic", true),
+            ("影片.mp4", true), ("影片.mov", true), ("影片.m4v", true),
+            ("文档.pdf", false), ("文稿.txt", false), ("音乐.mp3", false),
+            ("代码.swift", false), ("压缩包.zip", false)
+        ]
+
+        for (name, expected) in samples {
+            let url = dir.appendingPathComponent(name)
+            try? "x".write(to: url, atomically: true, encoding: .utf8)
+            guard let item = FileItem(url: url, resourceKeys: FSEngine.resourceKeys, showHidden: false) else {
+                check("构造条目 \(name)", false)
+                continue
+            }
+            check("\(name) 缩略图=\(expected)", item.supportsThumbnail == expected,
+                  "实际=\(item.supportsThumbnail) 分类=\(item.category.rawValue)")
+        }
+
+        // 文件夹不应有缩略图
+        let folder = dir.appendingPathComponent("文件夹")
+        try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        if let item = FileItem(url: folder, resourceKeys: FSEngine.resourceKeys, showHidden: false) {
+            check("文件夹不显示缩略图", !item.supportsThumbnail)
         }
     }
 

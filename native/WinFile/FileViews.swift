@@ -37,9 +37,9 @@ struct FileIconView: View {
             return
         }
 
-        // 图片类文件且尺寸足够大时，优先显示真实缩略图。
-        // 小尺寸（列表行内 18pt）没必要生成缩略图，用系统图标即可。
-        let wantsThumbnail = item.category == .image && size >= 32
+        // 图片与视频在尺寸足够大时显示真实缩略图（视频即封面帧）。
+        // 小尺寸（列表行内 18pt）不生成，用系统图标即可，避免无谓开销。
+        let wantsThumbnail = item.supportsThumbnail && size >= 32
         if wantsThumbnail {
             if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size) {
                 image = thumb

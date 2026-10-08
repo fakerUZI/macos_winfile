@@ -394,6 +394,14 @@ struct FileItem: Identifiable, Hashable {
 
     var isContainer: Bool { isDirectory || isBundle }
 
+    /// 是否应显示缩略图（图片与视频）。
+    ///
+    /// 说明：视频封面同样由 QuickLook 生成 —— 实测 NSImage 无法解码视频，
+    /// QuickLook 是唯一可行路径（图片则可走直接解码）。
+    var supportsThumbnail: Bool {
+        category == .image || category == .video
+    }
+
     /// 统一的 id 计算：解析符号链接，保证同一文件得到同一个 id
     static func canonicalID(for url: URL) -> String {
         url.standardizedFileURL.resolvingSymlinksInPath().path
