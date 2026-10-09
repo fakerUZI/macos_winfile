@@ -77,5 +77,7 @@ final class FileAssociations: ObservableObject {
 
     private func persist() {
         UserDefaults.standard.set(map, forKey: key)
+        // 关联变化后，图标徽标需要重新解析
+        DefaultAppService.shared.invalidate()
     }
 }

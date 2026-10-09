@@ -73,6 +73,7 @@ enum NativeTestSuite {
             try testOpenContainingFolder()
             testThumbnailScope()
             try testFileAssociations()
+            try testDefaultAppBadge()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -812,6 +813,60 @@ enum NativeTestSuite {
               systemBefore?.path == systemAfter?.path,
               "前=\(systemBefore?.lastPathComponent ?? "nil") 后=\(systemAfter?.lastPathComponent ?? "nil")")
         store.clearAll()
+    }
+
+    // MARK: - 关联应用徽标
+
+    @MainActor
+    static func testDefaultAppBadge() throws {
+        print("\n[关联应用徽标]")
+
+        let fm = FileManager.default
+        let store = FileAssociations.shared
+        let service = DefaultAppService.shared
+        store.clearAll()
+        service.invalidate()
+
+        let dir = fm.temporaryDirectory.appendingPathComponent("winfile-badge-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir); store.clearAll(); service.invalidate() }
+
+        let pdf = dir.appendingPathComponent("文件.pdf")
+        try "x".write(to: pdf, atomically: true, encoding: .utf8)
+
+        // 未自定义时应能解析出系统默认应用（通常非空）
+        let systemApp = service.defaultApplication(for: pdf)
+        print("  系统默认应用: \(systemApp?.lastPathComponent ?? "未解析到（该类型可能无默认应用）")")
+
+        // 自定义后应立刻改用它
+        let textEdit = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        store.setApplication(textEdit, forExtension: "pdf")
+        let custom = service.defaultApplication(for: pdf)
+        check("自定义后徽标取的是自定义应用", custom?.path == textEdit.path,
+              custom?.path ?? "nil")
+
+        // 图标能取到
+        let icon = service.badgeIcon(for: pdf, size: 32)
+        check("能取到关联应用图标", icon != nil,
+              icon.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "nil")
+
+        // 关闭开关后不返回图标
+        service.showsBadges = false
+        check("关闭开关后不返回图标", service.badgeIcon(for: pdf, size: 32) == nil)
+        service.showsBadges = true
+        check("重新开启后恢复", service.badgeIcon(for: pdf, size: 32) != nil)
+
+        // 文件夹不显示徽标（由视图层判断 isContainer；此处验证服务对无扩展名文件的行为）
+        let folder = dir.appendingPathComponent("文件夹")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        check("无扩展名的项目不解析出应用", service.defaultApplication(for: folder) == nil)
+
+        // 缓存失效：改动关联后必须能反映新应用
+        let preview = URL(fileURLWithPath: "/System/Applications/Preview.app")
+        store.setApplication(preview, forExtension: "pdf")
+        let after = service.defaultApplication(for: pdf)
+        check("改动关联后缓存已失效（取到新应用）", after?.path == preview.path,
+              after?.path ?? "nil")
     }
 
     // MARK: - 缩略图适用范围

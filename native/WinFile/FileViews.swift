@@ -9,6 +9,8 @@ struct FileIconView: View {
     let item: FileItem
     var size: CGFloat = 18
     @State private var image: NSImage?
+    /// 关联应用的图标（右下角徽标）
+    @State private var badge: NSImage?
 
     var body: some View {
         Group {
@@ -24,9 +26,56 @@ struct FileIconView: View {
             }
         }
         .frame(width: size, height: size)
+        // 右下角的关联应用徽标（表示双击时用哪个应用打开）
+        .overlay(alignment: .bottomTrailing) {
+            if let badge {
+                Image(nsImage: badge)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: badgeSize, height: badgeSize)
+                    // 白色描边让徽标在任何底图上都清晰
+                    .background(
+                        Circle()
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                            .frame(width: badgeSize + 1.5, height: badgeSize + 1.5)
+                    )
+                    .offset(x: badgeSize * 0.18, y: badgeSize * 0.18)
+            }
+        }
         .task(id: item.id) {
             await loadImage()
         }
+        .task(id: badgeTaskKey) {
+            await loadBadge()
+        }
+    }
+
+    /// 徽标尺寸：随图标大小缩放，但设上下限以免过大或看不清
+    private var badgeSize: CGFloat {
+        max(7, min(18, size * 0.42))
+    }
+
+    /// 徽标只在文件夹之外、且尺寸足够时显示（列表 18pt 的行内图标不显示）
+    private var badgeTaskKey: String {
+        "badge|\(item.id)|\(size)|\(DefaultAppService.shared.showsBadges)"
+    }
+
+    private func loadBadge() async {
+        // 文件夹不显示徽标（双击是进入而非用某应用打开）
+        guard !item.isContainer, size >= 24, !AndroidURL.isAndroid(item.url) else {
+            badge = nil
+            return
+        }
+        guard DefaultAppService.shared.showsBadges else {
+            badge = nil
+            return
+        }
+        let url = item.url
+        let target = badgeSize * 2
+        let icon: NSImage? = await MainActor.run {
+            DefaultAppService.shared.badgeIcon(for: url, size: target)
+        }
+        badge = icon
     }
 
     /// 加载图标或缩略图

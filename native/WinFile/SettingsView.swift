@@ -280,9 +280,12 @@ struct SidebarManagementSection: View {
 /// macOS 的文件关联** —— 访达与其它应用仍按系统设置打开。
 struct AssociationsSection: View {
     @ObservedObject private var associations = FileAssociations.shared
+    @ObservedObject private var defaultApps = DefaultAppService.shared
 
     var body: some View {
         Section {
+            Toggle(L("settings.assoc.showBadge", "在文件图标右下角显示关联应用"),
+                   isOn: $defaultApps.showsBadges)
             if associations.entries.isEmpty {
                 Text(L("settings.assoc.empty", "尚未设置。可在文件右键菜单中指定。"))
                     .foregroundStyle(.secondary)

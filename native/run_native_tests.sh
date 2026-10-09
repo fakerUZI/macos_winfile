@@ -23,6 +23,7 @@ CORE=(
   "$SRC/ArchiveService.swift"
   "$SRC/ThumbnailService.swift"
   "$SRC/FileAssociations.swift"
+  "$SRC/DefaultAppService.swift"
   "$SRC/SidebarPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"

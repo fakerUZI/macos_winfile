@@ -434,3 +434,4 @@
 "settings.assoc.title" = "Default Applications";
 "settings.assoc.hint" = "Affects this app only; macOS file associations are unchanged.";
 "settings.assoc.empty" = "Nothing set yet. Use a file's context menu to assign one.";
+"settings.assoc.showBadge" = "Show associated app at the file icon's corner";

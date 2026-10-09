@@ -452,3 +452,4 @@
 "settings.assoc.title" = "默认打开方式";
 "settings.assoc.hint" = "只影响本应用，不会改动 macOS 的文件关联设置。";
 "settings.assoc.empty" = "尚未设置。可在文件右键菜单中指定。";
+"settings.assoc.showBadge" = "在文件图标右下角显示关联应用";
