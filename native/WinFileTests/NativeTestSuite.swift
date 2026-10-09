@@ -72,6 +72,7 @@ enum NativeTestSuite {
             testRealCategoryDuplicates()
             try testOpenContainingFolder()
             testThumbnailScope()
+            try testFileAssociations()
             testSidebarCategories()
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
@@ -738,6 +739,79 @@ enum NativeTestSuite {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
         }
+    }
+
+    // MARK: - 默认打开方式（仅本应用，不改动系统）
+
+    @MainActor
+    static func testFileAssociations() throws {
+        print("\n[默认打开方式]")
+
+        let fm = FileManager.default
+        let store = FileAssociations.shared
+        store.clearAll()
+
+        let dir = fm.temporaryDirectory.appendingPathComponent("winfile-assoc-\(UUID().uuidString)")
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir); store.clearAll() }
+
+        let pdf = dir.appendingPathComponent("文件.pdf")
+        let upper = dir.appendingPathComponent("文件.PDF")
+        let noExt = dir.appendingPathComponent("无扩展名")
+        let txt = dir.appendingPathComponent("文件.txt")
+        for url in [pdf, upper, noExt, txt] {
+            try "x".write(to: url, atomically: true, encoding: .utf8)
+        }
+
+        // 键的规则：小写扩展名；无扩展名为 nil
+        check("扩展名键为小写", FileAssociations.key(for: pdf) == "pdf",
+              FileAssociations.key(for: pdf) ?? "nil")
+        check("大写扩展名同样归一为小写", FileAssociations.key(for: upper) == "pdf",
+              FileAssociations.key(for: upper) ?? "nil")
+        check("无扩展名返回 nil", FileAssociations.key(for: noExt) == nil)
+
+        // 未设置时不应有条目（应跟随系统）
+        check("初始未设置任何关联", store.entries.isEmpty, "\(store.entries.count) 条")
+        check("未设置时查询为 nil", store.application(for: pdf) == nil)
+
+        // 设置一个真实存在的应用
+        let appURL = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        check("测试用应用存在", fm.fileExists(atPath: appURL.path))
+
+        store.setApplication(appURL, forExtension: "pdf")
+        check("设置后能查到应用", store.application(for: pdf)?.path == appURL.path,
+              store.application(for: pdf)?.path ?? "nil")
+        check("大小写扩展名共用同一设置", store.application(for: upper)?.path == appURL.path)
+        check("显示名去掉 .app 后缀", store.displayName(forExtension: "pdf") == "TextEdit",
+              store.displayName(forExtension: "pdf") ?? "nil")
+        check("其它类型不受影响", store.application(for: txt) == nil)
+
+        // 指向不存在的应用时应视为未设置（避免打开时报错）
+        store.setApplication(URL(fileURLWithPath: "/tmp/不存在-\(UUID().uuidString).app"),
+                             forExtension: "txt")
+        check("应用不存在时查询为 nil（视为未设置）", store.application(for: txt) == nil)
+
+        // 清除
+        store.clear(extension: "pdf")
+        check("清除后回到跟随系统", store.application(for: pdf) == nil)
+
+        // 全部清除
+        store.setApplication(appURL, forExtension: "pdf")
+        store.setApplication(appURL, forExtension: "txt")
+        check("设置了两条", store.entries.count == 2, "\(store.entries.count) 条")
+        store.clearAll()
+        check("全部清除后为空", store.entries.isEmpty, "\(store.entries.count) 条")
+
+        // 关键约束：本功能不得改动系统关联。
+        // 这里只验证我们自己没有调用系统设置接口——通过检查系统关联
+        // 在设置前后保持一致来间接确认（系统关联可能为空，故两边一致即可）
+        let systemBefore = NSWorkspace.shared.urlForApplication(toOpen: pdf)
+        store.setApplication(appURL, forExtension: "pdf")
+        let systemAfter = NSWorkspace.shared.urlForApplication(toOpen: pdf)
+        check("系统文件关联未被改动",
+              systemBefore?.path == systemAfter?.path,
+              "前=\(systemBefore?.lastPathComponent ?? "nil") 后=\(systemAfter?.lastPathComponent ?? "nil")")
+        store.clearAll()
     }
 
     // MARK: - 缩略图适用范围

@@ -438,3 +438,17 @@
 "sidebarManager.favoriteHint" = "勾选即在侧边栏显示；可添加任意文件夹";
 "button.done" = "完成";
 "action.openContainingFolder" = "打开所在文件夹";
+
+/* 默认打开方式（仅本应用） */
+"assoc.menu" = "默认打开方式（仅本应用）";
+"assoc.current" = "当前：%@";
+"assoc.currentSystem" = "当前：跟随系统";
+"assoc.choose" = "选择其它应用…";
+"assoc.clear" = "恢复跟随系统";
+"assoc.setDefault" = "设为默认（仅本应用）";
+"assoc.saved" = "已将 .%@ 的默认打开方式设为「%@」（仅在本应用内生效）";
+"assoc.cleared" = "已恢复跟随系统打开 .%@";
+"assoc.error.noExtension" = "该文件没有扩展名，无法按类型设置。";
+"settings.assoc.title" = "默认打开方式";
+"settings.assoc.hint" = "只影响本应用，不会改动 macOS 的文件关联设置。";
+"settings.assoc.empty" = "尚未设置。可在文件右键菜单中指定。";

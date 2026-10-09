@@ -420,3 +420,17 @@
 "sidebarManager.favoriteHint" = "Checked items appear in the sidebar; any folder can be added";
 "button.done" = "Done";
 "action.openContainingFolder" = "Open Containing Folder";
+
+/* Default open with (this app only) */
+"assoc.menu" = "Default App (this app only)";
+"assoc.current" = "Current: %@";
+"assoc.currentSystem" = "Current: Follow System";
+"assoc.choose" = "Choose Another App…";
+"assoc.clear" = "Follow System Again";
+"assoc.setDefault" = "Set as Default (this app only)";
+"assoc.saved" = "Default app for .%@ set to %@ (this app only)";
+"assoc.cleared" = "Reverted .%@ to follow the system";
+"assoc.error.noExtension" = "This file has no extension, cannot set by type.";
+"settings.assoc.title" = "Default Applications";
+"settings.assoc.hint" = "Affects this app only; macOS file associations are unchanged.";
+"settings.assoc.empty" = "Nothing set yet. Use a file's context menu to assign one.";

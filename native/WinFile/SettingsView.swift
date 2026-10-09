@@ -102,6 +102,8 @@ struct SettingsView: View {
 
             sidebarSection
 
+            associationsSection
+
             Section {
                 Text(L("settings.diagnostics.explain", "遇到页签点击没反应等问题时，可先复现一次，再把日志发给我定位。"))
                     .font(.callout)
@@ -151,6 +153,13 @@ struct SettingsView: View {
     private var sidebarSection: some View {
         SidebarManagementSection(engine: engine)
     }
+    // MARK: - 默认打开方式（仅本应用）
+
+    @ViewBuilder
+    private var associationsSection: some View {
+        AssociationsSection()
+    }
+
 }
 
 /// 侧边栏管理：按类型分类与个人收藏的增删
@@ -260,6 +269,54 @@ struct SidebarManagementSection: View {
             if case .success(let urls) = result {
                 for url in urls { engine.addFolder(url) }
             }
+        }
+    }
+
+}
+
+/// 管理 WinFile 内的默认打开方式
+///
+/// 这些设置只存在本应用的 UserDefaults 中，**不会调用系统 API 修改
+/// macOS 的文件关联** —— 访达与其它应用仍按系统设置打开。
+struct AssociationsSection: View {
+    @ObservedObject private var associations = FileAssociations.shared
+
+    var body: some View {
+        Section {
+            if associations.entries.isEmpty {
+                Text(L("settings.assoc.empty", "尚未设置。可在文件右键菜单中指定。"))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(associations.entries, id: \.ext) { entry in
+                    HStack {
+                        Text(".\(entry.ext)")
+                            .monospaced()
+                            .frame(width: 60, alignment: .leading)
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: entry.app.path))
+                            .resizable()
+                            .frame(width: 16, height: 16)
+                        Text(entry.app.deletingPathExtension().lastPathComponent)
+                        Spacer()
+                        Button {
+                            associations.clear(extension: entry.ext)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .help(L("settings.assoc.remove", "恢复跟随系统"))
+                    }
+                }
+                Button(role: .destructive) {
+                    associations.clearAll()
+                } label: {
+                    Text(L("settings.assoc.clearAll", "全部恢复跟随系统"))
+                }
+            }
+        } header: {
+            Text(L("settings.assoc.title", "默认打开方式"))
+        } footer: {
+            Text(L("settings.assoc.hint", "只影响本应用，不会改动 macOS 的文件关联设置。"))
+                .font(.caption)
         }
     }
 }

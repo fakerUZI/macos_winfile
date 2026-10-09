@@ -175,9 +175,13 @@ struct MainView: View {
                     model.createTextFile(named: name)
                 }
             case .openWith(let item):
-                OpenWithSheet(engine: engine, item: item) { appURL in
-                    model.openSelection(withApplicationAt: appURL)
-                }
+                OpenWithSheet(engine: engine, item: item,
+                              onPick: { appURL in
+                                  model.openSelection(withApplicationAt: appURL)
+                              },
+                              onSetDefault: { app in
+                                  model.setDefaultApplication(app, for: item)
+                              })
             case .help:
                 HelpSheet()
             }

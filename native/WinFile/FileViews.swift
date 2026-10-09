@@ -502,6 +502,31 @@ struct FileItemContextMenu: View {
         // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
         if selectedCount <= 1, let item, !AndroidURL.isAndroid(item.url) {
             Button(NSLocalizedString("action.openWith", comment: "打开方式…")) { dialog = .openWith(item) }
+            // 仅在本应用内生效的默认打开方式（不改动 macOS 的关联设置）
+            Menu(L("assoc.menu", "默认打开方式（仅本应用）")) {
+                if let ext = FileAssociations.key(for: item.url) {
+                    let current = FileAssociations.shared.displayName(forExtension: ext)
+                    Text(current == nil
+                         ? L("assoc.currentSystem", "当前：跟随系统")
+                         : L("assoc.current", "当前：%@", current ?? ""))
+                    Divider()
+                    // 候选应用：系统为该类型推荐的 + 手动选择
+                    ForEach(engine.applications(for: item), id: \.path) { app in
+                        Button(app.deletingPathExtension().lastPathComponent) {
+                            model.setDefaultApplication(app, for: item)
+                        }
+                    }
+                    Divider()
+                    Button(L("assoc.choose", "选择其它应用…")) { dialog = .openWith(item) }
+                    if current != nil {
+                        Button(L("assoc.clear", "恢复跟随系统")) {
+                            model.clearDefaultApplication(for: item)
+                        }
+                    }
+                } else {
+                    Text(L("assoc.error.noExtension", "该文件没有扩展名，无法按类型设置。"))
+                }
+            }
         }
         // 分类视图与搜索结果中的文件不在当前目录，提供"回到真实位置"的入口
         if let item, model.isAggregatedView, !AndroidURL.isAndroid(item.url) {

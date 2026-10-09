@@ -102,6 +102,8 @@ struct OpenWithSheet: View {
     @ObservedObject var engine: FSEngine
     let item: FileItem
     let onPick: (URL) -> Void
+    /// 设为 WinFile 内的默认打开方式（不影响 macOS 的关联设置）
+    var onSetDefault: ((URL) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var selected: URL?
@@ -161,6 +163,13 @@ struct OpenWithSheet: View {
             HStack {
                 Spacer()
                 Button(NSLocalizedString("button.cancel", comment: "取消")) { dismiss() }
+                Button(L("assoc.setDefault", "设为默认（仅本应用）")) {
+                    if let selected {
+                        onSetDefault?(selected)
+                        dismiss()
+                    }
+                }
+                .disabled(selected == nil)
                     .keyboardShortcut(.cancelAction)
                 Button(NSLocalizedString("dialog.openWith.confirm", comment: "用选中的应用打开")) {
                     if let selected { onPick(selected) }

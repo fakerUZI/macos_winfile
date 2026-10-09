@@ -1023,8 +1023,44 @@ final class BrowserModel: ObservableObject {
             selectFolder(item.url)
             return
         }
+        // WinFile 内的默认打开方式优先于系统默认。
+        // 注意：这只影响本应用，不会改动 macOS 的关联设置。
+        if let app = FileAssociations.shared.application(for: item.url) {
+            noteOpened(item.url)
+            open([item.url], with: app)
+            return
+        }
         noteOpened(item.url)
         engine.open(item)
+    }
+
+    /// 用指定应用打开若干文件
+    func open(_ urls: [URL], with app: URL) {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: config) { [weak self] _, error in
+            if let error {
+                Task { @MainActor in self?.errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    /// 为当前选中文件的类型设置 WinFile 内的默认打开方式
+    func setDefaultApplication(_ app: URL, for item: FileItem) {
+        guard let ext = FileAssociations.key(for: item.url) else {
+            errorMessage = L("assoc.error.noExtension", "该文件没有扩展名，无法按类型设置。")
+            return
+        }
+        FileAssociations.shared.setApplication(app, forExtension: ext)
+        statusMessage = L("assoc.saved", "已将 .%@ 的默认打开方式设为「%@」（仅在本应用内生效）",
+                          ext, app.deletingPathExtension().lastPathComponent)
+    }
+
+    /// 清除当前选中文件类型的自定义打开方式（恢复跟随系统）
+    func clearDefaultApplication(for item: FileItem) {
+        guard let ext = FileAssociations.key(for: item.url) else { return }
+        FileAssociations.shared.clear(extension: ext)
+        statusMessage = L("assoc.cleared", "已恢复跟随系统打开 .%@", ext)
     }
 
     func openSelection() {
