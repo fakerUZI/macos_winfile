@@ -37,7 +37,8 @@ struct FileIconView: View {
             return
         }
 
-        // 图片与视频在尺寸足够大时显示真实缩略图（视频即封面帧）。
+        // 图片、视频、PDF 在尺寸足够大时显示真实缩略图
+        // （视频为封面帧，PDF 为首页渲染图）。
         // 小尺寸（列表行内 18pt）不生成，用系统图标即可，避免无谓开销。
         let wantsThumbnail = item.supportsThumbnail && size >= 32
         if wantsThumbnail {

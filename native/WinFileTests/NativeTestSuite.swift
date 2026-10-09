@@ -755,7 +755,8 @@ enum NativeTestSuite {
         let samples: [(String, Bool)] = [
             ("照片.jpg", true), ("照片.png", true), ("照片.heic", true),
             ("影片.mp4", true), ("影片.mov", true), ("影片.m4v", true),
-            ("文档.pdf", false), ("文稿.txt", false), ("音乐.mp3", false),
+            ("文档.pdf", true), ("文档.PDF", true),
+            ("文稿.txt", false), ("音乐.mp3", false),
             ("代码.swift", false), ("压缩包.zip", false)
         ]
 
