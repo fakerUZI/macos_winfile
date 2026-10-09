@@ -4,6 +4,7 @@
 // 运行方式二（命令行，快速迭代）：
 //     ./native/run_native_tests.sh
 import AppKit
+import Combine
 import Foundation
 
 @MainActor
@@ -867,6 +868,31 @@ enum NativeTestSuite {
         let after = service.defaultApplication(for: pdf)
         check("改动关联后缓存已失效（取到新应用）", after?.path == preview.path,
               after?.path ?? "nil")
+
+        // 关键：改动设置必须通知观察者，否则界面要等重建才更新
+        // （用户实测现象：改了打开方式，切换文件夹后徽标才变）
+        var notified = false
+        let token = service.objectWillChange.sink { notified = true }
+        defer { token.cancel() }
+        store.setApplication(textEdit, forExtension: "pdf")
+        check("改动关联会通知界面刷新（无需切换目录）", notified,
+              notified ? "已通知" : "未通知")
+
+        // 时序验证：objectWillChange 是"将要变化"，此时缓存应已清空，
+        // 否则界面在收到通知后重新求值仍会读到旧缓存 → 徽标不更新。
+        var iconAtNotificationTime: NSImage?
+        var appAtNotificationTime: URL?
+        let token2 = service.objectWillChange.sink {
+            iconAtNotificationTime = service.badgeIcon(for: pdf, size: 32)
+            appAtNotificationTime = service.defaultApplication(for: pdf)
+        }
+        defer { token2.cancel() }
+        store.setApplication(textEdit, forExtension: "pdf")
+
+        check("收到通知时缓存已清空（能解析到新应用）",
+              appAtNotificationTime?.path == textEdit.path,
+              appAtNotificationTime?.path ?? "nil")
+        check("收到通知时图标已可重新获取", iconAtNotificationTime != nil)
     }
 
     // MARK: - 缩略图适用范围

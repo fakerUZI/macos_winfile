@@ -8,9 +8,10 @@ struct FileIconView: View {
     @ObservedObject var engine: FSEngine
     let item: FileItem
     var size: CGFloat = 18
+    /// 观察关联设置：改动后徽标需立即更新（此前依赖 .task(id:)，
+    /// 而 id 不含设置内容，导致改了打开方式要切换目录才生效）
+    @ObservedObject private var defaultApps = DefaultAppService.shared
     @State private var image: NSImage?
-    /// 关联应用的图标（右下角徽标）
-    @State private var badge: NSImage?
 
     var body: some View {
         Group {
@@ -45,37 +46,20 @@ struct FileIconView: View {
         .task(id: item.id) {
             await loadImage()
         }
-        .task(id: badgeTaskKey) {
-            await loadBadge()
-        }
+    }
+
+    /// 右下角徽标：直接同步计算。
+    /// DefaultAppService 内部按扩展名缓存解析结果、按应用缓存图标，
+    /// 因此重复求值不会频繁访问系统。
+    private var badge: NSImage? {
+        guard !item.isContainer, size >= 24, !AndroidURL.isAndroid(item.url) else { return nil }
+        guard defaultApps.showsBadges else { return nil }
+        return defaultApps.badgeIcon(for: item.url, size: badgeSize * 2)
     }
 
     /// 徽标尺寸：随图标大小缩放，但设上下限以免过大或看不清
     private var badgeSize: CGFloat {
         max(7, min(18, size * 0.42))
-    }
-
-    /// 徽标只在文件夹之外、且尺寸足够时显示（列表 18pt 的行内图标不显示）
-    private var badgeTaskKey: String {
-        "badge|\(item.id)|\(size)|\(DefaultAppService.shared.showsBadges)"
-    }
-
-    private func loadBadge() async {
-        // 文件夹不显示徽标（双击是进入而非用某应用打开）
-        guard !item.isContainer, size >= 24, !AndroidURL.isAndroid(item.url) else {
-            badge = nil
-            return
-        }
-        guard DefaultAppService.shared.showsBadges else {
-            badge = nil
-            return
-        }
-        let url = item.url
-        let target = badgeSize * 2
-        let icon: NSImage? = await MainActor.run {
-            DefaultAppService.shared.badgeIcon(for: url, size: target)
-        }
-        badge = icon
     }
 
     /// 加载图标或缩略图

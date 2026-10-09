@@ -61,9 +61,14 @@ final class DefaultAppService: ObservableObject {
         return icon
     }
 
-    /// 设置变更后需要失效缓存
+    /// 设置变更后失效缓存，并通知界面刷新。
+    ///
+    /// 必须触发 objectWillChange：文件图标视图观察本对象，
+    /// 若只清缓存不发通知，界面上的徽标要等到下次重建才更新
+    /// （表现为"改了打开方式，切换文件夹后才生效"）。
     func invalidate() {
         appCache.removeAll()
         iconCache.removeAll()
+        objectWillChange.send()
     }
 }

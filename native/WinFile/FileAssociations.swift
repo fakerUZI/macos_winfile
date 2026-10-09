@@ -77,7 +77,9 @@ final class FileAssociations: ObservableObject {
 
     private func persist() {
         UserDefaults.standard.set(map, forKey: key)
-        // 关联变化后，图标徽标需要重新解析
+        // 关联变化后：清空解析缓存，并通知观察者刷新徽标。
+        // invalidate() 会触发 DefaultAppService 的 objectWillChange，
+        // 所有正在显示的文件图标因此立即更新（无需切换目录）。
         DefaultAppService.shared.invalidate()
     }
 }
