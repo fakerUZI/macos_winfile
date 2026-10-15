@@ -2125,8 +2125,7 @@ enum NativeTestSuite {
         manager.closeActive()
         check("关闭最后一个页签无副作用", manager.count == 1)
 
-        let replacement = manager.close(manager.activeTab)
-        _ = replacement
+        manager.close(manager.activeTab)
         check("关掉最后一个会自动补一个新页签", manager.count == 1, "\(manager.count)")
         check("补位页签可正常使用", manager.activeModel.currentDirectory != nil
               || manager.activeModel.isHomeView)

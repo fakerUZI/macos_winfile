@@ -250,8 +250,8 @@ struct AppIconView: View {
             image = await Task.detached(priority: .userInitiated) {
                 let icon = NSWorkspace.shared.icon(forFile: path)
                 icon.size = NSSize(width: target, height: target)
-                return icon
-            }.value
+                return ImageBox(image: icon)
+            }.value.image
         }
     }
 }

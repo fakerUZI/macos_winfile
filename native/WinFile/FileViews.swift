@@ -75,7 +75,7 @@ struct FileIconView: View {
         // 小尺寸（列表行内 18pt）不生成，用系统图标即可，避免无谓开销。
         let wantsThumbnail = item.supportsThumbnail && size >= 32
         if wantsThumbnail {
-            if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size) {
+            if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size).image {
                 image = thumb
                 return
             }
@@ -85,12 +85,12 @@ struct FileIconView: View {
         // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
         let url = item.url
         let target = size * 2
-        let loaded: NSImage? = await Task.detached(priority: .userInitiated) {
+        let loaded = await Task.detached(priority: .userInitiated) {
             let icon = NSWorkspace.shared.icon(forFile: url.path)
             icon.size = NSSize(width: target, height: target)
-            return icon
+            return ImageBox(image: icon)
         }.value
-        image = loaded
+        image = loaded.image
     }
 }
 

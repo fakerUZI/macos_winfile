@@ -130,8 +130,6 @@ enum TabSmokeTest {
             return true
         }
 
-        // 页签栏位于内容区顶部（侧边栏宽 216）
-        let stripY = window.frame.height - 62   // 窗口坐标近似（标题栏 + 工具栏下方）
         // 权威判据：点击后读取「活动页签身份 + 该页签模型的视图类型」
         func activeState() -> (id: String, view: String, dir: String) {
             guard let manager = MainView.currentTabManager else { return ("nil", "nil", "nil") }
