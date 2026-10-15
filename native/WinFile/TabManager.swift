@@ -50,6 +50,9 @@ final class TabManager: ObservableObject {
 
     private let engine: FSEngine
     private var cancellables = Set<AnyCancellable>()
+    /// 当前活动模型转发的订阅：切换页签时先取消旧的，
+    /// 否则非活动页签的每次变化都会触发 TabManager 的全量刷新
+    private var modelCancellable: AnyCancellable?
     private weak var observedModel: BrowserModel?
 
     init(engine: FSEngine, startDirectory: URL?) {
@@ -74,9 +77,9 @@ final class TabManager: ObservableObject {
         let current = activeModel
         guard observedModel !== current else { return }
         observedModel = current
-        current.objectWillChange
+        modelCancellable?.cancel()
+        modelCancellable = current.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
         objectWillChange.send()
     }
 

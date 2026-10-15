@@ -373,11 +373,15 @@ struct FileTableView: View {
         group.notify(queue: .main) {
             guard !urls.isEmpty else { return }
             let items = urls.compactMap { FileItem(url: $0, resourceKeys: FSEngine.resourceKeys, showHidden: true) }
-            do {
-                _ = try engine.transfer(items, to: directory, mode: .copy)
-                model.reload()
-            } catch {
-                model.errorMessage = error.localizedDescription
+            Task { @MainActor in
+                do {
+                    _ = try await Task.detached(priority: .userInitiated) {
+                        try FSEngine.transfer(items, to: directory, mode: .copy)
+                    }.value
+                    model.reload()
+                } catch {
+                    model.errorMessage = error.localizedDescription
+                }
             }
         }
         return true
@@ -477,11 +481,15 @@ struct FileIconGridView: View {
             }
             group.notify(queue: .main) {
                 let items = urls.compactMap { FileItem(url: $0, resourceKeys: FSEngine.resourceKeys, showHidden: true) }
-                do {
-                    _ = try engine.transfer(items, to: directory, mode: .copy)
-                    model.reload()
-                } catch {
-                    model.errorMessage = error.localizedDescription
+                Task { @MainActor in
+                    do {
+                        _ = try await Task.detached(priority: .userInitiated) {
+                            try FSEngine.transfer(items, to: directory, mode: .copy)
+                        }.value
+                        model.reload()
+                    } catch {
+                        model.errorMessage = error.localizedDescription
+                    }
                 }
             }
             return true

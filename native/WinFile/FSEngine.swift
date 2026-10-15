@@ -235,15 +235,9 @@ final class FSEngine: ObservableObject {
 
     // MARK: - 目录列表
 
-    /// 列出目录内容（I/O 交给无状态的 FileSystemService，可在后台执行）
-    nonisolated func list(_ directory: URL, showHidden: Bool) throws -> [FileItem] {
-        guard isAllowed(directory) else { throw FSError.notAuthorized(directory) }
-        return try FileSystemService.list(directory, showHidden: showHidden)
-    }
-
     /// 列出已安装应用
     func listApplications() -> [FileItem] {
-        FileSystemService.listApplications(allowedRoots: authorizedRoots)
+        FileSystemService.listApplications()
     }
 
     /// 启动应用或打开文件（沙盒允许，且是苹果推荐方式）
@@ -303,21 +297,23 @@ final class FSEngine: ObservableObject {
 
     // MARK: - 文件操作（全部原生 API）
 
-    nonisolated func createFolder(in directory: URL, named name: String) throws -> URL {
+    nonisolated static func createFolder(in directory: URL, named name: String) throws -> URL {
         let target = uniqueURL(in: directory, name: name, isDirectory: true)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
         return target
     }
 
-    nonisolated func createTextFile(in directory: URL, named name: String, contents: String = "") throws -> URL {
+    nonisolated static func createTextFile(in directory: URL, named name: String, contents: String = "") throws -> URL {
         let target = uniqueURL(in: directory, name: name, isDirectory: false)
         try contents.write(to: target, atomically: true, encoding: .utf8)
         return target
     }
 
-    nonisolated func rename(_ item: FileItem, to newName: String) throws -> URL {
+    nonisolated static func rename(_ item: FileItem, to newName: String) throws -> URL {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/") else { throw FSError.invalidName }
+        // "/" 与 ":" 在 macOS 文件名中非法（POSIX 层允许 ":"，但访达会显示成 "/"，
+        // 跨应用复制时还会出问题，因此一并拒绝）
+        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":") else { throw FSError.invalidName }
         let target = item.url.deletingLastPathComponent().appendingPathComponent(trimmed)
         guard target.path != item.url.path else { return item.url }
         guard !FileManager.default.fileExists(atPath: target.path) else { throw FSError.nameExists(trimmed) }
@@ -326,14 +322,14 @@ final class FSEngine: ObservableObject {
     }
 
     /// 移到废纸篓（原生 API，沙盒允许）
-    nonisolated func moveToTrash(_ items: [FileItem]) throws {
+    nonisolated static func moveToTrash(_ items: [FileItem]) throws {
         for item in items {
             var resulting: NSURL?
             try FileManager.default.trashItem(at: item.url, resultingItemURL: &resulting)
         }
     }
 
-    nonisolated func duplicate(_ items: [FileItem]) throws -> [URL] {
+    nonisolated static func duplicate(_ items: [FileItem]) throws -> [URL] {
         var created: [URL] = []
         for item in items {
             let directory = item.url.deletingLastPathComponent()
@@ -358,7 +354,7 @@ final class FSEngine: ObservableObject {
     enum TransferMode: Sendable { case copy, move }
 
     /// 复制/移动到目标目录；拒绝把文件夹放进它自己或子目录
-    nonisolated func transfer(_ items: [FileItem], to directory: URL, mode: TransferMode) throws -> [URL] {
+    nonisolated static func transfer(_ items: [FileItem], to directory: URL, mode: TransferMode) throws -> [URL] {
         var created: [URL] = []
         let destPath = directory.standardizedFileURL.resolvingSymlinksInPath().path
         for item in items {
@@ -380,7 +376,7 @@ final class FSEngine: ObservableObject {
     }
 
     /// 生成不冲突的目标文件名（"名称 2.ext"）
-    nonisolated func uniqueURL(in directory: URL, name: String, isDirectory: Bool) -> URL {
+    nonisolated static func uniqueURL(in directory: URL, name: String, isDirectory: Bool) -> URL {
         let fm = FileManager.default
         var candidate = directory.appendingPathComponent(name)
         guard fm.fileExists(atPath: candidate.path) else { return candidate }

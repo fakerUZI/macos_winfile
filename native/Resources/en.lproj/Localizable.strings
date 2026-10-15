@@ -121,6 +121,7 @@
 "status.cut" = "Cut %d items to the clipboard";
 "status.pathCopied" = "Path copied";
 "status.nameCopied" = "Name copied";
+"clipboard.defaultName" = "Clipboard Text";
 "status.deleted" = "Deleted %d items";
 "status.duplicated" = "Created %d duplicates";
 "status.renamed" = "Renamed";

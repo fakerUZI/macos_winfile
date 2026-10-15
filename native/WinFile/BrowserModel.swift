@@ -226,7 +226,10 @@ final class BrowserModel: ObservableObject {
         case .category(let category):
             return category.localizedName
         case .folder(let url):
-            return url.lastPathComponent
+            // 根目录的 lastPathComponent 为空，直接显示磁盘名
+            return url.path == "/"
+                ? NSLocalizedString("place.macintoshHD", comment: "启动磁盘")
+                : url.lastPathComponent
         case nil:
             return ""
         }
@@ -330,7 +333,6 @@ final class BrowserModel: ObservableObject {
         isLoadingDrives = false
         isBusy = true
         let showHidden = showHidden
-        let engine = self.engine
         listingTask = Task { [weak self] in
             var loaded: [FileItem] = []
             var failure: String?
@@ -549,7 +551,7 @@ final class BrowserModel: ObservableObject {
     func deleteAndroidSelection() {
         let entries = selectedAndroidEntries
         guard !entries.isEmpty else { return }
-        guard let (serial, _) = AndroidURL.split(currentDirectory ?? entries[0].url) else { return }
+        guard AndroidURL.split(currentDirectory ?? entries[0].url) != nil else { return }
         runAndroidOperation(L("status.deleting", "正在删除…")) { service in
             for entry in entries { try service.remove(entry.path) }
         }
@@ -557,7 +559,7 @@ final class BrowserModel: ObservableObject {
 
     /// 安卓端重命名
     func renameAndroid(_ entry: AndroidEntry, to newName: String) {
-        guard let (serial, _) = AndroidURL.split(entry.url) else { return }
+        guard AndroidURL.split(entry.url) != nil else { return }
         runAndroidOperation(L("status.renaming", "正在重命名…")) { service in
             try service.rename(entry.path, to: newName)
         }
@@ -599,7 +601,6 @@ final class BrowserModel: ObservableObject {
         let urls = selectedItems.map(\.url)
         let name = ArchiveService.defaultArchiveName(for: urls)
         archiveProgress = ArchiveProgress(name: name, isCompressing: true)
-        let engine = self.engine
         Task { [weak self] in
             var failure: String?
             do {
@@ -609,7 +610,6 @@ final class BrowserModel: ObservableObject {
                 await MainActor.run { [weak self] in
                     self?.statusMessage = L("status.compressed", "已压缩为 %@", target.lastPathComponent)
                 }
-                _ = engine
             } catch {
                 failure = error.localizedDescription
             }
@@ -937,13 +937,12 @@ final class BrowserModel: ObservableObject {
         categoryResults = []
         isLoadingCategory = false
         isBusy = true
-        let roots = engine.authorizedRoots
         listingTask = Task { [weak self] in
             let apps = await Task.detached(priority: .userInitiated) {
-                FileSystemService.listApplications(allowedRoots: roots)
+                FileSystemService.listApplications()
             }.value
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 self.items = apps
                 self.selectedIDs = []
                 self.isBusy = false
@@ -1154,13 +1153,12 @@ final class BrowserModel: ObservableObject {
         let mode: FSEngine.TransferMode = clipboard.mode == .copy ? .copy : .move
         isBusy = true
         Task { [weak self] in
-            guard let self else { return }
             var failure: String?
             do {
-                let items = urls.compactMap { url -> FileItem? in
-                    FileItem(url: url, resourceKeys: FSEngine.resourceKeys, showHidden: true)
-                }
-                _ = try self.engine.transfer(items, to: directory, mode: mode)
+                let items = await Self.fileItems(for: urls)
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try FSEngine.transfer(items, to: directory, mode: mode)
+                }.value
             } catch {
                 failure = error.localizedDescription
             }
@@ -1191,14 +1189,15 @@ final class BrowserModel: ObservableObject {
         }
         isBusy = true
         Task { [weak self] in
-            guard let self else { return }
             var failure: String?
             do {
-                if permanently {
-                    for item in items { try FileManager.default.removeItem(at: item.url) }
-                } else {
-                    try self.engine.moveToTrash(items)
-                }
+                _ = try await Task.detached(priority: .userInitiated) {
+                    if permanently {
+                        for item in items { try FileManager.default.removeItem(at: item.url) }
+                    } else {
+                        try FSEngine.moveToTrash(items)
+                    }
+                }.value
             } catch {
                 failure = error.localizedDescription
             }
@@ -1221,9 +1220,14 @@ final class BrowserModel: ObservableObject {
         guard !items.isEmpty else { return }
         isBusy = true
         Task { [weak self] in
-            guard let self else { return }
             var failure: String?
-            do { _ = try self.engine.duplicate(items) } catch { failure = error.localizedDescription }
+            do {
+                _ = try await Task.detached(priority: .userInitiated) {
+                    try FSEngine.duplicate(items)
+                }.value
+            } catch {
+                failure = error.localizedDescription
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.isBusy = false
@@ -1235,6 +1239,13 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    /// 在后台把 URL 列表解析成 FileItem（逐次 stat，量大时不占主线程）
+    private static func fileItems(for urls: [URL]) async -> [FileItem] {
+        await Task.detached(priority: .userInitiated) {
+            urls.compactMap { FileItem(url: $0, resourceKeys: FileSystemService.resourceKeys, showHidden: true) }
+        }.value
+    }
+
     func rename(_ item: FileItem, to newName: String) {
         // 安卓条目走 adb 重命名
         if AndroidURL.isAndroid(item.url),
@@ -1243,7 +1254,7 @@ final class BrowserModel: ObservableObject {
             return
         }
         do {
-            _ = try engine.rename(item, to: newName)
+            _ = try FSEngine.rename(item, to: newName)
             statusMessage = NSLocalizedString("status.renamed", comment: "已重命名")
             reload()
         } catch {
@@ -1258,7 +1269,7 @@ final class BrowserModel: ObservableObject {
         }
         guard let directory = currentDirectory else { return }
         do {
-            let url = try engine.createFolder(in: directory, named: name)
+            let url = try FSEngine.createFolder(in: directory, named: name)
             statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
         } catch {
@@ -1269,7 +1280,7 @@ final class BrowserModel: ObservableObject {
     func createTextFile(named name: String, contents: String = "") {
         guard let directory = currentDirectory else { return }
         do {
-            let url = try engine.createTextFile(in: directory, named: name, contents: contents)
+            let url = try FSEngine.createTextFile(in: directory, named: name, contents: contents)
             statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
         } catch {
@@ -1281,10 +1292,11 @@ final class BrowserModel: ObservableObject {
     func saveClipboardTextAsFile() -> String? {
         guard let directory = currentDirectory else { return nil }
         guard let text = NSPasteboard.general.string(forType: .string), !text.isEmpty else { return nil }
-        let firstLine = text.split(separator: "\n").first.map(String.init) ?? "剪贴板文本"
+        let firstLine = text.split(separator: "\n").first.map(String.init)
+            ?? L("clipboard.defaultName", "剪贴板文本")
         let safe = firstLine.replacingOccurrences(of: "/", with: "_").prefix(40)
         do {
-            let url = try engine.createTextFile(in: directory, named: "\(safe).txt", contents: text)
+            let url = try FSEngine.createTextFile(in: directory, named: "\(safe).txt", contents: text)
             statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
             return url.lastPathComponent
@@ -1314,13 +1326,13 @@ final class BrowserModel: ObservableObject {
         }
         isSearching = true
         isBusy = true
-        let engine = self.engine
         searchTask = Task { [weak self] in
             let found = await Task.detached(priority: .userInitiated) {
                 FileSystemService.search(under: root, matching: needle)
             }.value
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                // 双守卫：任务被取消、或搜索已被清空/切走时，过期结果不得回写
+                guard let self, !Task.isCancelled, self.isSearching else { return }
                 self.searchResults = found
                 self.isBusy = false
                 self.statusMessage = String(format: NSLocalizedString("status.searchResult", comment: "搜索结果"), found.count, needle)

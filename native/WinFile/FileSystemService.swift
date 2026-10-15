@@ -35,7 +35,7 @@ enum FileSystemService {
         return sort(items, field: .name, ascending: true)
     }
 
-    static func listApplications(allowedRoots: [URL]? = nil) -> [FileItem] {
+    static func listApplications() -> [FileItem] {
         let fm = FileManager.default
         // 本地使用形态：涵盖系统与用户级应用目录
         let roots = [
@@ -258,19 +258,26 @@ enum FileSystemService {
 
     /// 分类计数：与 categoryFiles 使用**相同的深度与上限**，
     /// 保证侧边栏徽标数字与点进去看到的条目数完全一致。
+    ///
+    /// 与 categoryFiles 一样跳过条目数超过 3000 的目录；当所有可能出现的
+    /// 分类都达到上限后提前结束遍历（结果不会再变化，没必要走完整个磁盘）。
     static func categoryCounts(under roots: [URL], depth: Int = 4, budget: Int = 800) -> [FileCategory: Int] {
         var counts: [FileCategory: Int] = [:]
         var counted = Set<String>()   // 已计入的文件路径，避免重复计数
         let fm = FileManager.default
+        // 文件可能出现的分类（.folder 只用于目录，不会被计数）
+        let countableCategories = Set(FileCategory.allCases.filter { $0 != .folder })
+        var allCapped = false
 
         func walk(_ directory: URL, level: Int) {
-            if level > depth { return }
+            if allCapped || level > depth { return }
             guard let children = try? fm.contentsOfDirectory(
                 at: directory,
                 includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ) else { return }
+            ), children.count <= 3000 else { return }
             for url in children {
+                if allCapped { return }
                 // 单个分类达到上限即封顶，与 categoryFiles 的截断行为保持一致
                 guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { continue }
                 if values.isDirectory == true {
@@ -283,8 +290,15 @@ enum FileSystemService {
                 guard counted.insert(item.url.path).inserted else { continue }
                 let info = FileTypeDB.info(name: item.name, isDirectory: false,
                                            isSymlink: values.isSymbolicLink ?? false, isBundle: false)
+                guard (counts[info.category] ?? 0) < budget else { continue }
                 let next = (counts[info.category] ?? 0) + 1
-                counts[info.category] = min(next, budget)
+                counts[info.category] = next
+                // 所有分类都封顶后无需再遍历（结果不会再变）
+                if counts.count == countableCategories.count,
+                   counts.values.allSatisfy({ $0 >= budget }) {
+                    allCapped = true
+                    return
+                }
             }
         }
 

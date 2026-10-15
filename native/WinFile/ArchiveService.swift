@@ -1,10 +1,13 @@
 // 压缩与解压
 //
-// 实现说明：macOS 自带 ditto / unzip，无需第三方库。
-//   - 压缩用 ditto：保留资源分支与扩展属性（zip 命令会丢失，导致
-//     解压后别名、标签等信息消失）
-//   - 解压用 ditto -x -k：同样保留元数据
-// 与安卓功能不同，这里不依赖任何外部安装，属于系统自带工具。
+// 实现说明（都是实测得出的）：
+//   - 压缩用 /usr/bin/zip：默认写 UTF-8 文件名，中文不乱码
+//     （ditto 写入的是历史编码，解压时中文名会乱码）
+//   - 解压先解到临时目录、再逐项合并进目标：全程零覆盖 ——
+//     目标已有同名项时改解到「<压缩包名> 解压」独立文件夹
+//     （与 macOS 归档实用工具行为一致），绝不静默覆盖用户文件
+//   - zip 走 ditto -x -k（还原元数据）；tar 系走 bsdtar（系统自带，
+//     自动识别 gzip/bzip2/xz 压缩方式）
 import Foundation
 
 enum ArchiveError: LocalizedError {
@@ -38,7 +41,16 @@ struct ArchiveProgress: Equatable {
 enum ArchiveService {
 
     /// 可识别的压缩包扩展名
-    static let archiveExtensions: Set<String> = ["zip"]
+    /// zip 用 ditto 解压；tar/tgz/gz/bz2/xz 系用系统 bsdtar（自动识别压缩方式）
+    static let archiveExtensions: Set<String> = [
+        "zip",
+        "tar", "tgz", "gz", "bz2", "tbz", "tbz2", "xz", "txz",
+    ]
+
+    /// 需要用 bsdtar 而非 ditto 解压的扩展名
+    private static let tarExtensions: Set<String> = [
+        "tar", "tgz", "gz", "bz2", "tbz", "tbz2", "xz", "txz",
+    ]
 
     static func isArchive(_ url: URL) -> Bool {
         archiveExtensions.contains(url.pathExtension.lowercased())
@@ -109,22 +121,93 @@ enum ArchiveService {
 
     /// 解压压缩包到目标目录。
     ///
+    /// 流程：先解到临时目录，再逐项移入目标 ——
+    /// - 目标已存在同名项时**绝不覆盖**，而是整体改解到
+    ///   「<压缩包名> 解压」文件夹（必要时加序号），与归档实用工具一致
+    /// - 自动跳过 __MACOSX 元数据目录
+    ///
     /// - Returns: 解压产生的顶层项目（便于解压后选中它们）
     @discardableResult
     static func extract(_ archive: URL, to destination: URL) throws -> [URL] {
         guard isArchive(archive) else {
             throw ArchiveError.commandFailed(L("archive.error.unsupported", "暂不支持该格式"), -1)
         }
-        let before = Set((try? FileManager.default.contentsOfDirectory(
-            atPath: destination.path)) ?? [])
+        let fm = FileManager.default
 
-        // ditto -x -k：解压 zip 并还原元数据
-        try runDitto(["-x", "-k", archive.path, destination.path])
+        // 1) 先解到临时目录（与目标隔离，之后按自己的规则合并）
+        let staging = fm.temporaryDirectory
+            .appendingPathComponent("winfile-extract-\(UUID().uuidString)")
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: staging) }
+        if tarExtensions.contains(archive.pathExtension.lowercased()) {
+            try runTar(["-xf", archive.path, "-C", staging.path])
+        } else {
+            // ditto -x -k：解压 zip 并还原元数据
+            try runDitto(["-x", "-k", archive.path, staging.path])
+        }
 
-        let after = Set((try? FileManager.default.contentsOfDirectory(
-            atPath: destination.path)) ?? [])
-        let created = after.subtracting(before).sorted()
-        return created.map { destination.appendingPathComponent($0) }
+        // 2) 顶层项目（过滤 __MACOSX 元数据目录）
+        let topNames = ((try? fm.contentsOfDirectory(atPath: staging.path)) ?? [])
+            .filter { $0 != "__MACOSX" }
+            .sorted()
+
+        // 3) 冲突检测：临时目录树中任一项目在目标下已存在即为冲突
+        //    （目录重名也算 —— moveItem 无法合并进已有目录，重名会失败）
+        let targetDir: URL
+        if !topNames.isEmpty && hasConflicts(staging: staging, destination: destination) {
+            targetDir = uniqueExtractFolder(in: destination,
+                                            baseName: archive.deletingPathExtension().lastPathComponent)
+            try fm.createDirectory(at: targetDir, withIntermediateDirectories: true)
+        } else {
+            targetDir = destination
+        }
+
+        // 4) 逐项移入目标
+        var created: [URL] = []
+        for name in topNames {
+            let source = staging.appendingPathComponent(name)
+            let target = targetDir.appendingPathComponent(name)
+            try fm.moveItem(at: source, to: target)
+            created.append(target)
+        }
+        return created
+    }
+
+    /// 临时目录树中是否存在与目标目录冲突的路径
+    private static func hasConflicts(staging: URL, destination: URL) -> Bool {
+        let fm = FileManager.default
+        /// 收集目录树的全部相对路径（跳过 __MACOSX）
+        func relativePaths(_ directory: URL, prefix: String) -> [String] {
+            guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return [] }
+            var result: [String] = []
+            for name in names {
+                guard name != "__MACOSX" else { continue }
+                let relative = prefix.isEmpty ? name : prefix + "/" + name
+                let absolute = directory.appendingPathComponent(name)
+                var isDirectory: ObjCBool = false
+                fm.fileExists(atPath: absolute.path, isDirectory: &isDirectory)
+                result.append(relative)
+                if isDirectory.boolValue {
+                    result.append(contentsOf: relativePaths(absolute, prefix: relative))
+                }
+            }
+            return result
+        }
+        return relativePaths(staging, prefix: "").contains { relative in
+            fm.fileExists(atPath: destination.appendingPathComponent(relative).path)
+        }
+    }
+
+    /// 「名称 解压」「名称 解压 2」…
+    static func uniqueExtractFolder(in directory: URL, baseName: String) -> URL {
+        let fm = FileManager.default
+        var candidate = directory.appendingPathComponent("\(baseName) 解压")
+        var index = 2
+        while fm.fileExists(atPath: candidate.path) {
+            candidate = directory.appendingPathComponent("\(baseName) 解压 \(index)")
+            index += 1
+        }
+        return candidate
     }
 
     /// 解压后顶层项目的名称（用于确认压缩包结构）。
@@ -172,6 +255,11 @@ enum ArchiveService {
     @discardableResult
     private static func runDitto(_ arguments: [String]) throws -> ProcessResult {
         try run("/usr/bin/ditto", arguments)
+    }
+
+    @discardableResult
+    private static func runTar(_ arguments: [String]) throws -> ProcessResult {
+        try run("/usr/bin/tar", arguments)
     }
 
     private struct ProcessResult {

@@ -129,6 +129,7 @@
 "status.cut" = "已剪切 %d 项到剪贴板";
 "status.pathCopied" = "路径已复制";
 "status.nameCopied" = "名称已复制";
+"clipboard.defaultName" = "剪贴板文本";
 "status.deleted" = "已删除 %d 项";
 "status.duplicated" = "已生成 %d 个副本";
 "status.renamed" = "已重命名";

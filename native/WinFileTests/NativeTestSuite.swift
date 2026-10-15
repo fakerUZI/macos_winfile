@@ -186,37 +186,42 @@ enum NativeTestSuite {
     @MainActor
     static func testOperations(_ sandbox: URL) throws {
         print("\n[文件操作]")
-        let engine = FSEngine()
         let fm = FileManager.default
 
-        let folder = try engine.createFolder(in: sandbox, named: "新建文件夹")
+        let folder = try FSEngine.createFolder(in: sandbox, named: "新建文件夹")
         check("创建文件夹", fm.fileExists(atPath: folder.path))
-        let second = try engine.createFolder(in: sandbox, named: "新建文件夹")
+        let second = try FSEngine.createFolder(in: sandbox, named: "新建文件夹")
         check("重名自动加序号", second.lastPathComponent == "新建文件夹 2", second.lastPathComponent)
 
-        let file = try engine.createTextFile(in: sandbox, named: "笔记.txt", contents: "内容A")
+        let file = try FSEngine.createTextFile(in: sandbox, named: "笔记.txt", contents: "内容A")
         check("创建文件并写入内容", (try? String(contentsOf: file, encoding: .utf8)) == "内容A")
 
-        let renamed = try engine.rename(item(file), to: "笔记-改.txt")
+        let renamed = try FSEngine.rename(item(file), to: "笔记-改.txt")
         check("重命名成功", fm.fileExists(atPath: renamed.path))
         do {
-            _ = try engine.rename(item(renamed), to: "非法/名称")
+            _ = try FSEngine.rename(item(renamed), to: "非法/名称")
             check("非法名称应被拒绝", false)
         } catch {
             check("非法名称被拒绝", true)
         }
+        do {
+            _ = try FSEngine.rename(item(renamed), to: "非法:名称")
+            check("含冒号的名称应被拒绝", false)
+        } catch {
+            check("含冒号的名称被拒绝", true)
+        }
 
-        let target = try engine.createFolder(in: sandbox, named: "目标")
-        let copied = try engine.transfer([item(renamed)], to: target, mode: .copy)
+        let target = try FSEngine.createFolder(in: sandbox, named: "目标")
+        let copied = try FSEngine.transfer([item(renamed)], to: target, mode: .copy)
         check("复制到目标目录", copied.count == 1 && fm.fileExists(atPath: copied[0].path))
         check("复制后原文件仍在", fm.fileExists(atPath: renamed.path))
 
-        let moved = try engine.transfer([item(copied[0])], to: sandbox, mode: .move)
+        let moved = try FSEngine.transfer([item(copied[0])], to: sandbox, mode: .move)
         check("移动回上级目录", moved.count == 1 && fm.fileExists(atPath: moved[0].path))
         check("移动后原位置消失", !fm.fileExists(atPath: copied[0].path))
 
         do {
-            _ = try engine.transfer([item(target)], to: target, mode: .copy)
+            _ = try FSEngine.transfer([item(target)], to: target, mode: .copy)
             check("拒绝复制到自身", false)
         } catch {
             check("拒绝把文件夹复制进它自己", true)
@@ -224,18 +229,18 @@ enum NativeTestSuite {
         let nested = target.appendingPathComponent("内层")
         try fm.createDirectory(at: nested, withIntermediateDirectories: true)
         do {
-            _ = try engine.transfer([item(target)], to: nested, mode: .move)
+            _ = try FSEngine.transfer([item(target)], to: nested, mode: .move)
             check("拒绝移动到子目录", false)
         } catch {
             check("拒绝把文件夹移动进它的子目录", true)
         }
 
-        let duplicated = try engine.duplicate([item(renamed)])
+        let duplicated = try FSEngine.duplicate([item(renamed)])
         check("制作副本", duplicated.count == 1 && fm.fileExists(atPath: duplicated[0].path))
         check("副本名称含“副本”", duplicated[0].lastPathComponent.contains("副本"), duplicated[0].lastPathComponent)
 
-        let trashCandidate = try engine.createTextFile(in: sandbox, named: "待删除.txt")
-        try engine.moveToTrash([item(trashCandidate)])
+        let trashCandidate = try FSEngine.createTextFile(in: sandbox, named: "待删除.txt")
+        try FSEngine.moveToTrash([item(trashCandidate)])
         check("移到废纸篓后原位置消失", !fm.fileExists(atPath: trashCandidate.path))
 
         let size = FileSystemService.directorySize(sandbox)
@@ -246,9 +251,9 @@ enum NativeTestSuite {
         check("搜索无结果返回空", FileSystemService.search(under: sandbox, matching: "绝对不存在的名字").isEmpty)
 
         // 唯一命名规则
-        let plain = engine.uniqueURL(in: sandbox, name: "重复.txt", isDirectory: false)
+        let plain = FSEngine.uniqueURL(in: sandbox, name: "重复.txt", isDirectory: false)
         try "x".write(to: plain, atomically: true, encoding: .utf8)
-        let next = engine.uniqueURL(in: sandbox, name: "重复.txt", isDirectory: false)
+        let next = FSEngine.uniqueURL(in: sandbox, name: "重复.txt", isDirectory: false)
         check("重名时生成“名称 2.ext”", next.lastPathComponent == "重复 2.txt", next.lastPathComponent)
     }
 
@@ -1313,7 +1318,7 @@ enum NativeTestSuite {
         check("生成了压缩包", fm.fileExists(atPath: archive.path))
         check("扩展名是 zip", archive.pathExtension == "zip", archive.pathExtension)
         let size = (try? fm.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
-        check("压缩包非空", (size ?? 0) > 0, "\(size ?? 0) 字节")
+        check("压缩包非空", size > 0, "\(size) 字节")
 
         // 压缩包识别
         check("能识别 zip 为压缩包", ArchiveService.isArchive(archive))
@@ -1364,6 +1369,40 @@ enum NativeTestSuite {
         } catch {
             check("空选择报错", true)
         }
+
+        // 解压冲突：目标已有同名项时不得覆盖，应改解到「<包名> 解压」
+        let conflictDir = base.appendingPathComponent("冲突")
+        try fm.createDirectory(at: conflictDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: conflictDir.appendingPathComponent("源目录"), withIntermediateDirectories: true)
+        try "旧内容（绝不可被覆盖）".write(
+            to: conflictDir.appendingPathComponent("源目录/a.txt"),
+            atomically: true, encoding: .utf8)
+        let conflictCreated = try ArchiveService.extract(archive, to: conflictDir)
+        check("冲突解压返回顶层项目", !conflictCreated.isEmpty, "\(conflictCreated.count) 项")
+        let sideFolder = conflictDir.appendingPathComponent("test 解压/源目录")
+        check("冲突时改解到独立文件夹", fm.fileExists(atPath: sideFolder.path), sideFolder.path)
+        check("原有文件未被覆盖",
+              (try? String(contentsOf: conflictDir.appendingPathComponent("源目录/a.txt"),
+                           encoding: .utf8)) == "旧内容（绝不可被覆盖）")
+
+        // tar 系格式识别与解压（bsdtar 自动识别 gzip）
+        let tarSourceDir = base.appendingPathComponent("tar源")
+        try fm.createDirectory(at: tarSourceDir, withIntermediateDirectories: true)
+        try "tar 内容".write(to: tarSourceDir.appendingPathComponent("a.txt"),
+                            atomically: true, encoding: .utf8)
+        let tarArchive = base.appendingPathComponent("归档.tar.gz")
+        let tarProcess = Process()
+        tarProcess.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        tarProcess.arguments = ["-czf", tarArchive.path, "-C", base.path, "tar源"]
+        try tarProcess.run()
+        tarProcess.waitUntilExit()
+        check("tar.gz 被识别为压缩包", ArchiveService.isArchive(tarArchive))
+        let tarRestore = base.appendingPathComponent("tar还原")
+        try fm.createDirectory(at: tarRestore, withIntermediateDirectories: true)
+        try ArchiveService.extract(tarArchive, to: tarRestore)
+        check("tar.gz 解压成功",
+              (try? String(contentsOf: tarRestore.appendingPathComponent("tar源/a.txt"),
+                           encoding: .utf8)) == "tar 内容")
     }
 
     // MARK: - 侧边栏分类管理

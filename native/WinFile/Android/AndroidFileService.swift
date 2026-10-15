@@ -165,11 +165,16 @@ final class AndroidFileService: @unchecked Sendable {
         // 注意：目标是否存在必须在**设备上**判断。
         // 用本地 FileManager 检查安卓路径永远返回 false，会导致把文件复制到自身。
         if self.exists(target) {
-            // 目标已存在：加上"副本"后缀，避免覆盖
+            // 目标已存在：加"副本"后缀直到不冲突，避免覆盖
             let base = (name as NSString).deletingPathExtension
             let ext = (name as NSString).pathExtension
-            let unique = ext.isEmpty ? "\(base) 副本" : "\(base) 副本.\(ext)"
-            try shell("cp -r \(shellQuote(path)) \(shellQuote(dir + "/" + unique))")
+            var index = 1
+            var candidate = ext.isEmpty ? "\(base) 副本" : "\(base) 副本.\(ext)"
+            while self.exists(dir + "/" + candidate) {
+                index += 1
+                candidate = ext.isEmpty ? "\(base) 副本 \(index)" : "\(base) 副本 \(index).\(ext)"
+            }
+            try shell("cp -r \(shellQuote(path)) \(shellQuote(dir + "/" + candidate))")
         } else {
             try shell("cp -r \(shellQuote(path)) \(shellQuote(target))")
         }

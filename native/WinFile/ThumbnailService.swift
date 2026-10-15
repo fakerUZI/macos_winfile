@@ -52,6 +52,4 @@ actor ThumbnailService {
         }
     }
 
-    /// 清空缓存（切换目录等场景可调用）
-    func clear() { cache.removeAll(); }
 }
