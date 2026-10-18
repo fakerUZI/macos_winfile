@@ -1016,7 +1016,7 @@ enum NativeTestSuite {
         let roots = engine.browsableRoots
         print("  扫描范围: \(roots.map(\.path).joined(separator: "、"))")
 
-        // 范围存在包含关系（/Users/mac ⊂ /），合并结果必须已去重：
+        // 范围存在包含关系（家目录 ⊂ 根目录），合并结果必须已去重：
         // 单独扫描各范围之和 ≥ 合并结果，且合并后 id 必须唯一
         let homeOnly = FileSystemService.categoryFiles(.pdf, under: [roots[0]])
         let rootOnly = FileSystemService.categoryFiles(.pdf, under: [roots[1]])
