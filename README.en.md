@@ -27,7 +27,6 @@ If you grew up with Windows Explorer, Finder can feel like it's missing a few th
 - [Tech Stack](#tech-stack)
 - [FAQ](#faq)
 - [Known Limitations](#known-limitations)
-- [License](#license)
 
 ## Why
 
@@ -236,13 +235,5 @@ No. Defaults set inside WinFile are stored only in WinFile's own preferences and
 | Android | Requires adb and USB debugging enabled on the device |
 | System folders | A few TCC-protected directories stay unreadable |
 | Not implemented | Tag colors, batch rename, network locations (SMB/FTP) |
-
-## License
-
-[MIT](LICENSE) © 2026 曹聪 (fakerUZI)
-
-Free to use, modify, distribute, and use commercially — just keep the copyright and license notice.
-
----
 
 If this project helps you, a star is appreciated. Issues and suggestions are welcome.
