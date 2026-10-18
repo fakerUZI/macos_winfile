@@ -1,12 +1,21 @@
-# WinFile — macOS 上的文件管理器（原生 SwiftUI 版）
+# WinFile — macOS 上的 Windows 风格文件管理器
 
-Windows 资源管理器风格的 macOS 文件管理器。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#环境要求)
+[![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#技术栈)
+[![Tests](https://img.shields.io/badge/tests-382%20passing-brightgreen.svg)](#运行测试)
 
-> **v2 已完全重写为原生 SwiftUI 应用**：不再依赖 Python、不再启动 HTTP 服务、不再调用任何外部进程，
-> 单一原生二进制。**本地使用形态**：未启用沙盒，可直接访问整个磁盘，
-> 因此能够浏览其它应用的数据目录（见下方「应用数据」）。
+用原生 SwiftUI 实现的 macOS 文件管理器，界面与操作习惯对齐 Windows 资源管理器：
+页签栏、命令栏、面包屑地址栏、按类型分类、应用数据浏览、安卓设备文件访问。
 
-![应用图标](docs/icon/AppIcon-1024.png)
+![主界面](docs/screenshots/main-window.png)
+
+**特点**
+
+- **纯原生**：SwiftUI + AppKit，单一二进制，无 Python、无 Electron、无本地服务
+- **本地使用形态**：不开沙盒，可浏览整个磁盘（含其它应用的数据目录）
+- **零第三方依赖**：构建只需要 Xcode Command Line Tools，压缩/缩略图/图标全部走系统框架
+- **382 项自动化测试**：逻辑测试 + 真实应用包内测试 + 界面冒烟测试
 
 ---
 
@@ -47,8 +56,8 @@ open /Applications/WinFile.app
 源码构建在**你自己机器上完成**，产物不携带隔离属性，因此**不会遇到上面的拦截**。
 
 ```bash
-git clone https://github.com/<你的用户名>/winfile-mac.git
-cd winfile-mac
+git clone https://github.com/fakerUZI/macos_winfile.git
+cd macos_winfile
 
 # 构建并安装到 /Applications（启动台可见）
 ./native/build_native.sh
@@ -133,41 +142,47 @@ brew install android-platform-tools
 ## 5. 项目结构
 
 ```
-winfile-mac/
-├── native/                       # v2 原生应用
-│   ├── WinFile/                  #   SwiftUI 源码
-│   │   ├── WinFileApp.swift      #   入口、菜单栏、命令
-│   │   ├── MainView.swift        #   主界面（侧边栏/命令栏/地址栏/内容/检查器）
-│   │   ├── SidebarView.swift     #   导航侧边栏
-│   │   ├── FileViews.swift       #   表格与图标网格、原生图标
-│   │   ├── InspectorView.swift   #   详细信息窗格
-│   │   ├── HomeViews.swift       #   主页与此电脑两个页面
-│   │   ├── TabManager.swift      #   多页签管理
-│   │   ├── ContextMenuCatcher.swift #  空白处右键（AppKit 命中判定桥接）
-│   │   ├── ClosureMenuItem.swift #   支持闭包动作的菜单项
-│   │   ├── PlacesService.swift   #   快速访问/收藏夹/最近使用/驱动器
-│   │   ├── Dialogs.swift         #   重命名/新建/打开方式/帮助
-│   │   ├── SettingsView.swift    #   设置（通用/隐私授权/关于）
-│   │   ├── PathField.swift       #   原生路径输入框（Tab 补全）
-│   │   ├── Models.swift          #   条目模型与文件类型库
-│   │   ├── FileSystemService.swift # 无状态文件 I/O（可后台执行）
-│   │   ├── ArchiveService.swift  #   压缩 / 解压（zip 与 tar 系）
-│   │   ├── ThumbnailService.swift #  QuickLook 缩略图缓存
-│   │   ├── FSEngine.swift        #   常用文件夹、图标、废纸篓、Launch Services
-│   │   ├── Android/              #   安卓设备支持（adb 封装）
-│   │   ├── AppDataService.swift  #   应用数据目录扫描
-│   │   ├── AppDataView.swift     #   应用数据页面
-│   │   └── BrowserModel.swift    #   浏览状态（导航/排序/选择/剪贴板）
-│   ├── WinFileTests/             #   逻辑测试套件（382 项）
-│   ├── make_release.sh           #   发布打包脚本
-│   ├── Resources/                #   zh-Hans / en 本地化
-│   ├── Info.plist                #   应用元数据（含用途说明）
-│   ├── build_native.sh           #   构建脚本（本地使用形态）
-│   └── run_native_tests.sh       #   测试脚本
-├── docs/icon/                    # 应用图标（png + icns）
-├── tools/make_icon.py            # 图标生成（构建时自动调用）
-└── WinFile.app                   # 构建产物
+macos_winfile/
+├── native/
+│   ├── WinFile/                        # SwiftUI 源码
+│   │   ├── WinFileApp.swift            #   入口、菜单栏、命令
+│   │   ├── MainView.swift              #   主界面（侧边栏/页签/命令栏/地址栏/检查器）
+│   │   ├── SidebarView.swift           #   导航侧边栏（支持右键移动/移除）
+│   │   ├── SidebarManagerSheet.swift   #   侧边栏管理面板（多选框 + 排序）
+│   │   ├── SidebarPreferences.swift    #   分类的显示与顺序（持久化）
+│   │   ├── FileViews.swift             #   详细信息表格、大图标网格、图标与徽标
+│   │   ├── InspectorView.swift         #   详细信息窗格
+│   │   ├── HomeViews.swift             #   主页 / 此电脑
+│   │   ├── TabManager.swift            #   多页签管理
+│   │   ├── ActiveTabReader.swift       #   让界面跟随当前页签的模型
+│   │   ├── ContextMenuCatcher.swift    #   空白处右键（AppKit 命中判定桥接）
+│   │   ├── Dialogs.swift               #   重命名/新建/打开方式
+│   │   ├── SettingsView.swift          #   设置（通用/侧边栏/打开方式/诊断）
+│   │   ├── PathField.swift             #   路径输入框（Tab 补全）
+│   │   ├── Models.swift                #   条目模型与文件类型库
+│   │   ├── FileSystemService.swift     #   无状态文件 I/O（可后台执行）
+│   │   ├── ArchiveService.swift        #   压缩 / 解压（zip 与 tar 系）
+│   │   ├── ThumbnailService.swift      #   QuickLook 缩略图（图片/视频/PDF）
+│   │   ├── FileAssociations.swift      #   应用内默认打开方式（不改系统设置）
+│   │   ├── DefaultAppService.swift     #   关联应用解析与徽标图标缓存
+│   │   ├── FSEngine.swift              #   收藏、图标、废纸篓、Launch Services
+│   │   ├── AppDataService.swift        #   应用数据目录扫描
+│   │   ├── AppDataView.swift           #   应用数据页面
+│   │   ├── BrowserModel.swift          #   浏览状态（导航/排序/选择/剪贴板）
+│   │   └── Android/                    #   安卓设备支持（adb 封装）
+│   ├── WinFileTests/                   #   测试套件（382 项）
+│   ├── Resources/                      #   中英文本地化
+│   ├── Info.plist                      #   应用元数据
+│   ├── build_native.sh                 #   构建脚本
+│   ├── run_native_tests.sh             #   测试脚本
+│   └── make_release.sh                 #   发布打包脚本
+├── docs/                               # 图标与截图
+├── tools/make_icon.py                  # 图标生成（构建时自动调用）
+├── LICENSE                             # MIT
+└── README.md
 ```
+
+构建产物 `WinFile.app/` 与发布包 `dist/` 不入库，可由脚本重新生成。
 
 ## 6. 权限与访问范围（本地使用形态）
 
@@ -206,3 +221,27 @@ winfile-mac/
 | 系统目录权限 | 少数系统应用目录（如 Safari 容器）受 TCC 保护不可读，界面会标注「无权限访问」 |
 | 尚未实现 | 标签颜色、批量重命名、网络位置浏览 |
 
+## 9. 技术栈
+
+| 方面 | 采用 |
+| --- | --- |
+| 界面 | SwiftUI（`NavigationSplitView` / `Table` / 自建网格），AppKit 用于菜单、剪贴板、Launch Services 桥接 |
+| 文件 I/O | `FileManager` + `URLResourceKey`，写操作放到后台线程 |
+| 压缩解压 | 系统自带 `zip` / `ditto` / `bsdtar` |
+| 缩略图 | QuickLook（`QLThumbnailGenerator`），图片 / 视频封面 / PDF 首页 |
+| 图标 | `NSWorkspace.icon(forFile:)`，保留系统图标与 Assets.car 内图标 |
+| 安卓 | `adb` 子进程（本项目唯一使用子进程的部分） |
+| 本地化 | `Localizable.strings`（简体中文 / 英文），代码内联回退文案 |
+| 构建 | `swiftc` 直接编译（无需 Xcode 工程），`lipo` 合并通用二进制 |
+
+## 10. 许可证
+
+本项目采用 [MIT 许可证](LICENSE)。
+
+```
+MIT License
+
+Copyright (c) 2026 曹聪 (fakerUZI)
+```
+
+可自由使用、修改、分发与商用，仅需保留版权声明与许可声明。

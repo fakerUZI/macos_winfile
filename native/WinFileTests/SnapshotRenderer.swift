@@ -15,7 +15,8 @@ enum SnapshotRenderer {
     /// 生成一个包含各类文件的示例目录，便于截图中展示完整界面
     private static func makeDemoFolder() -> URL {
         let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("winfile-demo-\(UUID().uuidString)")
+        // 目录名用可读名称：截图会显示在标签页与面包屑上
+        let base = fm.temporaryDirectory.appendingPathComponent("WinFile 示例文件夹")
         let subfolders = ["项目文档", "设计素材", "归档"]
         try? fm.createDirectory(at: base, withIntermediateDirectories: true)
         for folder in subfolders {
@@ -104,6 +105,9 @@ enum SnapshotRenderer {
             defer: false
         )
         window.title = "WinFile"
+        // 让主界面直接打开示例目录：MainView 从 StartFolderPath 读取起始位置，
+        // 不设置的话内容区会停在空目录上（快照只剩界面框架）。
+        UserDefaults.standard.set(demo.path, forKey: "StartFolderPath")
         let hosting = NSHostingView(rootView: MainView(engine: engine, skipAutoNavigation: true))
         hosting.frame = NSRect(origin: .zero, size: contentSize)
         window.contentView = hosting

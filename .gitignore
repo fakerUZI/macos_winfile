@@ -1,6 +1,8 @@
 # ===== 构建产物 =====
 # 应用包与中间目标文件（可由 build_native.sh 重新生成）
-WinFile.app/
+# 用通配符覆盖 "WinFile 2.app" 这类带序号/空格的重复构建产物
+WinFile*.app/
+*.app/
 native/native-build/
 native/build/
 *.o
