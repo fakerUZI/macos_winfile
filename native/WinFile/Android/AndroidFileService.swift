@@ -22,6 +22,18 @@ enum AndroidURL {
             ?? URL(fileURLWithPath: normalized)
     }
 
+    /// Every breadcrumb stays on the same device, including its root.
+    static func ancestors(_ url: URL) -> [URL] {
+        guard let (serial, path) = split(url) else { return [] }
+        var result = [make(serial: serial, path: "/")]
+        var current = ""
+        for component in path.split(separator: "/") {
+            current += "/" + component
+            result.append(make(serial: serial, path: current))
+        }
+        return result
+    }
+
     /// 是否为安卓地址
     static func isAndroid(_ url: URL) -> Bool { url.scheme == scheme }
 

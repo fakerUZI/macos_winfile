@@ -33,7 +33,11 @@ rm -f "$ZIP"
 
 echo
 echo "== 3/4 生成校验值 =="
-shasum -a 256 "$ZIP" | tee "$ZIP.sha256"
+(cd "$DIST" && shasum -a 256 "$NAME-$VERSION.zip" > "$NAME-$VERSION.zip.sha256")
+cat "$ZIP.sha256"
+# Stable asset names are required by install.sh's latest/download URLs.
+cp "$ZIP" "$DIST/$NAME.zip"
+(cd "$DIST" && shasum -a 256 "$NAME.zip" > "$NAME.zip.sha256")
 
 echo
 echo "== 4/4 检查产物 =="
@@ -48,5 +52,6 @@ echo
 echo "发布到 GitHub Releases："
 echo "  1. 打开仓库 → Releases → Draft a new release"
 echo "  2. Tag 填 v$VERSION，标题填 WinFile $VERSION"
-echo "  3. 上传 $ZIP"
+echo "  3. 上传 $DIST/$NAME.zip 和 $DIST/$NAME.zip.sha256（一键安装必需）"
+echo "     也可附上 $ZIP 和对应校验文件"
 echo "  4. 说明里贴上安装步骤（见 README「安装」章节）"

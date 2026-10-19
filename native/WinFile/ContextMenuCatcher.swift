@@ -8,6 +8,15 @@
 import AppKit
 import SwiftUI
 
+/// Marks controls outside the file surface so window-wide event monitors cannot steal their menus.
+struct BrowserInteractionBoundary: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { BoundaryView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+    final class BoundaryView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
 /// 安装到窗口上的空白区右键处理
 struct EmptyAreaContextMenu: NSViewRepresentable {
 
@@ -49,6 +58,12 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
                 current = node.superview
             }
             return false
+        }
+
+        static func isExcluded(_ point: NSPoint, in root: NSView) -> Bool {
+            if root is BrowserInteractionBoundary.BoundaryView, !root.isHidden,
+               root.convert(root.bounds, to: nil).contains(point) { return true }
+            return root.subviews.contains { isExcluded(point, in: $0) }
         }
 
         /// 在子树中查找第一个滚动视图
@@ -209,6 +224,7 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> Bool {
             guard let window, event.window === window, let buildMenu else { return false }
             guard let root = window.contentView else { return false }
+            guard !Self.isExcluded(event.locationInWindow, in: root) else { return false }
 
             let point = root.convert(event.locationInWindow, from: nil)
             guard let hit = root.hitTest(point) else { return false }

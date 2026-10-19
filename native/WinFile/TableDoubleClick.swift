@@ -18,32 +18,63 @@ struct TableDoubleClickInstaller: NSViewRepresentable {
     }
 
     func updateNSView(_ view: NSView, context: Context) {
-        (view as? InstallerView)?.install = install
+        guard let installer = view as? InstallerView else { return }
+        installer.install = install
+        installer.scheduleAttach()
     }
 
 
     final class InstallerView: NSView {
         var install: ((NSTableView) -> Void)?
         private weak var installed: NSTableView?
+        private var retryCount = 0
+        private var scheduled = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            // 布局完成后才能找到同区域的表格
-            DispatchQueue.main.async { [weak self] in self?.attach() }
+            retryCount = 0
+            scheduleAttach()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleAttach()
+        }
+
+        func scheduleAttach() {
+            guard window != nil, !scheduled else { return }
+            scheduled = true
+            DispatchQueue.main.async { [weak self] in
+                self?.scheduled = false
+                self?.attach()
+            }
         }
 
         @MainActor
         private func attach() {
             guard let window else { return }
-            // 取"最宽"的表格：文件列表远比侧边栏宽
+            // SwiftUI may insert the sidebar before the file table has a frame.
+            // Match the background marker's actual region rather than picking a
+            // table elsewhere in the window, and retry after the next layout.
             var tables: [NSTableView] = []
             func collect(_ view: NSView) {
                 if let table = view as? NSTableView { tables.append(table) }
                 for child in view.subviews { collect(child) }
             }
             collect(window.contentView ?? NSView())
-            guard let target = tables.max(by: { $0.bounds.width < $1.bounds.width }),
-                  target !== installed else { return }
+            let anchor = convert(NSPoint.zero, to: nil)
+            let candidates = tables.filter { table in
+                guard let region = table.enclosingScrollView, !region.isHidden else { return false }
+                return region.convert(region.bounds, to: nil).insetBy(dx: -1, dy: -1).contains(anchor)
+            }
+            guard let target = candidates.max(by: { $0.bounds.width < $1.bounds.width }) else {
+                if retryCount < 20 {
+                    retryCount += 1
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.scheduleAttach() }
+                }
+                return
+            }
+            guard target !== installed else { return }
             installed = target
             install?(target)
         }

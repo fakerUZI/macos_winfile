@@ -5,13 +5,17 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MainView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 自动化渲染（截图/测试）时置为 true，跳过 onAppear 的自动导航，避免覆盖预设状态
     var skipAutoNavigation: Bool = false
     /// 页签管理（一个窗口内可开多个页签）
     @StateObject private var tabManager: TabManager
     @State private var showInspector = true
+    @AppStorage(PaneLayout.sidebarKey) private var sidebarWidth = 216.0
+    @AppStorage(PaneLayout.inspectorKey) private var inspectorWidth = 264.0
     @State private var dialog: DialogKind?
+    @ObservedObject private var operationHistory = FileOperationHistory.shared
     @State private var pathText = ""
     @State private var suggestions: [PathSuggestion] = []
     @State private var editingPath = false
@@ -26,10 +30,13 @@ struct MainView: View {
     init(engine: FSEngine, skipAutoNavigation: Bool = false) {
         self.engine = engine
         self.skipAutoNavigation = skipAutoNavigation
-        let start = UserDefaults.standard.string(forKey: "StartFolderPath").flatMap { path in
-            path.isEmpty ? nil : URL(fileURLWithPath: path)
+        let start: URL? = UserDefaults.standard.string(forKey: "StartFolderPath").flatMap { path in
+            guard !path.isEmpty else { return nil }
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
+            return URL(fileURLWithPath: path)
         }
-        let manager = TabManager(engine: engine, startDirectory: start)
+        let manager = TabManager(engine: engine, startDirectory: start, restoreSession: !skipAutoNavigation && !CommandLine.arguments.contains("--selftest-tabs") && !CommandLine.arguments.contains("--run-tests"))
         _tabManager = StateObject(wrappedValue: manager)
         _reader = StateObject(wrappedValue: ActiveTabReader(manager: manager))
     }
@@ -48,21 +55,23 @@ struct MainView: View {
 
     /// 三栏布局：侧边栏 / 内容（含页签栏）/ 详细信息
     private var splitLayout: some View {
-        HStack(spacing: 0) {
-            // 关键：把「每个页签的视图子树」绑定到页签身份。
-            // 否则切换页签时 SwiftUI 复用同一份视图身份，
-            // 子视图持有的 @ObservedObject / List 内部选中态不会随新模型刷新，
-            // 表现为「切换不生效、内容还是旧的」。
-            sidebarPane.id(activeTab.id)
-            Divider()
-            contentPane.id(activeTab.id)
-            inspectorPane.id(activeTab.id)
+        GeometryReader { geometry in
+            let inspectorVisible = showInspector && !model.isWeChatCleanupView
+            let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
+                                           inspector: inspectorWidth, showsInspector: inspectorVisible)
+            HStack(spacing: 0) {
+                // Preserve each tab's view identity when switching the active model.
+                SidebarView(engine: engine, model: model).id(activeTab.id).frame(width: widths.sidebar)
+                PaneResizeHandle(preferredWidth: $sidebarWidth, actualWidth: widths.sidebar, range: 160...360,
+                                 expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216)
+                contentPane.id(activeTab.id)
+                if inspectorVisible {
+                    PaneResizeHandle(preferredWidth: $inspectorWidth, actualWidth: widths.inspector, range: 200...420,
+                                     expandsToRight: false, title: L("layout.inspectorWidth", "详细信息宽度"), defaultWidth: 264)
+                    InspectorView(engine: engine, model: model).id(activeTab.id).frame(width: widths.inspector)
+                }
+            }
         }
-    }
-
-    private var sidebarPane: some View {
-        SidebarView(engine: engine, model: model)
-            .frame(width: 216)
     }
 
     private var contentPane: some View {
@@ -76,15 +85,6 @@ struct MainView: View {
             contentArea
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    @ViewBuilder
-    private var inspectorPane: some View {
-        if showInspector {
-            Divider()
-            InspectorView(engine: engine, model: model)
-                .frame(width: 264)
-        }
     }
 
     /// 启动时的初始位置（可在设置中指定）
@@ -115,6 +115,7 @@ struct MainView: View {
             .navigationSubtitle(windowSubtitleSuffix)
             .focusedSceneValue(\.browserModel, model)
             .focusedSceneValue(\.tabCount, tabManager.count)
+            .focusedSceneValue(\.canRestoreTab, !tabManager.closedTabs.isEmpty)
     }
 
     /// 生命周期与通知（单独修饰器，避免主表达式过长导致编译超时）
@@ -141,14 +142,18 @@ struct MainView: View {
                 current.navigate(to: .home)   // 与 Windows 一致：启动进入主页
             }
         }
+        .onReceive(operationHistory.$errorMessage.compactMap { $0 }) { error in
+            model.errorMessage = error
+        }
         .onReceive(NotificationCenter.default.publisher(for: .winFileBeginRename)) { _ in
-            if let item = model.selectedItems.first { dialog = .rename(item) }
+            if model.selectedCount > 1, !model.isAndroidPath { dialog = .batchRename(model.selectedItems) }
+            else if let item = model.selectedItems.first { dialog = .rename(item) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileOpenFolder)) { _ in
             openFolderPanel()
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileGetInfo)) { _ in
-            showInspector = true
+            if model.isWeChatCleanupView { dialog = .getInfo } else { showInspector = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileShowHelp)) { _ in
             dialog = .help
@@ -164,14 +169,20 @@ struct MainView: View {
 
         .sheet(item: $dialog) { kind in
             switch kind {
+            case .batchRename(let items):
+                BatchRenameSheet(model: model, items: items)
+            case .advancedSearch:
+                AdvancedSearchSheet(model: model)
+            case .duplicates:
+                DuplicateFilesSheet(model: model)
             case .rename(let item):
                 RenameSheet(item: item) { newName in model.rename(item, to: newName) }
             case .newFolder:
-                TextInputSheet(titleKey: "dialog.newFolder.title", defaultText: NSLocalizedString("default.newFolderName", comment: "新建文件夹")) { name in
+                TextInputSheet(titleKey: "dialog.newFolder.title", defaultText: WLocalizedString("default.newFolderName", comment: "新建文件夹")) { name in
                     model.createFolder(named: name)
                 }
             case .newFile:
-                TextInputSheet(titleKey: "dialog.newFile.title", defaultText: "未命名.txt") { name in
+                TextInputSheet(titleKey: "dialog.newFile.title", defaultText: L("default.newFileName", "未命名.txt")) { name in
                     model.createTextFile(named: name)
                 }
             case .openWith(let item):
@@ -182,15 +193,23 @@ struct MainView: View {
                               onSetDefault: { app in
                                   model.setDefaultApplication(app, for: item)
                               })
+            case .getInfo:
+                VStack(spacing: 0) {
+                    InspectorView(engine: engine, model: model)
+                    HStack {
+                        Spacer()
+                        Button(L("button.ok", "好")) { dialog = nil }.keyboardShortcut(.defaultAction)
+                    }.padding()
+                }.frame(width: 360, height: 500)
             case .help:
                 HelpSheet()
             }
         }
-        .alert(NSLocalizedString("alert.error.title", comment: "操作未完成"), isPresented: Binding(
+        .alert(WLocalizedString("alert.error.title", comment: "操作未完成"), isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
         )) {
-            Button(NSLocalizedString("button.ok", comment: "好"), role: .cancel) { model.errorMessage = nil }
+            Button(WLocalizedString("button.ok", comment: "好"), role: .cancel) { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
         }
@@ -240,8 +259,7 @@ struct MainView: View {
 
     /// 搜索框跟随当前页签的模型状态
     private func syncSearchFieldFromModel() {
-        searchText = model.isSearching ? searchText : ""
-        if !model.isSearching { searchText = "" }
+        searchText = model.isWeChatCleanupView ? model.weChatCleanup.search : model.searchQuery
     }
     private func closeCurrentTab() { tabManager.closeActive() }
     var tabCount: Int { tabManager.count }
@@ -250,157 +268,176 @@ struct MainView: View {
     /// 注意：这里刻意不使用 ScrollView —— 横向 ScrollView 会参与点击手势仲裁，
     /// 实测会导致页签点击无响应。页签数量有限，普通 HStack 足够。
     private var tabStrip: some View {
-        HStack(spacing: 4) {
-            ForEach(tabs) { tab in
-                TabChipView(
-                    tab: tab,
-                    manager: tabManager,
-                    onSelect: { selectTab(tab) },
-                    onClose: { closeTab(tab) },
-                    onCloseOthers: { closeOtherTabs(keeping: tab) },
-                    onNew: { newTab() },
-                    onDuplicate: { tabManager.duplicate(tab) }
-                )
-            }
-            Button {
-                TabDiagnostics.shared.record("tap.newTabButton")
-                newTab()
-            } label: {
-                Image(systemName: "plus")
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(L("tab.new", "新标签页") + " (⌘T)")
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.bar)
+        GeometryReader { geometry in
+            let visible = tabManager.visibleTabs(width: geometry.size.width)
+            HStack(spacing: 4) {
+                ForEach(visible) { tab in
+                    TabChipView(tab: tab, manager: tabManager,
+                                onSelect: { selectTab(tab) }, onClose: { closeTab(tab) },
+                                onCloseOthers: { closeOtherTabs(keeping: tab) }, onNew: { newTab() },
+                                onDuplicate: { tabManager.duplicate(tab) })
+                        .frame(maxWidth: 200)
+                }
+                Button { newTab() } label: { Image(systemName: "plus").frame(width: 22, height: 22) }
+                    .buttonStyle(.plain).help(L("tab.new", "新标签页") + " (⌘T)")
+                Menu {
+                    ForEach(tabs) { tab in
+                        Button { selectTab(tab) } label: {
+                            Label((tab.isPinned ? "📌 " : "") + tab.title, systemImage: tab.id == activeTab.id ? "checkmark" : tab.symbol)
+                        }
+                    }
+                    Divider()
+                    Button(activeTab.isPinned ? L("tab.unpin", "取消固定标签页") : L("tab.pin", "固定标签页")) { tabManager.togglePin(activeTab) }
+                    Button(L("tab.restore", "恢复关闭的标签页")) { tabManager.restoreClosedTab() }
+                        .disabled(tabManager.closedTabs.isEmpty)
+                } label: { Image(systemName: "chevron.down").frame(width: 20, height: 22) }
+                .menuStyle(.borderlessButton).fixedSize()
+                .help(L("tab.all", "所有标签页（%d）", tabs.count))
+                Spacer(minLength: 0)
+            }.padding(.horizontal, 8).padding(.vertical, 5)
+        }.frame(height: 34).background(.bar).background(BrowserInteractionBoundary())
     }
 
     // MARK: - 命令栏
 
     private var commandBar: some View {
         HStack(spacing: 10) {
-            Menu {
-                Button(NSLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
-                Button(NSLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
-                if model.clipboardHasText {
-                    Divider()
-                    Button(NSLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
-                        _ = model.saveClipboardTextAsFile()
+            if model.supportsDirectoryCreation {
+                Menu {
+                    Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
+                    Button(WLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
+                    if model.clipboardHasText {
+                        Divider()
+                        Button(WLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
+                            _ = model.saveClipboardTextAsFile()
+                        }
                     }
+                } label: {
+                    Label(WLocalizedString("action.new", comment: "新建"), systemImage: "plus.square")
                 }
-            } label: {
-                Label(NSLocalizedString("action.new", comment: "新建"), systemImage: "plus.square")
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help(NSLocalizedString("action.new", comment: "新建"))
-            .disabled(model.currentDirectory == nil || model.isHomeView || model.isThisPCView)
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(WLocalizedString("action.new", comment: "新建"))
+                .disabled(!model.canMutateFiles)
 
-            Divider().frame(height: 18)
+                Divider().frame(height: 18)
+            }
 
             Button {
                 model.cutSelectionToClipboard()
             } label: {
-                Label(NSLocalizedString("action.cut", comment: "剪切"), systemImage: "scissors")
+                Label(WLocalizedString("action.cut", comment: "剪切"), systemImage: "scissors")
             }
-            .help(NSLocalizedString("action.cut", comment: "剪切"))
+            .help(WLocalizedString("action.cut", comment: "剪切"))
             .disabled(model.selectedIDs.isEmpty)
 
             Button {
                 model.copySelectionToClipboard()
             } label: {
-                Label(NSLocalizedString("action.copy", comment: "复制"), systemImage: "doc.on.doc")
+                Label(WLocalizedString("action.copy", comment: "复制"), systemImage: "doc.on.doc")
             }
-            .help(NSLocalizedString("action.copy", comment: "复制"))
+            .help(WLocalizedString("action.copy", comment: "复制"))
             .disabled(model.selectedIDs.isEmpty)
 
             Menu {
-                Button(NSLocalizedString("action.copyPath", comment: "复制完整路径")) { model.copyPathToClipboard() }
-                Button(NSLocalizedString("action.copyName", comment: "复制文件名")) { model.copyNameToClipboard() }
-                Button(NSLocalizedString("action.copyDir", comment: "复制所在目录")) { model.copyPathToClipboard(includeDirectory: true) }
+                Button(WLocalizedString("action.copyPath", comment: "复制完整路径")) { model.copyPathToClipboard() }
+                Button(WLocalizedString("action.copyName", comment: "复制文件名")) { model.copyNameToClipboard() }
+                Button(WLocalizedString("action.copyDir", comment: "复制所在目录")) { model.copyPathToClipboard(includeDirectory: true) }
             } label: {
-                Label(NSLocalizedString("action.copyAs", comment: "复制为"), systemImage: "link")
+                Label(WLocalizedString("action.copyAs", comment: "复制为"), systemImage: "link")
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .help(NSLocalizedString("action.copyAs", comment: "复制为"))
+            .help(WLocalizedString("action.copyAs", comment: "复制为"))
             .disabled(model.selectedIDs.isEmpty)
 
-            Button {
-                model.paste()
-            } label: {
-                Label(NSLocalizedString("action.paste", comment: "粘贴"), systemImage: "clipboard")
+            if model.supportsDirectoryCreation {
+                Button {
+                    model.paste()
+                } label: {
+                    Label(WLocalizedString("action.paste", comment: "粘贴"), systemImage: "clipboard")
+                }
+                .help(WLocalizedString("action.paste", comment: "粘贴"))
+                .disabled(!model.canPaste)
             }
-            .help(NSLocalizedString("action.paste", comment: "粘贴"))
-            .disabled(model.clipboard == nil || model.currentDirectory == nil)
 
             Divider().frame(height: 18)
 
             Button {
-                if let item = model.selectedItems.first { dialog = .rename(item) }
+                if model.selectedCount > 1, !model.isAndroidPath { dialog = .batchRename(model.selectedItems) }
+                else if let item = model.selectedItems.first { dialog = .rename(item) }
             } label: {
-                Label(NSLocalizedString("action.rename", comment: "重命名"), systemImage: "pencil")
+                Label(WLocalizedString("action.rename", comment: "重命名"), systemImage: "pencil")
             }
-            .help(NSLocalizedString("action.rename", comment: "重命名"))
-            .disabled(model.selectedCount != 1)
+            .help(WLocalizedString("action.rename", comment: "重命名"))
+            .disabled(model.selectedCount == 0 || (model.isAndroidPath && model.selectedCount != 1) || !model.canMutateFiles)
 
             Button(role: .destructive) {
                 confirmDelete()
             } label: {
-                Label(NSLocalizedString("action.delete", comment: "删除"), systemImage: "trash")
+                Label(WLocalizedString("action.delete", comment: "删除"), systemImage: "trash")
             }
-            .help(NSLocalizedString("action.moveToTrash", comment: "移到废纸篓"))
+            .help(model.deleteActionTitle)
             .disabled(model.selectedIDs.isEmpty)
 
             Spacer()
 
-            Picker("", selection: Binding(
-                get: { model.sortField },
-                set: { model.sortField = $0 }
-            )) {
-                ForEach(SortField.allCases, id: \.self) { field in
-                    Text(field.localizedTitle).tag(field)
-                }
+            if !model.isAndroidPath {
+                Menu {
+                    Button(L("rename.batch", "批量重命名")) { dialog = .batchRename(model.selectedItems) }
+                        .disabled(model.selectedCount < 2 || !model.canMutateFiles)
+                    if model.supportsDirectorySearch {
+                        Button(L("search.advanced", "组合搜索")) { dialog = .advancedSearch }
+                    }
+                    Button(L("duplicates.title", "查找重复文件")) { dialog = .duplicates }
+                } label: { Image(systemName: "ellipsis.circle") }
+                .menuStyle(.borderlessButton).fixedSize().help(L("organize.tools", "文件整理工具"))
             }
-            .labelsHidden()
-            .frame(width: 130)
 
-            Button {
-                model.sortAscendingFlag.toggle()
-            } label: {
-                Image(systemName: model.sortAscendingFlag ? "arrow.up" : "arrow.down")
+            if model.showsFileList {
+                ViewThatFits(in: .horizontal) {
+                    presentationControls
+                    Menu {
+                        presentationMenu
+                    } label: { Image(systemName: "slider.horizontal.3") }
+                    .help(L("layout.options", "显示与排序"))
+                }.frame(maxWidth: 260, alignment: .trailing)
             }
-            .help(NSLocalizedString("action.toggleSortOrder", comment: "切换升序/降序"))
-
-            Picker("", selection: Binding(
-                get: { model.layout },
-                set: { model.setLayout($0) }
-            )) {
-                Image(systemName: "list.bullet").tag(ViewLayout.details)
-                Image(systemName: "square.grid.2x2").tag(ViewLayout.icons)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 84)
-
-            Button {
-                showInspector.toggle()
-            } label: {
-                Image(systemName: "sidebar.right")
-            }
-            .help(NSLocalizedString("action.toggleInspector", comment: "显示详细信息"))
         }
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)          // 图标按钮，避免中文标签被挤压裁剪
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(.bar)
+    }
+
+    private var presentationControls: some View {
+        HStack(spacing: 8) {
+            Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortField = $0 })) {
+                ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
+            }.labelsHidden().frame(width: 110)
+            Button { model.sortAscendingFlag.toggle() } label: {
+                Image(systemName: model.sortAscendingFlag ? "arrow.up" : "arrow.down")
+            }.help(WLocalizedString("action.toggleSortOrder", comment: "切换升序/降序"))
+            Picker(L("layout.options", "显示与排序"), selection: Binding(get: { model.layout }, set: { model.setLayout($0) })) {
+                Image(systemName: "list.bullet").tag(ViewLayout.details)
+                Image(systemName: "square.grid.2x2").tag(ViewLayout.icons)
+            }.pickerStyle(.segmented).labelsHidden().frame(width: 84)
+            Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
+                .help(WLocalizedString("action.toggleInspector", comment: "显示详细信息"))
+        }
+    }
+
+    @ViewBuilder
+    private var presentationMenu: some View {
+        Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortField = $0 })) {
+            ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
+        }
+        Toggle(L("sort.ascending", "升序"), isOn: Binding(get: { model.sortAscendingFlag }, set: { model.sortAscendingFlag = $0 }))
+        Divider()
+        Button(L("layout.details", "详细信息")) { model.setLayout(.details) }
+        Button(L("layout.icons", "大图标")) { model.setLayout(.icons) }
+        Toggle(WLocalizedString("action.toggleInspector", comment: "显示详细信息"), isOn: $showInspector)
     }
 
     // MARK: - 地址栏
@@ -441,27 +478,33 @@ struct MainView: View {
                 onBeginEditing: beginEditingPath
             )
 
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(NSLocalizedString("search.placeholder", comment: "搜索"), text: $searchText)
-                    .textFieldStyle(.plain)
-                    .onSubmit { model.search(searchText) }
-                    .onChange(of: searchText) { newValue in
-                        if newValue.isEmpty { model.clearSearch() }
+            if model.supportsDirectorySearch {
+                HStack(spacing: 4) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField(WLocalizedString("search.placeholder", comment: "搜索"), text: $searchText)
+                        .textFieldStyle(.plain)
+                        .onSubmit { model.search(searchText) }
+                        .onChange(of: searchText) { newValue in
+                            if newValue.isEmpty && !model.searchCriteria.isActive { model.clearSearch() }
+                        }
+                    if model.isSearching {
+                        Button {
+                            searchText = ""
+                            model.searchCriteria = FileSearchCriteria()
+                            model.clearSearch()
+                        } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
                     }
-                if model.isSearching {
-                    Button {
-                        searchText = ""
-                        model.clearSearch()
-                    } label: { Image(systemName: "xmark.circle.fill") }
-                    .buttonStyle(.borderless)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
+                .frame(minWidth: 120, idealWidth: 200, maxWidth: 240)
+                Button { dialog = .advancedSearch } label: {
+                    Image(systemName: model.searchCriteria.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                }.buttonStyle(.borderless).help(L("search.advanced", "组合搜索"))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
-            .frame(width: 240)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -536,19 +579,19 @@ struct MainView: View {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { model.openSelection() } label: {
-                Label(NSLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
+                Label(WLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
             }
             .disabled(model.selectedIDs.isEmpty)
 
             Button { model.revealSelection() } label: {
-                Label(NSLocalizedString("action.reveal", comment: "在访达中显示"), systemImage: "magnifyingglass")
+                Label(WLocalizedString("action.reveal", comment: "在访达中显示"), systemImage: "magnifyingglass")
             }
             .disabled(model.selectedIDs.isEmpty)
 
             Button {
                 if let item = model.selectedItems.first { dialog = .openWith(item) }
             } label: {
-                Label(NSLocalizedString("action.openWith", comment: "打开方式"), systemImage: "square.grid.2x2.fill")
+                Label(WLocalizedString("action.openWith", comment: "打开方式"), systemImage: "square.grid.2x2.fill")
             }
             .disabled(model.selectedCount != 1)
         }
@@ -581,15 +624,16 @@ struct MainView: View {
     }
 
     private func confirmDelete() {
+        if model.isWeChatCleanupView || model.isAndroidPath { model.deleteSelection(); return }
         let count = model.selectedCount
         guard count > 0 else { return }
         let alert = NSAlert()
         alert.messageText = count == 1
-            ? String(format: NSLocalizedString("alert.delete.title", comment: "删除项目"), model.selectedItems.first?.name ?? "")
-            : String(format: NSLocalizedString("alert.delete.title.multiple", comment: "删除多个项目"), count)
-        alert.informativeText = NSLocalizedString("alert.delete.message", comment: "项目将移到废纸篓，可从废纸篓恢复。")
-        alert.addButton(withTitle: NSLocalizedString("action.delete", comment: "移到废纸篓"))
-        alert.addButton(withTitle: NSLocalizedString("button.cancel", comment: "取消"))
+            ? String(format: WLocalizedString("alert.delete.title", comment: "删除项目"), model.selectedItems.first?.name ?? "")
+            : String(format: WLocalizedString("alert.delete.title.multiple", comment: "删除多个项目"), count)
+        alert.informativeText = WLocalizedString("alert.delete.message", comment: "项目将移到废纸篓，可从废纸篓恢复。")
+        alert.addButton(withTitle: WLocalizedString("action.delete", comment: "移到废纸篓"))
+        alert.addButton(withTitle: WLocalizedString("button.cancel", comment: "取消"))
         alert.alertStyle = .warning
         if alert.runModal() == .alertFirstButtonReturn {
             model.deleteSelection()
@@ -600,19 +644,27 @@ struct MainView: View {
 // MARK: - 对话框类型
 
 enum DialogKind: Identifiable {
+    case batchRename([FileItem])
+    case advancedSearch
+    case duplicates
     case rename(FileItem)
     case newFolder
     case newFile
     case openWith(FileItem)
     case help
+    case getInfo
 
     var id: String {
         switch self {
+        case .batchRename: return "batchRename"
+        case .advancedSearch: return "advancedSearch"
+        case .duplicates: return "duplicates"
         case .rename(let item): return "rename-\(item.id)"
         case .newFolder: return "newFolder"
         case .newFile: return "newFile"
         case .openWith(let item): return "openWith-\(item.id)"
         case .help: return "help"
+        case .getInfo: return "getInfo"
         }
     }
 }
@@ -627,6 +679,7 @@ struct PathSuggestion: Identifiable, Hashable {
 // MARK: - 状态栏
 
 struct StatusBarView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
 
@@ -638,14 +691,14 @@ struct StatusBarView: View {
             // Table 自身维护一套高亮状态，程序化改选时两者可能短暂不一致。
             if !model.selectedItems.isEmpty {
                 Divider().frame(height: 12)
-                Text(String(format: NSLocalizedString("status.selected", comment: "已选择"), model.selectedItems.count))
+                Text(String(format: WLocalizedString("status.selected", comment: "已选择"), model.selectedItems.count))
                 if !model.selectionSummary.isEmpty {
                     Text(model.selectionSummary)
                 }
             }
             Spacer()
             if let dir = model.currentDirectory, let info = model.volumeInfo(for: dir) {
-                Text(String(format: NSLocalizedString("status.volume", comment: "磁盘空间"), info.free, info.total))
+                Text(String(format: WLocalizedString("status.volume", comment: "磁盘空间"), info.free, info.total))
             }
         }
         .font(.caption)
@@ -659,6 +712,7 @@ struct StatusBarView: View {
 // MARK: - 空状态
 
 struct EmptyStateView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     let openPanel: () -> Void
@@ -673,7 +727,7 @@ struct EmptyStateView: View {
             if model.isLoadingCategory {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(NSLocalizedString("empty.categoryLoading", comment: "正在归类提示"))
+                    Text(WLocalizedString("empty.categoryLoading", comment: "正在归类提示"))
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -684,7 +738,7 @@ struct EmptyStateView: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 440)
                 if !model.isCategoryView {
-                    Button(NSLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) {
+                    Button(WLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) {
                         model.toggleHiddenFiles()
                     }
                 }
@@ -701,21 +755,21 @@ struct EmptyStateView: View {
     }
 
     private var title: String {
-        if model.isSearching { return NSLocalizedString("empty.noSearchResult", comment: "没有匹配的项目") }
+        if model.isSearching { return WLocalizedString("empty.noSearchResult", comment: "没有匹配的项目") }
         if model.isCategoryView {
             return model.isLoadingCategory
-                ? NSLocalizedString("status.categoryLoading", comment: "正在归类")
-                : NSLocalizedString("empty.category", comment: "该分类下没有文件")
+                ? WLocalizedString("status.categoryLoading", comment: "正在归类")
+                : WLocalizedString("empty.category", comment: "该分类下没有文件")
         }
-        return NSLocalizedString("empty.folder", comment: "此文件夹为空")
+        return WLocalizedString("empty.folder", comment: "此文件夹为空")
     }
 
     private var hint: String {
         if model.isCategoryView {
-            return String(format: NSLocalizedString("empty.category.hint", comment: "分类为空说明"),
+            return String(format: WLocalizedString("empty.category.hint", comment: "分类为空说明"),
                           model.categoryFilter?.localizedName ?? "")
         }
-        return NSLocalizedString("empty.folder.hint", comment: "空文件夹说明")
+        return WLocalizedString("empty.folder.hint", comment: "空文件夹说明")
     }
 }
 
@@ -727,6 +781,7 @@ struct EmptyStateView: View {
 /// 因此高亮状态由页签自身驱动 —— 不依赖父视图是否重绘。
 /// （此前挂在 MainView 上，那一层在切页签时不再重绘，导致高亮不跟手。）
 struct TabChipView: View {
+    @ObservedObject private var localization = Localization.shared
     let tab: WinFileTab
     @ObservedObject var manager: TabManager
     let onSelect: () -> Void
@@ -761,6 +816,7 @@ struct TabChipView: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
                     .foregroundStyle(isActive ? Color.primary : Color.secondary)
+                if !tab.isPinned {
                 Button {
                     onClose()
                 } label: {
@@ -771,6 +827,7 @@ struct TabChipView: View {
                 .buttonStyle(.borderless)
                 .opacity(isActive || manager.count > 1 ? 0.7 : 0)
                 .help(L("tab.close", "关闭标签页"))
+                } else { Image(systemName: "pin.fill").font(.caption2) }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -793,7 +850,9 @@ struct TabChipView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button(L("tab.close", "关闭标签页")) { onClose() }
+            Button(tab.isPinned ? L("tab.unpin", "取消固定标签页") : L("tab.pin", "固定标签页")) { manager.togglePin(tab) }
+            Button(L("tab.close", "关闭标签页")) { onClose() }.disabled(tab.isPinned)
+            Button(L("tab.restore", "恢复关闭的标签页")) { manager.restoreClosedTab() }.disabled(manager.closedTabs.isEmpty)
             Button(L("tab.closeOthers", "关闭其它标签页")) { onCloseOthers() }
                 .disabled(manager.count <= 1)
             Divider()

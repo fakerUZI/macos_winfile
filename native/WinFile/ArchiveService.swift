@@ -6,17 +6,28 @@
 //   - 解压先解到临时目录、再逐项合并进目标：全程零覆盖 ——
 //     目标已有同名项时改解到「<压缩包名> 解压」独立文件夹
 //     （与 macOS 归档实用工具行为一致），绝不静默覆盖用户文件
-//   - zip 走 ditto -x -k（还原元数据）；tar 系走 bsdtar（系统自带，
-//     自动识别 gzip/bzip2/xz 压缩方式）
+//   - 解压使用内置 7-Zip；普通 ZIP 使用 ditto 还原 macOS 元数据。
+//   - 私有暂存、子进程写入隔离、路径检查与取消由 ArchiveExtraction 实现。
 import Foundation
 
 enum ArchiveError: LocalizedError {
+    case unsupported, engineMissing, passwordRequired, wrongPassword, cancelled, unsafePath, insufficientSpace
+    case missingVolume(String)
     case noSelection
     case commandFailed(String, Int32)
     case alreadyExists(URL)
 
     var errorDescription: String? {
         switch self {
+        case .unsupported: return L("archive.error.unsupported", "暂不支持该格式")
+        case .engineMissing: return L("archive.error.engineMissing", "解压引擎缺失，请重新安装 WinFile。")
+        case .passwordRequired: return L("archive.error.passwordRequired", "此压缩包需要密码。")
+        case .wrongPassword: return L("archive.error.wrongPassword", "密码错误或加密数据损坏，请检查后重试。")
+        case .cancelled: return L("archive.cancelled", "已取消解压")
+        case .unsafePath: return L("archive.error.unsafePath", "压缩包包含不安全的路径或外部链接，已停止解压。")
+        case .insufficientSpace: return L("archive.error.space", "目标磁盘的可用空间不足。")
+        case .missingVolume(let name): return L("archive.error.volume", "分卷不完整或压缩包已截断。请将所有分卷放在同一文件夹后重试。%@", name.isEmpty ? "" : "\n" + name)
+
         case .noSelection:
             return L("archive.error.noSelection", "请先选择要压缩的项目")
         case .commandFailed(let message, let code):
@@ -31,6 +42,9 @@ enum ArchiveError: LocalizedError {
 struct ArchiveProgress: Equatable {
     let name: String
     let isCompressing: Bool
+    var fraction: Double? = nil
+    var index = 1
+    var total = 1
     var title: String {
         isCompressing
             ? L("archive.compressing", "正在压缩 %@", name)
@@ -41,19 +55,16 @@ struct ArchiveProgress: Equatable {
 enum ArchiveService {
 
     /// 可识别的压缩包扩展名
-    /// zip 用 ditto 解压；tar/tgz/gz/bz2/xz 系用系统 bsdtar（自动识别压缩方式）
+    /// 由内置 7-Zip 解码，普通 ZIP 保留 ditto 元数据处理。
     static let archiveExtensions: Set<String> = [
-        "zip",
-        "tar", "tgz", "gz", "bz2", "tbz", "tbz2", "xz", "txz",
-    ]
-
-    /// 需要用 bsdtar 而非 ditto 解压的扩展名
-    private static let tarExtensions: Set<String> = [
+        "zip", "rar", "7z",
         "tar", "tgz", "gz", "bz2", "tbz", "tbz2", "xz", "txz",
     ]
 
     static func isArchive(_ url: URL) -> Bool {
         archiveExtensions.contains(url.pathExtension.lowercased())
+            || url.lastPathComponent.range(of: #"\.(?:7z|zip)\.[0-9]{3,}$|\.[rz][0-9]{2,3}$"#,
+                                          options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     /// 压缩若干项目到目标位置。
@@ -85,10 +96,23 @@ enum ArchiveService {
                 .appendingPathComponent("winfile-archive-\(UUID().uuidString)")
             try fm.createDirectory(at: staging, withIntermediateDirectories: true)
             defer { try? fm.removeItem(at: staging) }
-            for url in urls {
-                try fm.copyItem(at: url, to: staging.appendingPathComponent(url.lastPathComponent))
+            var groups: [String: URL] = [:]
+            var names: [String] = []
+            var seen = Set<String>()
+            for url in urls where seen.insert(FileItem.canonicalID(for: url)).inserted {
+                let parent = url.deletingLastPathComponent()
+                let key = parent.standardizedFileURL.resolvingSymlinksInPath().path
+                let group: URL
+                if let existing = groups[key] { group = existing }
+                else {
+                    group = FSEngine.uniqueURL(in: staging, name: parent.lastPathComponent.isEmpty ? "Files" : parent.lastPathComponent, isDirectory: true)
+                    try fm.createDirectory(at: group, withIntermediateDirectories: false)
+                    groups[key] = group
+                    names.append(group.lastPathComponent)
+                }
+                try fm.copyItem(at: url, to: group.appendingPathComponent(url.lastPathComponent))
             }
-            try runZip(at: staging, names: urls.map(\.lastPathComponent), target: target)
+            try runZip(at: staging, names: names, target: target)
             return target
         }
 
@@ -119,91 +143,12 @@ enum ArchiveService {
         }
     }
 
-    /// 解压压缩包到目标目录。
-    ///
-    /// 流程：先解到临时目录，再逐项移入目标 ——
-    /// - 目标已存在同名项时**绝不覆盖**，而是整体改解到
-    ///   「<压缩包名> 解压」文件夹（必要时加序号），与归档实用工具一致
-    /// - 自动跳过 __MACOSX 元数据目录
-    ///
-    /// - Returns: 解压产生的顶层项目（便于解压后选中它们）
-    @discardableResult
-    static func extract(_ archive: URL, to destination: URL) throws -> [URL] {
-        guard isArchive(archive) else {
-            throw ArchiveError.commandFailed(L("archive.error.unsupported", "暂不支持该格式"), -1)
-        }
-        let fm = FileManager.default
-
-        // 1) 先解到临时目录（与目标隔离，之后按自己的规则合并）
-        let staging = fm.temporaryDirectory
-            .appendingPathComponent("winfile-extract-\(UUID().uuidString)")
-        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: staging) }
-        if tarExtensions.contains(archive.pathExtension.lowercased()) {
-            try runTar(["-xf", archive.path, "-C", staging.path])
-        } else {
-            // ditto -x -k：解压 zip 并还原元数据
-            try runDitto(["-x", "-k", archive.path, staging.path])
-        }
-
-        // 2) 顶层项目（过滤 __MACOSX 元数据目录）
-        let topNames = ((try? fm.contentsOfDirectory(atPath: staging.path)) ?? [])
-            .filter { $0 != "__MACOSX" }
-            .sorted()
-
-        // 3) 冲突检测：临时目录树中任一项目在目标下已存在即为冲突
-        //    （目录重名也算 —— moveItem 无法合并进已有目录，重名会失败）
-        let targetDir: URL
-        if !topNames.isEmpty && hasConflicts(staging: staging, destination: destination) {
-            targetDir = uniqueExtractFolder(in: destination,
-                                            baseName: archive.deletingPathExtension().lastPathComponent)
-            try fm.createDirectory(at: targetDir, withIntermediateDirectories: true)
-        } else {
-            targetDir = destination
-        }
-
-        // 4) 逐项移入目标
-        var created: [URL] = []
-        for name in topNames {
-            let source = staging.appendingPathComponent(name)
-            let target = targetDir.appendingPathComponent(name)
-            try fm.moveItem(at: source, to: target)
-            created.append(target)
-        }
-        return created
-    }
-
-    /// 临时目录树中是否存在与目标目录冲突的路径
-    private static func hasConflicts(staging: URL, destination: URL) -> Bool {
-        let fm = FileManager.default
-        /// 收集目录树的全部相对路径（跳过 __MACOSX）
-        func relativePaths(_ directory: URL, prefix: String) -> [String] {
-            guard let names = try? fm.contentsOfDirectory(atPath: directory.path) else { return [] }
-            var result: [String] = []
-            for name in names {
-                guard name != "__MACOSX" else { continue }
-                let relative = prefix.isEmpty ? name : prefix + "/" + name
-                let absolute = directory.appendingPathComponent(name)
-                var isDirectory: ObjCBool = false
-                fm.fileExists(atPath: absolute.path, isDirectory: &isDirectory)
-                result.append(relative)
-                if isDirectory.boolValue {
-                    result.append(contentsOf: relativePaths(absolute, prefix: relative))
-                }
-            }
-            return result
-        }
-        return relativePaths(staging, prefix: "").contains { relative in
-            fm.fileExists(atPath: destination.appendingPathComponent(relative).path)
-        }
-    }
-
     /// 「名称 解压」「名称 解压 2」…
     static func uniqueExtractFolder(in directory: URL, baseName: String) -> URL {
         let fm = FileManager.default
         var candidate = directory.appendingPathComponent("\(baseName) 解压")
         var index = 2
-        while fm.fileExists(atPath: candidate.path) {
+        while (try? fm.attributesOfItem(atPath: candidate.path)) != nil {
             candidate = directory.appendingPathComponent("\(baseName) 解压 \(index)")
             index += 1
         }
@@ -237,7 +182,7 @@ enum ArchiveService {
         let fm = FileManager.default
         var candidate = directory.appendingPathComponent("\(baseName).zip")
         var index = 2
-        while fm.fileExists(atPath: candidate.path) {
+        while (try? fm.attributesOfItem(atPath: candidate.path)) != nil {
             candidate = directory.appendingPathComponent("\(baseName) \(index).zip")
             index += 1
         }
@@ -252,44 +197,4 @@ enum ArchiveService {
         return L("archive.defaultName", "归档")
     }
 
-    @discardableResult
-    private static func runDitto(_ arguments: [String]) throws -> ProcessResult {
-        try run("/usr/bin/ditto", arguments)
-    }
-
-    @discardableResult
-    private static func runTar(_ arguments: [String]) throws -> ProcessResult {
-        try run("/usr/bin/tar", arguments)
-    }
-
-    private struct ProcessResult {
-        let stdout: String
-        let stderr: String
-        let status: Int32
-    }
-
-    private static func run(_ executable: String, _ arguments: [String]) throws -> ProcessResult {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
-        try process.run()
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        let result = ProcessResult(stdout: String(data: outData, encoding: .utf8) ?? "",
-                                   stderr: String(data: errData, encoding: .utf8) ?? "",
-                                   status: process.terminationStatus)
-        guard result.status == 0 else {
-            let message = result.stderr.isEmpty ? result.stdout : result.stderr
-            throw ArchiveError.commandFailed(
-                message.trimmingCharacters(in: .whitespacesAndNewlines), result.status)
-        }
-        return result
-    }
 }

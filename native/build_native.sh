@@ -68,6 +68,14 @@ chmod +x "$APP/Contents/MacOS/$NAME"
 cp "$ROOT/native/Info.plist" "$APP/Contents/Info.plist"
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
+HELPER="$ROOT/native/vendor/7zip/7zz"
+EXPECTED_HELPER_SHA="36ea959367d8f9ac51d47a56dc1f20bfb851f1cd22d6f206e85cb5cbc6ab4577"
+[[ "$(shasum -a 256 "$HELPER" | awk '{print $1}')" == "$EXPECTED_HELPER_SHA" ]] || { echo "7-Zip engine checksum mismatch"; exit 1; }
+mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Resources/ThirdParty/7zip" "$APP/Contents/Resources/TestFixtures"
+cp "$HELPER" "$APP/Contents/Helpers/7zz"
+chmod +x "$APP/Contents/Helpers/7zz"
+cp "$ROOT/native/vendor/7zip/License.txt" "$ROOT/native/vendor/7zip/LGPL-2.1.txt" "$ROOT/native/vendor/7zip/PROVENANCE.md" "$APP/Contents/Resources/ThirdParty/7zip/"
+cp "$ROOT/native/WinFileTests/Fixtures/"* "$APP/Contents/Resources/TestFixtures/"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # 本地化资源：编译成二进制 plist 加快加载
@@ -90,19 +98,27 @@ for lproj in "$ROOT/native/Resources"/*.lproj; do
 done
 
 echo "== 5/6 代码签名 =="
+# Finder metadata inherited by copied resources prevents bundle signing.
+# Remove only those unsupported attributes from the generated app.
+for attribute in com.apple.FinderInfo com.apple.ResourceFork; do
+  /usr/bin/xattr -dr "$attribute" "$APP" 2>/dev/null || true
+done
 IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
   | { grep -E 'Developer ID Application|Apple Development|Mac Developer' || true; } \
   | head -1 | sed -E 's/.*"(.*)"/\1/' || true)"
 if [ -n "$IDENTITY" ]; then
   echo "   使用身份：$IDENTITY"
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Helpers/7zz"
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 else
   echo "   未找到签名身份，使用 ad-hoc 签名（本机可正常运行）"
-  /usr/bin/codesign --force --sign - "$APP" 2>&1 | tail -2 || true
+  /usr/bin/codesign --force --sign - "$APP/Contents/Helpers/7zz"
+  /usr/bin/codesign --force --sign - "$APP"
 fi
 
 echo "== 6/6 校验 =="
-/usr/bin/codesign --verify --verbose=1 "$APP" 2>&1 | tail -2 || true
+/usr/bin/codesign --verify --verbose=1 "$APP/Contents/Helpers/7zz"
+/usr/bin/codesign --verify --deep --strict --verbose=1 "$APP"
 echo
 echo "构建完成: $APP"
 du -sh "$APP"

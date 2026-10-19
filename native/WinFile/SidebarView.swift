@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct SidebarView: View {
+    @ObservedObject private var localization = Localization.shared
     @State private var showSidebarManager = false
     @State private var showAddFolder = false
     @ObservedObject var engine: FSEngine
@@ -47,7 +48,7 @@ struct SidebarView: View {
                 .tag(SidebarSelection.thisPC)
             }
 
-            Section(NSLocalizedString("sidebar.favorites", comment: "个人收藏")) {
+            Section(WLocalizedString("sidebar.favorites", comment: "个人收藏")) {
                 ForEach(Array(engine.authorizedRoots.enumerated()), id: \.element.path) { index, url in
                     favoriteRow(url, index: index)
                 }
@@ -59,14 +60,15 @@ struct SidebarView: View {
                 }
             }
 
-            Section(NSLocalizedString("sidebar.categories", comment: "按类型分类")) {
+            Section(WLocalizedString("sidebar.categories", comment: "按类型分类")) {
                 ForEach(SidebarPreferences.shared.visibleCategories) { category in
                     Label {
                         HStack {
                             Text(category.localizedName)
                             Spacer()
                             if let count = engine.categoryCounts[category], count > 0 {
-                                Text("\(count)")
+                                Text(count >= FileSystemService.categoryBudget ? "\(count)+" : "\(count)")
+                                    .help(L("scan.badgeScope", "初始扫描范围内的计数；可进入分类继续深入扫描。"))
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .monospacedDigit()
@@ -91,14 +93,14 @@ struct SidebarView: View {
                 if engine.countingCategories {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text(NSLocalizedString("sidebar.counting", comment: "正在统计…"))
+                        Text(WLocalizedString("sidebar.counting", comment: "正在统计…"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
 
-            Section(NSLocalizedString("sidebar.locations", comment: "位置")) {
+            Section(WLocalizedString("sidebar.locations", comment: "位置")) {
                 Label {
                     Text(L("place.applications", "应用程序"))
                 } icon: {
@@ -108,6 +110,10 @@ struct SidebarView: View {
 
                 Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
                     .tag(SidebarSelection.appData)
+
+                Label(L("wechat.title", "微信文件清理"), systemImage: "bubble.left.and.bubble.right.fill")
+                    .foregroundStyle(.green)
+                    .tag(SidebarSelection.weChatCleanup)
 
                 AndroidSidebarSection()
             }
@@ -174,7 +180,7 @@ struct SidebarView: View {
         .tag(SidebarSelection.folder(url))
         .contextMenu {
             Button(L("action.open", "打开")) { model.selectFolder(url) }
-            Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) {
+            Button(WLocalizedString("action.reveal", comment: "在访达中显示")) {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
             }
             Divider()
@@ -194,6 +200,7 @@ struct SidebarView: View {
 /// 独立成视图有两个原因：一是避免侧边栏表达式过于复杂导致编译超时，
 /// 二是它自己观察设备注册表，设备插拔后能独立刷新。
 struct AndroidSidebarSection: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject private var registry = AndroidDeviceRegistry.shared
 
     var body: some View {

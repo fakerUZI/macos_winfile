@@ -454,3 +454,439 @@
 "settings.assoc.hint" = "只影响本应用，不会改动 macOS 的文件关联设置。";
 "settings.assoc.empty" = "尚未设置。可在文件右键菜单中指定。";
 "settings.assoc.showBadge" = "在文件图标右下角显示关联应用";
+
+// Language settings and WeChat attachment cleanup
+"settings.language" = "语言";
+"settings.language.system" = "跟随系统";
+"settings.language.hint" = "切换后立即生效；不支持的系统语言使用英文。";
+"wechat.title" = "微信文件清理";
+"wechat.explain" = "扫描本机微信下载的聊天附件。清理后，对应附件可能无法在微信中打开；聊天数据库不会被清理。";
+"wechat.confirmTitle" = "将所选附件移到废纸篓？";
+"wechat.confirmMessage" = "将清理 %d 个文件（%@）。这些附件可能无法在微信中再次打开。可从废纸篓恢复到原位置；建议先退出微信。";
+"wechat.choose" = "选择微信文件夹…";
+"wechat.chooseHint" = "选择微信数据目录或聊天附件文件夹。此文件夹内的普通文件将列为清理候选。";
+"wechat.sources" = "扫描位置（%d 个自动发现，%d 个手动添加）";
+"wechat.all" = "全部类型";
+"wechat.minimumSize" = "最小大小";
+"wechat.anySize" = "不限大小";
+"wechat.age" = "修改时间";
+"wechat.anyTime" = "不限时间";
+"wechat.days" = "%d 天以前";
+"wechat.search" = "按文件名筛选";
+"wechat.sort" = "排序";
+"wechat.sort.size" = "大小：从大到小";
+"wechat.sort.date" = "修改时间：从新到旧";
+"wechat.access" = "部分目录无法读取，结果可能不完整。可授予 WinFile 完整磁盘访问权限后重新扫描，或手动选择微信文件夹。";
+"wechat.unreadable" = "查看无法读取的位置";
+"wechat.location" = "所在目录";
+"wechat.scanning" = "正在扫描微信附件…";
+"wechat.empty" = "未发现可清理的附件。可手动选择微信数据目录；无法读取的位置请检查访问权限。";
+"wechat.noMatch" = "没有符合筛选条件的文件。";
+"wechat.summary" = "共 %d 项（%@），筛选后 %d 项";
+"wechat.selectAll" = "全选筛选结果";
+"wechat.trashSelection" = "清理所选 %d 项（%@）";
+"wechat.changed" = "文件已变化或不可访问，已跳过：%@";
+"wechat.cleaned" = "已移到废纸篓 %d 项；跳过或失败 %d 项。";
+"wechat.kind.document" = "文档";
+"wechat.kind.image" = "图片";
+"wechat.kind.video" = "视频";
+"wechat.kind.audio" = "音频";
+"wechat.kind.archive" = "压缩包";
+"wechat.kind.other" = "其他附件";
+"error.notAccessible" = "无法访问该位置";
+"settings.local.explain" = "本应用为本地使用形态，未启用沙盒，可直接访问整个磁盘（包括其它应用的数据目录）。";
+"settings.folders.count" = "常用文件夹";
+"settings.assoc.remove" = "恢复跟随系统";
+"settings.assoc.clearAll" = "全部恢复跟随系统";
+"clipboard.copied" = "已复制";
+"clipboard.cut" = "已剪切";
+"status.moved" = "已移动";
+"action.addFolder" = "添加文件夹";
+"panel.addFolder.message" = "选择要加入常用列表的文件夹";
+"inspector.type" = "类型";
+"archive.error.zipFailed" = "打包失败（退出码 %d）";
+"fileType.jpg" = "JPEG 图片";
+"fileType.jpeg" = "JPEG 图片";
+"fileType.png" = "PNG 图片";
+"fileType.gif" = "GIF 图片";
+"fileType.webp" = "WebP 图片";
+"fileType.bmp" = "BMP 图片";
+"fileType.tif" = "TIFF 图片";
+"fileType.tiff" = "TIFF 图片";
+"fileType.heic" = "HEIC 图片";
+"fileType.heif" = "HEIF 图片";
+"fileType.avif" = "AVIF 图片";
+"fileType.svg" = "SVG 矢量图";
+"fileType.ico" = "图标文件";
+"fileType.icns" = "macOS 图标";
+"fileType.raw" = "RAW 照片";
+"fileType.cr2" = "佳能 RAW";
+"fileType.nef" = "尼康 RAW";
+"fileType.arw" = "索尼 RAW";
+"fileType.dng" = "DNG 照片";
+"fileType.psd" = "Photoshop 文档";
+"fileType.ai" = "Illustrator 文档";
+"fileType.sketch" = "Sketch 文档";
+"fileType.fig" = "Figma 文档";
+"fileType.xd" = "XD 文档";
+"fileType.afdesign" = "Affinity 设计";
+"fileType.afphoto" = "Affinity 照片";
+"fileType.mp4" = "MP4 视频";
+"fileType.m4v" = "M4V 视频";
+"fileType.mov" = "QuickTime 影片";
+"fileType.avi" = "AVI 视频";
+"fileType.mkv" = "Matroska 视频";
+"fileType.wmv" = "WMV 视频";
+"fileType.flv" = "FLV 视频";
+"fileType.webm" = "WebM 视频";
+"fileType.mpg" = "MPEG 视频";
+"fileType.mpeg" = "MPEG 视频";
+"fileType.mts" = "传输流视频";
+"fileType.m2ts" = "传输流视频";
+"fileType.rmvb" = "RealMedia 视频";
+"fileType.mp3" = "MP3 音频";
+"fileType.m4a" = "AAC 音频";
+"fileType.aac" = "AAC 音频";
+"fileType.wav" = "WAV 音频";
+"fileType.aiff" = "AIFF 音频";
+"fileType.aif" = "AIFF 音频";
+"fileType.flac" = "FLAC 无损音频";
+"fileType.ape" = "APE 无损音频";
+"fileType.ogg" = "OGG 音频";
+"fileType.opus" = "OPUS 音频";
+"fileType.wma" = "WMA 音频";
+"fileType.mid" = "MIDI 音频";
+"fileType.midi" = "MIDI 音频";
+"fileType.txt" = "文本文档";
+"fileType.md" = "Markdown 文档";
+"fileType.markdown" = "Markdown 文档";
+"fileType.rtf" = "RTF 文档";
+"fileType.rtfd" = "RTFD 文档";
+"fileType.doc" = "Word 文档";
+"fileType.docx" = "Word 文档";
+"fileType.dot" = "Word 模板";
+"fileType.dotx" = "Word 模板";
+"fileType.pages" = "Pages 文档";
+"fileType.odt" = "OpenDocument 文本";
+"fileType.tex" = "LaTeX 文档";
+"fileType.log" = "日志文件";
+"fileType.csv" = "CSV 表格";
+"fileType.tsv" = "TSV 表格";
+"fileType.xls" = "Excel 工作簿";
+"fileType.xlsx" = "Excel 工作簿";
+"fileType.xlsm" = "Excel 宏工作簿";
+"fileType.numbers" = "Numbers 表格";
+"fileType.ods" = "OpenDocument 表格";
+"fileType.ppt" = "PowerPoint 演示文稿";
+"fileType.pptx" = "PowerPoint 演示文稿";
+"fileType.key" = "Keynote 演示文稿";
+"fileType.odp" = "OpenDocument 演示文稿";
+"fileType.pdf" = "PDF 文档";
+"fileType.epub" = "EPUB 电子书";
+"fileType.mobi" = "Mobi 电子书";
+"fileType.azw" = "Kindle 电子书";
+"fileType.azw3" = "Kindle 电子书";
+"fileType.djvu" = "DjVu 文档";
+"fileType.zip" = "ZIP 压缩包";
+"fileType.rar" = "RAR 压缩包";
+"fileType.7z" = "7-Zip 压缩包";
+"fileType.tar" = "TAR 归档";
+"fileType.gz" = "GZip 压缩";
+"fileType.tgz" = "TAR.GZ 归档";
+"fileType.bz2" = "BZip2 压缩";
+"fileType.xz" = "XZ 压缩";
+"fileType.zst" = "Zstandard 压缩";
+"fileType.xip" = "XIP 归档";
+"fileType.jar" = "Java 归档";
+"fileType.war" = "Java Web 归档";
+"fileType.dmg" = "磁盘映像";
+"fileType.iso" = "光盘映像";
+"fileType.pkg" = "安装包";
+"fileType.mpkg" = "安装包";
+"fileType.py" = "Python 源码";
+"fileType.pyw" = "Python 源码";
+"fileType.ipynb" = "Jupyter 笔记本";
+"fileType.js" = "JavaScript 源码";
+"fileType.mjs" = "JavaScript 模块";
+"fileType.cjs" = "JavaScript 模块";
+"fileType.jsx" = "React 组件";
+"fileType.ts" = "TypeScript 源码";
+"fileType.tsx" = "React TS 组件";
+"fileType.java" = "Java 源码";
+"fileType.kt" = "Kotlin 源码";
+"fileType.swift" = "Swift 源码";
+"fileType.m" = "Objective-C 源码";
+"fileType.mm" = "Objective-C++ 源码";
+"fileType.c" = "C 源码";
+"fileType.h" = "C 头文件";
+"fileType.cpp" = "C++ 源码";
+"fileType.cc" = "C++ 源码";
+"fileType.hpp" = "C++ 头文件";
+"fileType.cs" = "C# 源码";
+"fileType.go" = "Go 源码";
+"fileType.rs" = "Rust 源码";
+"fileType.rb" = "Ruby 源码";
+"fileType.php" = "PHP 源码";
+"fileType.pl" = "Perl 源码";
+"fileType.lua" = "Lua 源码";
+"fileType.r" = "R 源码";
+"fileType.scala" = "Scala 源码";
+"fileType.sh" = "Shell 脚本";
+"fileType.bash" = "Bash 脚本";
+"fileType.zsh" = "Zsh 脚本";
+"fileType.fish" = "Fish 脚本";
+"fileType.ps1" = "PowerShell 脚本";
+"fileType.bat" = "批处理文件";
+"fileType.cmd" = "命令脚本";
+"fileType.html" = "HTML 网页";
+"fileType.htm" = "HTML 网页";
+"fileType.css" = "样式表";
+"fileType.scss" = "SCSS 样式";
+"fileType.less" = "LESS 样式";
+"fileType.vue" = "Vue 组件";
+"fileType.svelte" = "Svelte 组件";
+"fileType.json" = "JSON 数据";
+"fileType.yaml" = "YAML 配置";
+"fileType.yml" = "YAML 配置";
+"fileType.toml" = "TOML 配置";
+"fileType.ini" = "INI 配置";
+"fileType.cfg" = "配置文件";
+"fileType.conf" = "配置文件";
+"fileType.xml" = "XML 文档";
+"fileType.plist" = "属性列表";
+"fileType.sql" = "SQL 脚本";
+"fileType.graphql" = "GraphQL 查询";
+"fileType.patch" = "补丁文件";
+"fileType.diff" = "差异文件";
+"fileType.db" = "SQLite 数据库";
+"fileType.sqlite" = "SQLite 数据库";
+"fileType.sqlite3" = "SQLite 数据库";
+"fileType.mdb" = "Access 数据库";
+"fileType.accdb" = "Access 数据库";
+"fileType.realm" = "Realm 数据库";
+"fileType.ttf" = "TrueType 字体";
+"fileType.otf" = "OpenType 字体";
+"fileType.woff" = "Web 字体";
+"fileType.woff2" = "Web 字体";
+"fileType.ttc" = "字体集合";
+"fileType.app" = "应用程序";
+"fileType.exe" = "Windows 程序";
+"fileType.msi" = "Windows 安装包";
+"fileType.bin" = "二进制文件";
+"fileType.so" = "共享库";
+"fileType.dylib" = "动态库";
+"fileType.a" = "静态库";
+"fileType.o" = "目标文件";
+"fileType.command" = "终端命令";
+"fileType.apk" = "Android 安装包";
+"fileType.deb" = "Debian 软件包";
+"fileType.rpm" = "RPM 软件包";
+"fileNameType.makefile" = "Makefile";
+"fileNameType.dockerfile" = "Dockerfile";
+"fileNameType.readme" = "说明文档";
+"fileNameType.license" = "许可证";
+"fileNameType.licence" = "许可证";
+"fileNameType.changelog" = "更新日志";
+"fileNameType..gitignore" = "Git 忽略规则";
+"fileNameType..zshrc" = "Zsh 配置";
+"fileNameType..bashrc" = "Bash 配置";
+"fileNameType..bash_profile" = "Bash 配置";
+"fileNameType..profile" = "Shell 配置";
+"fileNameType..env" = "环境变量";
+"default.newFileName" = "未命名.txt";
+"appData.name.com.tencent.xinWeChat" = "微信";
+"appData.name.com.tencent.WeWorkMac" = "企业微信";
+"appData.name.com.apple.Safari" = "Safari 浏览器";
+"appData.name.com.apple.mail" = "邮件";
+"appData.name.com.apple.iChat" = "信息";
+"appData.name.com.apple.Photos" = "照片";
+"appData.name.com.apple.Music" = "音乐";
+"appData.name.com.apple.iCal" = "日历";
+"appData.name.com.apple.Notes" = "备忘录";
+"appData.name.com.apple.reminders" = "提醒事项";
+
+"wechat.archiveDestination" = "选择压缩文件的保存位置";
+
+"android.deletePermanent" = "永久删除…";
+
+"android.deleteTitle" = "永久删除设备上的 %d 项？";
+
+"android.deleteMessage" = "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 WinFile 撤销。";
+
+"android.deleteConfirm" = "永久删除";
+
+"android.crossDevicePaste" = "跨设备粘贴请先下载到本机，再上传到目标设备。";
+
+"scan.resultLimit" = "已达到当前显示数量，可继续加载";
+
+"scan.depthLimit" = "还有更深层目录未扫描";
+
+"scan.visitLimit" = "已达到本次遍历上限";
+
+"scan.unreadable" = "%d 个位置无法读取";
+
+"scan.continue" = "继续加载 / 深入扫描";
+
+"inspector.partialSize" = "部分统计，实际大小至少为以上数值；部分位置未读取或已达到遍历上限。";
+
+"wechat.scanProgress" = "已发现 %d 项（%@），已检查 %d 个条目";
+
+"wechat.account" = "账号";
+
+"wechat.allAccounts" = "全部账号";
+
+"wechat.customAccount" = "其它 / 自定义位置";
+
+"wechat.month" = "月份";
+
+"wechat.allMonths" = "全部月份";
+
+"wechat.source" = "来源";
+
+"wechat.allSources" = "全部来源";
+
+"wechat.attachments" = "聊天附件";
+
+"wechat.caches" = "缓存 / 缩略图";
+
+"action.quickLook" = "快速预览";
+
+"operation.undoNamed" = "撤销%@";
+
+"operation.undo" = "撤销文件操作";
+
+"operation.redoText" = "重做文本编辑";
+
+"operation.progress" = "已完成 %d / %d 项：%@";
+
+"operation.cancelHint" = "取消在当前文件复制或移动完成后生效，已完成项目会保留。";
+
+"operation.finished" = "已完成 %d 项，失败 %d 项%@";
+
+"operation.cancelledSuffix" = "（已取消）";
+
+"operation.sourceMissing" = "源文件不存在或不可读取：%@";
+
+"scan.badgeScope" = "初始扫描范围内的计数；可进入分类继续深入扫描。";
+
+"wechat.usage.title" = "当前附件占用";
+
+"wechat.usage.total" = "全部附件";
+
+"wechat.usage.filtered" = "当前筛选";
+
+"wechat.usage.selected" = "已选附件";
+
+"wechat.usage.count" = "%d 个文件";
+
+"wechat.usage.scanning" = "正在统计附件占用；筛选与所选统计在扫描完成后更新。";
+
+"wechat.usage.scope" = "仅统计已扫描的本机附件，不包含聊天数据库；清理后自动更新。";
+
+"archive.error.engineMissing" = "解压引擎缺失，请重新安装 WinFile。";
+
+"archive.error.passwordRequired" = "此压缩包需要密码。";
+
+"archive.error.wrongPassword" = "密码错误或加密数据损坏，请检查后重试。";
+
+"archive.cancelled" = "已取消解压";
+
+"archive.error.unsafePath" = "压缩包包含不安全的路径或外部链接，已停止解压。";
+
+"archive.error.space" = "目标磁盘的可用空间不足。";
+
+"archive.error.volume" = "分卷不完整或压缩包已截断。请将所有分卷放在同一文件夹后重试。%@";
+
+"archive.error.listingTooLarge" = "压缩包目录信息过大，无法完成验证。";
+
+"action.extract" = "解压";
+
+"archive.chooseDestination" = "选择解压文件的保存位置";
+
+"archive.password.title" = "输入解压密码";
+
+"archive.password.placeholder" = "密码（仅用于本次解压）";
+
+"action.extractBeside" = "解压到所在文件夹";
+
+"action.extractFolder" = "解压到独立文件夹";
+
+"action.extractTo" = "解压到…";
+
+"type.archiveVolume" = "压缩分卷";
+
+// Layout and cleanup filters
+"wechat.filters.advanced" = "高级筛选";
+"wechat.filters.advancedCount" = "高级筛选（%d）";
+"wechat.filters.advancedHint" = "按账号、月份、来源、大小和修改时间筛选";
+"wechat.filters.remove" = "移除此筛选：%@";
+"wechat.filters.reset" = "重置筛选";
+"wechat.filter.name" = "名称：%@";
+"wechat.filter.type" = "类型：%@";
+"wechat.filter.account" = "账号：%@";
+"wechat.filter.month" = "月份：%@";
+"wechat.filter.size" = "至少 %@";
+"layout.resizeHint" = "拖动调整宽度，双击恢复默认";
+"layout.width" = "%d 点";
+"layout.sidebarWidth" = "侧边栏宽度";
+"layout.inspectorWidth" = "详细信息宽度";
+"layout.options" = "显示与排序";
+"sort.ascending" = "升序";
+
+"button.close" = "关闭";
+"duplicates.chooseHint" = "选择要检查的本机文件夹";
+"duplicates.explain" = "按完整文件内容比对；跳过符号链接、应用包内部和同一文件的硬链接。仅列出结果，可先预览再跳转整理。";
+"duplicates.partial" = "结果可能不完整：取消 %d，达到扫描上限 %d，无法读取 %d，扫描时发生变化 %d。";
+"duplicates.progress" = "已检查 %d 项，已比对 %d / %d 个候选文件";
+"duplicates.ready" = "选择范围后开始查找";
+"duplicates.scan" = "开始查找";
+"duplicates.summary" = "%d 组重复文件，可整理的逻辑大小 %@";
+"duplicates.title" = "查找重复文件";
+"operation.bytes" = "%@ / %@";
+"operation.calculating" = "正在统计文件大小…";
+"operation.cancelStreaming" = "复制可在传输中取消；移动在当前项目完成后停止，已完成项目会保留。";
+"operation.openResult" = "打开结果目录";
+"operation.retry" = "重试未完成项（%d）";
+"organize.tools" = "文件整理工具";
+"rename.apply" = "应用重命名";
+"rename.base" = "统一名称（留空保留原名）";
+"rename.batch" = "批量重命名";
+"rename.check" = "检查";
+"rename.digits" = "%d 位";
+"rename.duplicate" = "批次内目标名称重复";
+"rename.exists" = "目标已存在";
+"rename.find" = "查找文本";
+"rename.invalid" = "名称无效或过长";
+"rename.missing" = "源文件已不存在";
+"rename.nested" = "请分别重命名文件夹及其内部文件";
+"rename.numbered" = "添加序号，保留文件扩展名";
+"rename.original" = "原名称";
+"rename.prefix" = "添加前缀";
+"rename.previewHint" = "先检查预览；重名不会覆盖。完成后可用 ⌘Z 撤销。";
+"rename.proposed" = "新名称";
+"rename.replace" = "替换为";
+"rename.review" = "请先解决预览中的名称冲突";
+"rename.start" = "起始：%d";
+"rename.suffix" = "添加后缀（扩展名前）";
+"rename.unchanged" = "无变化";
+"rename.undoChanged" = "文件已移动或被替换，无法撤销此批次";
+"search.advanced" = "组合搜索";
+"search.after" = "修改日期从";
+"search.before" = "修改日期至";
+"search.criteriaHint" = "所有条件同时满足；名称可留空，日期包含所选的整天。按大小筛选时仅列出文件。";
+"search.maximumMB" = "最大大小（MB，可留空）";
+"search.minimumMB" = "最小大小（MB，可留空）";
+"search.start" = "搜索";
+"tab.all" = "所有标签页（%d）";
+"tab.pin" = "固定标签页";
+"tab.restore" = "恢复关闭的标签页";
+"tab.unpin" = "取消固定标签页";
+"wechat.lastScan" = "最后扫描：%@";
+"wechat.usage.analysis" = "占用分布（当前筛选）";
+"wechat.usage.bucket" = "%@ · %d 项";
+"wechat.usage.filter" = "点击筛选此分组";
+"wechat.usage.group" = "分组";
+
+"wechat.scanDetails" = "扫描详情与占用分布";
+
+"status.filteredSearch" = "找到 %d 项符合条件的结果";

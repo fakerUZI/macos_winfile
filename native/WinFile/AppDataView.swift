@@ -6,6 +6,7 @@ import AppKit
 import SwiftUI
 
 struct AppDataView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
 
@@ -110,6 +111,7 @@ struct AppDataView: View {
 
 /// 单个应用的数据目录卡片
 struct AppDataCard: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let item: AppDataItem
     let open: () -> Void
@@ -122,7 +124,7 @@ struct AppDataCard: View {
                 icon
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(item.name)
+                        Text(AppDataService.localizedName(for: item))
                             .fontWeight(.medium)
                             .lineLimit(1)
                         if item.isContainer {
@@ -204,15 +206,23 @@ struct AppDataCard: View {
 
 /// 压缩/解压进度横幅
 struct ArchiveProgressBanner: View {
+    @ObservedObject private var localization = Localization.shared
     let progress: ArchiveProgress
+    var cancel: () -> Void = {}
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
+            if let fraction = progress.fraction { ProgressView(value: fraction).frame(width: 70) }
+            else { ProgressView().controlSize(.small) }
             Text(progress.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
+            if !progress.isCompressing {
+                Text("\(progress.index) / \(progress.total)").font(.caption).monospacedDigit()
+                if let fraction = progress.fraction { Text("\(Int(fraction * 100))%").font(.caption).monospacedDigit() }
+                Button(L("button.cancel", "取消"), action: cancel)
+            }
         }
         .padding(12)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))

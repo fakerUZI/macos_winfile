@@ -7,6 +7,7 @@ import AppKit
 import SwiftUI
 
 struct PathBarHost: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var editingPath: Bool
@@ -28,6 +29,7 @@ struct PathBarHost: View {
 
     /// 当前地址栏应表达的位置（路径或页面名）：用作视图身份，路径变化即强制重建
     var addressIdentity: String {
+        if model.isWeChatCleanupView { return "page:wechatCleanup" }
         if model.isHomeView { return "page:home" }
         if model.isThisPCView { return "page:thispc" }
         if model.isCategoryView { return "page:category:\(model.categoryFilter?.rawValue ?? "")" }
@@ -79,6 +81,7 @@ struct PathBarHost: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
                             }
+                            .disabled(model.isWeChatCleanupView)
                             .buttonStyle(.borderless)
                             .background(
                                 RoundedRectangle(cornerRadius: 4)
@@ -90,7 +93,7 @@ struct PathBarHost: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { onBeginEditing() }
-                .help(NSLocalizedString("path.hint", comment: "双击可编辑路径，支持补全"))
+                .help(WLocalizedString("path.hint", comment: "双击可编辑路径，支持补全"))
             }
         }
         .frame(maxWidth: .infinity, minHeight: 24)
@@ -120,19 +123,27 @@ struct PathBarHost: View {
             return [Crumb(title: model.windowSubtitle, url: engine.browsableRoots.first ?? URL(fileURLWithPath: "/"),
                           symbol: "square.grid.2x2")]
         }
+        if let (serial, _) = AndroidURL.split(dir) {
+            return AndroidURL.ancestors(dir).enumerated().map { index, url in
+                Crumb(title: index == 0
+                      ? (AndroidDeviceRegistry.shared.device(serial: serial)?.displayName ?? L("view.androidDevice", "安卓设备"))
+                      : url.lastPathComponent,
+                      url: url, symbol: index == 0 ? "candybarphone" : "folder")
+            }
+        }
         let components = dir.pathComponents
         var result: [Crumb] = []
         var accumulated = URL(fileURLWithPath: "/")
         for (index, component) in components.enumerated() {
             if index == 0 {
-                result.append(Crumb(title: NSLocalizedString("place.macintoshHD", comment: "启动磁盘"),
+                result.append(Crumb(title: WLocalizedString("place.macintoshHD", comment: "启动磁盘"),
                                     url: accumulated, symbol: "internaldrive"))
                 continue
             }
             accumulated.appendPathComponent(component)
             let title: String
             if component == FileSystemService.realHomeDirectory().lastPathComponent {
-                title = NSLocalizedString("place.home", comment: "个人文件夹")
+                title = WLocalizedString("place.home", comment: "个人文件夹")
             } else if component == "var" || component == "private" {
                 title = component
             } else {

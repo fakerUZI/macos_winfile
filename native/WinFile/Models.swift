@@ -345,9 +345,17 @@ enum FileTypeDB {
             return .init(category: .other, description: L("type.symlink", "替身"))
         }
         let lower = name.lowercased()
-        if let hit = nameTable[lower] { return hit }
+        if let hit = nameTable[lower] { return .init(category: hit.category, description: L("fileNameType.\(lower)", hit.description)) }
         let ext = fileExtension(of: name)
-        if let hit = table[ext] { return hit }
+        if ((ext.hasPrefix("r") || ext.hasPrefix("z")) && (3...4).contains(ext.count) && ext.dropFirst().allSatisfy(\.isNumber))
+            || (ext.count >= 3 && ext.allSatisfy(\.isNumber)
+                && lower.range(of: #"\.(7z|zip)\.[0-9]+$"#, options: .regularExpression) != nil) {
+            return .init(category: .archive, description: L("type.archiveVolume", "压缩分卷"))
+        }
+        if let hit = table[ext] { return .init(category: hit.category, description: L("fileType.\(ext)", hit.description)) }
+        if ArchiveService.archiveExtensions.contains(ext) {
+            return .init(category: .archive, description: L("category.archive", "压缩包"))
+        }
         return .init(category: .other, description: L("type.file", "文件"))
     }
 }
@@ -355,6 +363,24 @@ enum FileTypeDB {
 // MARK: - 文件条目
 
 struct FileItem: Identifiable, Hashable {
+    var sortableModified: Date { modified ?? .distantPast }
+    var sortableSize: Int64 { size ?? -1 }
+    /// Reuse scanner metadata so selecting large result sets does not stat every file on the main thread.
+    init(weChatFile file: WeChatFile) {
+        id = file.id
+        url = file.url
+        name = file.url.lastPathComponent
+        isDirectory = false
+        isSymlink = false
+        isBundle = false
+        isHidden = name.hasPrefix(".")
+        isReadable = file.isReadable
+        size = file.size
+        modified = file.modified
+        created = file.created
+        category = FileTypeDB.info(name: name, isDirectory: false, isSymlink: false, isBundle: false).category
+    }
+
 
     /// 由安卓条目构造。
     ///
@@ -375,7 +401,6 @@ struct FileItem: Identifiable, Hashable {
         // 复用类型库，保证安卓条目与本地条目的类型/分类判定一致
         let info = FileTypeDB.info(name: entry.name, isDirectory: entry.isDirectory,
                                    isSymlink: entry.isSymlink, isBundle: false)
-        self.typeDescription = info.description
         self.category = info.category
     }
     let id: String              // 使用完整路径作为稳定标识
@@ -389,7 +414,9 @@ struct FileItem: Identifiable, Hashable {
     let size: Int64?
     let modified: Date?
     let created: Date?
-    let typeDescription: String
+    var typeDescription: String {
+        FileTypeDB.info(name: name, isDirectory: isDirectory, isSymlink: isSymlink, isBundle: isBundle).description
+    }
     let category: FileCategory
 
     var isContainer: Bool { isDirectory || isBundle }
@@ -497,7 +524,6 @@ extension FileItem {
         }
         self.modified = values.contentModificationDate
         self.created = values.creationDate
-        self.typeDescription = info.description
         self.category = info.category
     }
 }

@@ -7,6 +7,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SidebarManagerSheet: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject private var preferences = SidebarPreferences.shared
     @Environment(\.dismiss) private var dismiss

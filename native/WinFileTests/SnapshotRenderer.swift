@@ -44,10 +44,17 @@ enum SnapshotRenderer {
 
     /// 视图模式：详情 / 大图标 / 主页 / 此电脑
     /// （分类与搜索依赖 Table 异步回填，不适合离屏截图，见文件头说明）
-    enum Mode: String { case details, icons, home, thisPC, category }
+    enum Mode: String { case details, icons, home, thisPC, category, wechat }
 
     @MainActor
     static func render(path: String, mode: Mode = .details) {
+        if mode == .wechat { renderWeChatPreview(path: path); return }
+        let defaults = UserDefaults.standard
+        let originalPreferences = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "WinFile")
+        defer {
+            if let originalPreferences { defaults.setPersistentDomain(originalPreferences, forName: Bundle.main.bundleIdentifier ?? "WinFile") }
+            else { defaults.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "WinFile") }
+        }
         let fm = FileManager.default
         let demo = makeDemoFolder()
         defer { try? fm.removeItem(at: demo) }
@@ -75,7 +82,7 @@ enum SnapshotRenderer {
             if let first = model.items.first(where: { !$0.isContainer }) {
                 model.selectedIDs = [first.id]
             }
-        case .home, .thisPC:
+        case .home, .thisPC, .wechat:
             engine.restrictScopeForTesting([demo])
         case .category:
             // 分类视图：用于验证网格是否完整渲染所有条目
@@ -187,6 +194,47 @@ enum SnapshotRenderer {
             print("写入失败：\(error.localizedDescription)")
             exit(1)
         }
+    }
+
+    /// Uses temporary attachment fixtures and never scans the user's real WeChat data.
+    private static func renderWeChatPreview(path: String) {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("WinFile-WeChat-Preview-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: root) }
+        for name in ["File/Project Proposal.pdf", "Image/Holiday.jpg", "Video/Meeting.mp4", "File/Archive.zip"] {
+            let url = root.appendingPathComponent(name)
+            try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data(repeating: 0, count: 2048).write(to: url)
+        }
+        let result = WeChatCleanupService.scan(roots: [root])
+        let store = WeChatCleanupModel(initialResult: result)
+        let width = CommandLine.arguments.contains("--compact-preview") ? 640 : 940
+        let height = CommandLine.arguments.contains("--short-preview") ? 360 : 640
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.title = "WinFile"
+        let model = BrowserModel(engine: FSEngine(), startDirectory: nil, cleanupModel: store)
+        model.navigate(to: .weChatCleanup)
+        let hosting = NSHostingView(rootView: WeChatCleanupView(model: model, dialog: .constant(nil))
+            .environment(\.locale, Localization.shared.locale)
+            .frame(width: CGFloat(width), height: CGFloat(height)))
+        hosting.sizingOptions = []
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        window.contentView = hosting
+        window.setContentSize(NSSize(width: width, height: height))
+        window.makeKeyAndOrderFront(nil)
+        let settle = Date().addingTimeInterval(3)
+        while Date() < settle {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            hosting.layoutSubtreeIfNeeded()
+        }
+        window.displayIfNeeded()
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { exit(1) }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
+        do { try png.write(to: URL(fileURLWithPath: path)) } catch { print(error); exit(1) }
+        window.orderOut(nil)
+        print("WeChat fixture preview: \(path)")
     }
 
     /// 在示例目录里造出 16 个 PDF（含重名与长短名，用于复现网格问题）

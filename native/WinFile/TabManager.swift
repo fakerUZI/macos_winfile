@@ -6,11 +6,13 @@ import Foundation
 @MainActor
 final class WinFileTab: ObservableObject, Identifiable {
     let id = UUID()
+    @Published var isPinned = false
     let model: BrowserModel
     private var cancellables = Set<AnyCancellable>()
 
-    init(engine: FSEngine, startDirectory: URL?) {
+    init(engine: FSEngine, startDirectory: URL?, tabManager: TabManager? = nil) {
         model = BrowserModel(engine: engine, startDirectory: startDirectory)
+        model.tabManager = tabManager
         // 页签标题与图标随浏览状态变化而刷新
         model.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -28,6 +30,7 @@ final class WinFileTab: ObservableObject, Identifiable {
         case .thisPC: return "pc"
         case .applications: return "square.grid.2x2.fill"
         case .appData: return "shippingbox.fill"
+        case .weChatCleanup: return "bubble.left.and.bubble.right.fill"
         case .androidDevice: return "candybarphone"
         case .category(let category): return category.symbol
         case .folder(let url):
@@ -55,16 +58,34 @@ final class TabManager: ObservableObject {
     private var modelCancellable: AnyCancellable?
     private weak var observedModel: BrowserModel?
 
-    init(engine: FSEngine, startDirectory: URL?) {
+    private let sessionStore: BrowserSessionStore
+    private let persistsSession: Bool
+    private var saveTask: Task<Void, Never>?
+    @Published private(set) var closedTabs: [SavedBrowserTab] = []
+
+    init(engine: FSEngine, startDirectory: URL?, restoreSession: Bool = false, sessionStore: BrowserSessionStore? = nil) {
+        self.sessionStore = sessionStore ?? .shared
+        self.persistsSession = restoreSession
         self.engine = engine
         // 始终至少有一个页签，符合资源管理器行为
-        let first = WinFileTab(engine: engine, startDirectory: startDirectory)
+        let first = WinFileTab(engine: engine, startDirectory: startDirectory, tabManager: self)
         tabs = [first]
         activeID = first.id
+        if restoreSession, startDirectory == nil, let saved = self.sessionStore.load() {
+            tabs = saved.tabs.map { record in
+                let tab = WinFileTab(engine: engine, startDirectory: nil, tabManager: self)
+                tab.isPinned = record.pinned ?? false
+                record.apply(to: tab.model)
+                return tab
+            }
+            activeID = tabs[min(max(0, saved.activeIndex), tabs.count - 1)].id
+            tabs = tabs.filter(\.isPinned) + tabs.filter { !$0.isPinned }
+        }
         forwardActiveModelChanges()
         // 切换页签时改订新模型
         $activeID
-            .sink { [weak self] _ in self?.forwardActiveModelChanges() }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.forwardActiveModelChanges(); self?.scheduleSave() }
             .store(in: &cancellables)
     }
 
@@ -79,20 +100,36 @@ final class TabManager: ObservableObject {
         observedModel = current
         modelCancellable?.cancel()
         modelCancellable = current.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .sink { [weak self] _ in self?.objectWillChange.send(); self?.scheduleSave() }
         objectWillChange.send()
+    }
+
+    deinit { saveTask?.cancel() }
+
+    private func scheduleSave() {
+        guard persistsSession else { return }
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            self?.persistNow()
+        }
+    }
+    func persistNow() {
+        guard persistsSession else { return }
+        sessionStore.save(tabs: tabs, activeID: activeID)
     }
 
     var activeTab: WinFileTab { tabs.first { $0.id == activeID } ?? tabs[0] }
     var activeModel: BrowserModel { activeTab.model }
     var count: Int { tabs.count }
-    var canCloseActive: Bool { tabs.count > 1 }
+    var canCloseActive: Bool { tabs.count > 1 && !activeTab.isPinned }
 
     /// 新页签：可指定初始目录；不指定时进入主页
     @discardableResult
     func newTab(startDirectory: URL? = nil, activate: Bool = true) -> WinFileTab {
         TabDiagnostics.shared.record("TabManager.newTab", detail: "原有=\(tabs.count) 目录=\(startDirectory?.lastPathComponent ?? "主页")")
-        let tab = WinFileTab(engine: engine, startDirectory: nil)
+        let tab = WinFileTab(engine: engine, startDirectory: nil, tabManager: self)
         tabs.append(tab)
         if activate { activeID = tab.id }
         if let directory = startDirectory {
@@ -100,13 +137,16 @@ final class TabManager: ObservableObject {
         } else {
             tab.model.navigate(to: .home)
         }
+        scheduleSave()
         return tab
     }
 
     /// 复制某个页签（打开它当前所在目录）
     @discardableResult
     func duplicate(_ tab: WinFileTab) -> WinFileTab {
-        newTab(startDirectory: tab.model.currentDirectory)
+        let copy = newTab()
+        SavedBrowserTab(model: tab.model).apply(to: copy.model)
+        return copy
     }
 
     func select(_ tab: WinFileTab) {
@@ -128,14 +168,16 @@ final class TabManager: ObservableObject {
     /// 关闭页签；关掉最后一个时会自动补一个新页签
     func close(_ tab: WinFileTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-        tabs.remove(at: index)
-        if tabs.isEmpty {
-            let replacement = WinFileTab(engine: engine, startDirectory: nil)
+        guard !tab.isPinned else { return }
+        rememberClosed(tab)
+        if tabs.count == 1 {
+            let replacement = WinFileTab(engine: engine, startDirectory: nil, tabManager: self)
             replacement.model.navigate(to: .home)
             tabs = [replacement]
             activeID = replacement.id
             return
         }
+        tabs.remove(at: index)
         if activeID == tab.id {
             activeID = tabs[min(index, tabs.count - 1)].id
         }
@@ -148,12 +190,40 @@ final class TabManager: ObservableObject {
     }
 
     func closeOthers(keeping tab: WinFileTab) {
-        tabs = [tab]
+        for other in tabs where other.id != tab.id && !other.isPinned { rememberClosed(other) }
+        tabs = tabs.filter { $0.isPinned || $0.id == tab.id }
         activeID = tab.id
+        scheduleSave()
     }
 
     func closeAll() {
-        closeActive()
-        while tabs.count > 1 { close(tabs[1]) }
+        for tab in tabs.filter({ !$0.isPinned }) { close(tab) }
+    }
+
+    func togglePin(_ tab: WinFileTab) {
+        guard tabs.contains(where: { $0.id == tab.id }) else { return }
+        tab.isPinned.toggle()
+        tabs = tabs.filter(\.isPinned) + tabs.filter { !$0.isPinned }
+        scheduleSave()
+    }
+
+    private func rememberClosed(_ tab: WinFileTab) {
+        closedTabs.append(SavedBrowserTab(model: tab.model))
+        if closedTabs.count > 20 { closedTabs.removeFirst() }
+    }
+
+    func restoreClosedTab() {
+        guard let saved = closedTabs.popLast() else { return }
+        let tab = newTab()
+        saved.apply(to: tab.model)
+    }
+
+    func visibleTabs(width: CGFloat) -> [WinFileTab] {
+        let capacity = max(1, Int(max(0, width - 84) / 160))
+        var visible = Array(tabs.prefix(capacity))
+        if !visible.contains(where: { $0.id == activeID }), let active = tabs.first(where: { $0.id == activeID }) {
+            visible[visible.count - 1] = active
+        }
+        return visible
     }
 }

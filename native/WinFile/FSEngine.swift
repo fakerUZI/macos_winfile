@@ -1,6 +1,7 @@
 // 原生文件系统引擎：目录列表、分类聚合、搜索、废纸篓、书签授权
 import AppKit
 import Foundation
+import Combine
 import Security
 
 // MARK: - 侧边栏位置
@@ -41,6 +42,7 @@ final class FSEngine: ObservableObject {
     /// 用户添加的常用文件夹（本地版直接记录路径，无需沙盒书签）
     private var addedFolderPaths: [String] = []
     private var countTask: Task<Void, Never>?
+    private var languageSubscription: AnyCancellable?
 
     private let foldersKey = "AddedFolderPaths"
 
@@ -50,6 +52,11 @@ final class FSEngine: ObservableObject {
         buildPlaces()
         buildVolumes()
         refreshAuthorizedRoots()
+        languageSubscription = Localization.shared.objectWillChange.receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.buildPlaces()
+                self?.buildVolumes()
+            }
     }
 
 
@@ -62,7 +69,7 @@ final class FSEngine: ObservableObject {
         var list: [SidebarPlace] = []
         func add(_ titleKey: String, _ url: URL, _ symbol: String, _ kind: SidebarPlace.Kind) {
             guard fm.fileExists(atPath: url.path) else { return }
-            list.append(SidebarPlace(id: url.path, name: NSLocalizedString(titleKey, comment: "侧边栏位置"),
+            list.append(SidebarPlace(id: url.path, name: WLocalizedString(titleKey, comment: "侧边栏位置"),
                                      url: url, kind: kind, symbol: symbol))
         }
         add("place.desktop", home.appendingPathComponent("Desktop"), "menubar.dock.rectangle", .folder)
@@ -80,7 +87,7 @@ final class FSEngine: ObservableObject {
     private func buildVolumes() {
         var list: [SidebarPlace] = []
         let root = URL(fileURLWithPath: "/")
-        list.append(SidebarPlace(id: "/", name: NSLocalizedString("place.macintoshHD", comment: "启动磁盘"),
+        list.append(SidebarPlace(id: "/", name: WLocalizedString("place.macintoshHD", comment: "启动磁盘"),
                                  url: root, kind: .volume, symbol: "internaldrive"))
         let volumesRoot = URL(fileURLWithPath: "/Volumes")
         if let children = try? FileManager.default.contentsOfDirectory(
@@ -253,7 +260,7 @@ final class FSEngine: ObservableObject {
             return true
         }
         let result = NSWorkspace.shared.open(item.url)
-        if !result { lastError = NSLocalizedString("error.openFailed", comment: "无法打开") }
+        if !result { lastError = WLocalizedString("error.openFailed", comment: "无法打开") }
         return result
     }
 
@@ -405,17 +412,17 @@ enum FSError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notFound(let url):
-            return String(format: NSLocalizedString("error.notFound", comment: "路径不存在"), url.lastPathComponent)
+            return String(format: WLocalizedString("error.notFound", comment: "路径不存在"), url.lastPathComponent)
         case .notDirectory(let url):
-            return String(format: NSLocalizedString("error.notDirectory", comment: "不是文件夹"), url.lastPathComponent)
+            return String(format: WLocalizedString("error.notDirectory", comment: "不是文件夹"), url.lastPathComponent)
         case .notAuthorized:
-            return NSLocalizedString("error.notAccessible", comment: "无法访问该位置")
+            return WLocalizedString("error.notAccessible", comment: "无法访问该位置")
         case .invalidName:
-            return NSLocalizedString("error.invalidName", comment: "名称不合法")
+            return WLocalizedString("error.invalidName", comment: "名称不合法")
         case .nameExists(let name):
-            return String(format: NSLocalizedString("error.nameExists", comment: "同名已存在"), name)
+            return String(format: WLocalizedString("error.nameExists", comment: "同名已存在"), name)
         case .recursiveTransfer(let name):
-            return String(format: NSLocalizedString("error.recursiveTransfer", comment: "不能放入自身"), name)
+            return String(format: WLocalizedString("error.recursiveTransfer", comment: "不能放入自身"), name)
         }
     }
 }

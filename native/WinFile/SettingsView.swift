@@ -2,6 +2,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
     @AppStorage("ShowHiddenFiles") private var showHidden: Bool = false
@@ -10,11 +11,11 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             general
-                .tabItem { Label(NSLocalizedString("settings.general", comment: "通用"), systemImage: "gearshape") }
+                .tabItem { Label(WLocalizedString("settings.general", comment: "通用"), systemImage: "gearshape") }
             privacy
-                .tabItem { Label(NSLocalizedString("settings.privacy", comment: "隐私与授权"), systemImage: "lock.shield") }
+                .tabItem { Label(WLocalizedString("settings.privacy", comment: "隐私与授权"), systemImage: "lock.shield") }
             about
-                .tabItem { Label(NSLocalizedString("settings.about", comment: "关于"), systemImage: "info.circle") }
+                .tabItem { Label(WLocalizedString("settings.about", comment: "关于"), systemImage: "info.circle") }
         }
         .frame(width: 480, height: 320)
     }
@@ -22,24 +23,31 @@ struct SettingsView: View {
     private var general: some View {
         Form {
             Section {
-                Picker(NSLocalizedString("settings.layout", comment: "默认视图"), selection: $layoutRaw) {
-                    Text(NSLocalizedString("layout.details", comment: "详细信息")).tag(ViewLayout.details.rawValue)
-                    Text(NSLocalizedString("layout.icons", comment: "大图标")).tag(ViewLayout.icons.rawValue)
+                Picker(L("settings.language", "语言"), selection: $localization.language) {
+                    Text(L("settings.language.system", "跟随系统")).tag(AppLanguage.system)
+                    Text("简体中文").tag(AppLanguage.simplifiedChinese)
+                    Text("English").tag(AppLanguage.english)
                 }
-                Toggle(NSLocalizedString("settings.showHidden", comment: "显示隐藏文件"), isOn: $showHidden)
+                Text(L("settings.language.hint", "切换后立即生效；不支持的系统语言使用英文。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker(WLocalizedString("settings.layout", comment: "默认视图"), selection: $layoutRaw) {
+                    Text(WLocalizedString("layout.details", comment: "详细信息")).tag(ViewLayout.details.rawValue)
+                    Text(WLocalizedString("layout.icons", comment: "大图标")).tag(ViewLayout.icons.rawValue)
+                }
+                Toggle(WLocalizedString("settings.showHidden", comment: "显示隐藏文件"), isOn: $showHidden)
             }
 
             Section {
                 HStack {
-                    Text(NSLocalizedString("settings.startFolder", comment: "启动时打开"))
+                    Text(WLocalizedString("settings.startFolder", comment: "启动时打开"))
                     Spacer()
                     Text(startFolderPath.isEmpty
-                         ? NSLocalizedString("settings.startFolder.default", comment: "上次使用的位置")
+                         ? WLocalizedString("settings.startFolder.default", comment: "上次使用的位置")
                          : (startFolderPath as NSString).abbreviatingWithTildeInPath)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Button(NSLocalizedString("settings.choose", comment: "选择…")) {
+                    Button(WLocalizedString("settings.choose", comment: "选择…")) {
                         let panel = NSOpenPanel()
                         panel.canChooseFiles = false
                         panel.canChooseDirectories = true
@@ -47,7 +55,7 @@ struct SettingsView: View {
                             startFolderPath = url.path
                         }
                     }
-                    Button(NSLocalizedString("settings.clear", comment: "清除")) { startFolderPath = "" }
+                    Button(WLocalizedString("settings.clear", comment: "清除")) { startFolderPath = "" }
                         .disabled(startFolderPath.isEmpty)
                 }
             }
@@ -130,14 +138,13 @@ struct SettingsView: View {
             if let icon = NSImage(named: NSImage.applicationIconName) {
                 Image(nsImage: icon).resizable().frame(width: 72, height: 72)
             }
-            Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
-                 ?? NSLocalizedString("app.name", comment: "应用名"))
+            Text(WLocalizedString("app.name", comment: "应用名"))
                 .font(.title3).fontWeight(.semibold)
-            Text(String(format: NSLocalizedString("settings.version", comment: "版本"),
+            Text(String(format: WLocalizedString("settings.version", comment: "版本"),
                         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text(NSLocalizedString("settings.about.description", comment: "应用说明"))
+            Text(WLocalizedString("settings.about.description", comment: "应用说明"))
                 .font(.callout)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -167,6 +174,7 @@ struct SettingsView: View {
 /// 需求：支持删除和新增，但**只能从现有条目里选** ——
 /// 因此分类管理的是"显示/隐藏"，收藏管理的是"从已有文件夹里挑选"。
 struct SidebarManagementSection: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject private var preferences = SidebarPreferences.shared
 
@@ -279,6 +287,7 @@ struct SidebarManagementSection: View {
 /// 这些设置只存在本应用的 UserDefaults 中，**不会调用系统 API 修改
 /// macOS 的文件关联** —— 访达与其它应用仍按系统设置打开。
 struct AssociationsSection: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject private var associations = FileAssociations.shared
     @ObservedObject private var defaultApps = DefaultAppService.shared
 

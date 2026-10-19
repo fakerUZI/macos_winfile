@@ -11,13 +11,13 @@ enum SortOrderBridge {
         let order: SortOrder = ascending ? .forward : .reverse
         switch field {
         case .name:
-            return KeyPathComparator<FileItem>(\FileItem.name, order: order)
+            return KeyPathComparator<FileItem>(\FileItem.name, comparator: .localizedStandard, order: order)
         case .modified:
-            return KeyPathComparator<FileItem>(\FileItem.modified, order: order)
+            return KeyPathComparator<FileItem>(\FileItem.sortableModified, order: order)
         case .type:
-            return KeyPathComparator<FileItem>(\FileItem.typeDescription, order: order)
+            return KeyPathComparator<FileItem>(\FileItem.typeDescription, comparator: .localizedStandard, order: order)
         case .size:
-            return KeyPathComparator<FileItem>(\FileItem.size, order: order)
+            return KeyPathComparator<FileItem>(\FileItem.sortableSize, order: order)
         }
     }
 
@@ -32,5 +32,26 @@ enum SortOrderBridge {
             }
         }
         return nil
+    }
+}
+
+enum WeChatSortOrderBridge {
+    static let fields = ["name", "type", "size", "date", "location"]
+
+    static func comparator(for field: String, ascending: Bool) -> KeyPathComparator<WeChatFile> {
+        let order: SortOrder = ascending ? .forward : .reverse
+        switch field {
+        case "name": return KeyPathComparator(\WeChatFile.name, comparator: .localizedStandard, order: order)
+        case "type": return KeyPathComparator(\WeChatFile.typeDescription, comparator: .localizedStandard, order: order)
+        case "date": return KeyPathComparator(\WeChatFile.modified, order: order)
+        case "location": return KeyPathComparator(\WeChatFile.parentPath, comparator: .localizedStandard, order: order)
+        default: return KeyPathComparator(\WeChatFile.size, order: order)
+        }
+    }
+
+    static func field(for comparator: KeyPathComparator<WeChatFile>) -> String? {
+        fields.first { field in
+            [true, false].contains { comparator == self.comparator(for: field, ascending: $0) }
+        }
     }
 }

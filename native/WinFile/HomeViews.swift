@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - 主页
 
 struct HomeView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 唯一真相来源：每次求值都从 TabManager 解析当前模型，绝不缓存副本
     @ObservedObject var manager: TabManager
@@ -202,6 +203,7 @@ struct HomeView: View {
 // MARK: - 快速访问磁贴
 
 struct FolderTile: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let place: SidebarPlace
     let pinned: Bool
@@ -266,6 +268,7 @@ struct FolderTile: View {
 // MARK: - 最近使用行
 
 struct RecentRow: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let entry: RecentEntry
     @ObservedObject var model: BrowserModel
@@ -313,7 +316,7 @@ struct RecentRow: View {
                 NSWorkspace.shared.activateFileViewerSelecting([entry.item.url])
             }
             Button(L("home.openContaining", "打开所在文件夹")) {
-                model.selectFolder(entry.item.url.deletingLastPathComponent())
+                model.openContainingFolder(of: entry.item)
             }
             Divider()
             Button(L("action.copyPath", "复制完整路径")) {
@@ -328,6 +331,7 @@ struct RecentRow: View {
 // MARK: - 此电脑
 
 struct ThisPCView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 与 HomeView 同理：每次求值都从 TabManager 解析当前模型
     @ObservedObject var manager: TabManager
@@ -427,6 +431,7 @@ struct ThisPCView: View {
 // MARK: - 驱动器卡片
 
 struct DriveCard: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let drive: DriveInfo
     @ObservedObject var model: BrowserModel

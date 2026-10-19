@@ -44,6 +44,29 @@ enum NativeTestSuite {
         }
         defer { try? FileManager.default.removeItem(at: sandbox) }
 
+        // Test-only operations must not replace the user's preferences or clipboard on exit.
+        let defaults = UserDefaults.standard
+        let preferenceKeys = ["StartFolderPath", "ViewLayout", "ShowHiddenFiles", "SortField", "SortAscending",
+                              "AddedFolderPaths", "FavoritesSeeded", "PinnedFolders", "RecentlyOpenedFiles",
+                              "SidebarHiddenCategories", "SidebarCategoryOrder", "ShowsDefaultAppBadge"]
+        let preferences = Dictionary(uniqueKeysWithValues: preferenceKeys.compactMap { key in defaults.object(forKey: key).map { (key, $0) } })
+        let pb = NSPasteboard.general
+        let clipboard = (pb.pasteboardItems ?? []).map { item in
+            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
+        }
+        defer {
+            for key in preferenceKeys {
+                if let value = preferences[key] { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+            pb.clearContents()
+            pb.writeObjects(clipboard.map { values -> NSPasteboardItem in
+                let item = NSPasteboardItem()
+                for (type, data) in values { item.setData(data, forType: type) }
+                return item
+            })
+        }
+
         print("== WinFile 逻辑层测试 ==")
         print("沙盒目录：\(sandbox.path)")
 
@@ -66,6 +89,7 @@ enum NativeTestSuite {
             testAndroidBrowsing()
             testCustomPagesNotReportedEmpty()
             try testArchive()
+            try testExpandedArchives(sandbox)
             try testSelectAllConsistency()
             testTileLayoutUniformity()
             try testCategoryViewIntegrity()
@@ -76,6 +100,13 @@ enum NativeTestSuite {
             try testFileAssociations()
             try testDefaultAppBadge()
             testSidebarCategories()
+            try testLanguageSelection()
+            try testWeChatCleanup(sandbox)
+            try testWeChatFileActions(sandbox)
+            try testFunctionalImprovements(sandbox)
+            try testExperienceImprovements(sandbox)
+            try testLayoutAndFilterExperience(sandbox)
+            try testRemainingImprovements(sandbox)
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
             TestReporter.shared.failures.append("异常：\(error.localizedDescription)")
@@ -89,6 +120,882 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testLanguageSelection() throws {
+        print("\n[语言选择与资源]")
+        check("中文区域自动选择简体中文", AppLanguage.resolve(.system, preferredLanguages: ["zh-CN"]) == "zh-Hans")
+        check("繁体系统使用当前支持的中文", AppLanguage.resolve(.system, preferredLanguages: ["zh-Hant-TW"]) == "zh-Hans")
+        check("英文区域自动选择英文", AppLanguage.resolve(.system, preferredLanguages: ["en-GB"]) == "en")
+        check("其它语言回退英文", AppLanguage.resolve(.system, preferredLanguages: ["fr-FR"]) == "en")
+        check("按系统偏好顺序匹配支持语言", AppLanguage.resolve(.system, preferredLanguages: ["fr", "zh-Hans", "en"]) == "zh-Hans")
+        check("手动语言优先于系统", AppLanguage.resolve(.english, preferredLanguages: ["zh-Hans"]) == "en")
+        check("空系统语言列表有默认值", AppLanguage.resolve(.system, preferredLanguages: []) == "en")
+        check("缺失翻译使用兜底文案", L("test.missing.translation", "Fallback") == "Fallback")
+        let resources = Bundle.main.url(forResource: "en", withExtension: "lproj")?.deletingLastPathComponent()
+            ?? URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources")
+        var tables: [[String: String]] = []
+        for code in ["en", "zh-Hans"] {
+            let data = try Data(contentsOf: resources.appendingPathComponent("\(code).lproj/Localizable.strings"))
+            let table = try PropertyListSerialization.propertyList(from: data, format: nil) as! [String: String]
+            tables.append(table)
+        }
+        check("中英文资源键完整一致", Set(tables[0].keys) == Set(tables[1].keys))
+        check("英文清理标题已翻译", tables[0]["wechat.title"] == "WeChat Cleanup")
+        check("文件类型含英文翻译", tables[0]["fileType.pdf"] == "PDF Document")
+        for key in tables[0].keys {
+            let pattern = "%[0-9.]*[@diuf]"
+            func formats(_ value: String) -> [String] {
+                let regex = try! NSRegularExpression(pattern: pattern)
+                return regex.matches(in: value, range: NSRange(value.startIndex..., in: value)).map { (value as NSString).substring(with: $0.range) }
+            }
+            if formats(tables[0][key]!) != formats(tables[1][key] ?? "") {
+                check("格式参数一致：\(key)", false)
+            }
+        }
+        if Bundle.main.path(forResource: "en", ofType: "lproj") != nil {
+            let localization = Localization.shared
+            let originalChoice = localization.language
+            let originalPreference = UserDefaults.standard.object(forKey: Localization.preferenceKey)
+            defer {
+                localization.language = originalChoice
+                if let originalPreference { UserDefaults.standard.set(originalPreference, forKey: Localization.preferenceKey) }
+                else { UserDefaults.standard.removeObject(forKey: Localization.preferenceKey) }
+            }
+            localization.language = .english
+            check("手动选择持久化", UserDefaults.standard.string(forKey: Localization.preferenceKey) == "en")
+            check("运行时切到英文", L("wechat.title", "") == "WeChat Cleanup")
+            check("旧界面文本走同一语言入口", WLocalizedString("button.cancel", comment: "取消") == "Cancel")
+            localization.language = .simplifiedChinese
+            check("运行时切回中文", L("wechat.title", "") == "微信文件清理")
+            check("已有文件类型即时切换", FileTypeDB.info(name: "sample.pdf", isDirectory: false, isSymlink: false, isBundle: false).description == "PDF 文档")
+        }
+    }
+
+    @MainActor
+    private static func testWeChatCleanup(_ sandbox: URL) throws {
+        print("\n[微信附件清理]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("WeChatHome")
+        let root = home.appendingPathComponent("Library/Containers/com.tencent.xinWeChat/Data")
+        let attachments = root.appendingPathComponent("Documents/xwechat_files/wxid_test/msg")
+        func file(_ relative: String, size: UInt64 = 16, days: Int = 0) throws -> URL {
+            let url = attachments.appendingPathComponent(relative)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            fm.createFile(atPath: url.path, contents: Data())
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: size)
+            try handle.close()
+            try fm.setAttributes([.modificationDate: Date().addingTimeInterval(-Double(days) * 86400)], ofItemAtPath: url.path)
+            return url
+        }
+        let document = try file("file/report.pdf", size: 2 * 1024 * 1024, days: 100)
+        let image = try file("image/photo.dat", days: 100)
+        let video = try file("video/clip.mp4", size: 11 * 1024 * 1024)
+        _ = try file("file/chat.db")
+        _ = try file("file/chat.db-wal")
+        _ = try file("file/settings.plist")
+        _ = try file("db_storage/secret.pdf")
+        _ = try file("config/options.json")
+        _ = try file("misc/unrelated.pdf")
+        let outside = sandbox.appendingPathComponent("outside.pdf").resolvingSymlinksInPath()
+        try Data("outside".utf8).write(to: outside)
+        let link = attachments.appendingPathComponent("file/link.pdf")
+        try fm.createSymbolicLink(at: link, withDestinationURL: outside)
+        let directoryLink = attachments.appendingPathComponent("file/external")
+        try fm.createSymbolicLink(at: directoryLink, withDestinationURL: outside.deletingLastPathComponent())
+        // Real WeChat containers include top-level shortcuts to the user's folders.
+        // Skipping descendants for these non-directory entries can suppress sibling trees.
+        let externalDownloads = sandbox.resolvingSymlinksInPath().appendingPathComponent("External Downloads")
+        let externalFile = externalDownloads.appendingPathComponent("files/do-not-include.pdf")
+        try fm.createDirectory(at: externalFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("external".utf8).write(to: externalFile)
+        for name in ["Music", "Pictures", "Desktop", "Movies", "Downloads"] {
+            try fm.createSymbolicLink(at: root.appendingPathComponent(name), withDestinationURL: externalDownloads)
+        }
+        let discovery = WeChatCleanupService.discoverRoots(home: home)
+        check("自动发现微信容器", discovery.roots.contains { $0.path == root.path })
+        let scanned = WeChatCleanupService.scan(roots: [root, attachments])
+        check("重叠目录去重且只发现三项附件", scanned.files.count == 3, "\(scanned.files.map { $0.url.lastPathComponent })")
+        check("容器顶部快捷链接不会漏扫后面的真实聊天目录", scanned.files.contains { $0.url == document } && scanned.files.contains { $0.url == video })
+        check("容器快捷链接不会扫描到外部下载目录", !scanned.files.contains { $0.url == externalFile || $0.url.path.contains("/Downloads/") })
+        check("数据库和辅助文件不列为清理候选", !scanned.files.contains { $0.url.lastPathComponent.contains("chat.db") })
+        check("不跟随文件或目录符号链接", !scanned.files.contains { $0.url.path.contains("external") || $0.url == link })
+        check("加密图片按存储目录分类", scanned.files.first { $0.url == image }?.kind == .image)
+        check("PDF 属于文档附件", scanned.files.first { $0.url == document }?.kind == .document)
+        check("默认按大小降序", scanned.files.first?.url == video)
+        check("取消后不继续收集附件", WeChatCleanupService.scan(roots: [root], cancelled: { true }).files.isEmpty)
+        let missing = WeChatCleanupService.scan(roots: [home.appendingPathComponent("missing")])
+        check("无法读取目录有明确报告", !missing.inaccessible.isEmpty)
+        let alias = home.appendingPathComponent("alias")
+        try fm.createSymbolicLink(at: alias, withDestinationURL: root)
+        check("符号链接扫描根被跳过", WeChatCleanupService.scan(roots: [alias]).files.isEmpty)
+        let relocated = home.appendingPathComponent("Custom WeChat Attachments")
+        try fm.createDirectory(at: relocated, withIntermediateDirectories: true)
+        try Data("notes".utf8).write(to: relocated.appendingPathComponent("notes.txt"))
+        let explicitScan = WeChatCleanupService.scan(roots: [], explicitRoots: [relocated])
+        check("自定义附件目录可扫描", explicitScan.files.count == 1)
+        check("根路径边界不接受同名前缀目录", !WeChatCleanupService.contains(home.appendingPathComponent("Custom WeChat Attachments-other/a.pdf"), in: relocated))
+
+        let store = WeChatCleanupModel(initialResult: scanned)
+        store.minimumMB = 10
+        check("大小筛选", store.visibleFiles.map(\.url) == [video])
+        store.minimumMB = 0
+        store.olderThanDays = 90
+        check("时间筛选", Set(store.visibleFiles.map(\.url)) == Set([document, image]))
+        store.kind = "document"
+        check("多个筛选条件组合", store.visibleFiles.map(\.url) == [document])
+        store.selection = Set(store.visibleFiles.map(\.id))
+        check("选中空间统计", store.selectedSize == 2 * 1024 * 1024)
+        store.search = "REPORT"
+        check("文件名筛选不区分大小写", store.visibleFiles.map(\.url) == [document])
+        check("修改筛选清空旧选择", store.selection.isEmpty)
+        store.search = "nonexistent"
+        check("无匹配结果", store.visibleFiles.isEmpty)
+
+        guard let original = scanned.files.first(where: { $0.url == document }),
+              let photo = scanned.files.first(where: { $0.url == image }),
+              let clip = scanned.files.first(where: { $0.url == video }) else {
+            check("扫描结果包含测试附件", false)
+            return
+        }
+        check("未变化附件可以清理", WeChatCleanupService.isUnchanged(original))
+        try Data("new content".utf8).write(to: document)
+        check("已修改文件不能按旧扫描清理", !WeChatCleanupService.isUnchanged(original))
+        try fm.removeItem(at: image)
+        try fm.createSymbolicLink(at: image, withDestinationURL: outside)
+        check("扫描后替换为符号链接会跳过", !WeChatCleanupService.isUnchanged(photo))
+        var attempted: [URL] = []
+        let outcome = WeChatCleanupService.trash(scanned.files) { url in
+            attempted.append(url)
+            throw NSError(domain: "FixtureTrashFailure", code: 1)
+        }
+        check("清理只尝试仍未变化的附件", attempted == [video])
+        check("部分失败和跳过逐项报告", outcome.failures.count == 3 && outcome.removed.isEmpty)
+        check("失败时原文件保留", fm.fileExists(atPath: video.path))
+        let fixtureTrash = home.appendingPathComponent("FixtureTrash")
+        try fm.createDirectory(at: fixtureTrash, withIntermediateDirectories: true)
+        let success = WeChatCleanupService.trash([clip]) { url in
+            try fm.moveItem(at: url, to: fixtureTrash.appendingPathComponent(url.lastPathComponent))
+        }
+        check("清理成功只报告成功项", success.removed == Set([video.path]) && success.failures.isEmpty)
+        check("清理操作没有碰到外部链接目标", (try? Data(contentsOf: outside)) == Data("outside".utf8))
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([home])
+        let model = BrowserModel(engine: engine, startDirectory: nil)
+        model.navigate(to: .weChatCleanup)
+        check("微信清理是独立页面", model.isWeChatCleanupView && !model.showsFileList && model.currentDirectory == nil)
+        model.selectFolder(home)
+        model.goBack()
+        check("微信清理页面支持导航返回", model.isWeChatCleanupView)
+        model.weChatCleanup.kind = "document"
+        model.weChatCleanup.search = "report"
+        model.openContainingFolder(of: document)
+        let locateDeadline = Date().addingTimeInterval(8)
+        while model.isBusy && Date() < locateDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        let targetID = FileItem.canonicalID(for: document)
+        check("微信附件可跳转到真实所在目录", model.currentDirectory?.path == document.deletingLastPathComponent().path)
+        check("微信附件跳转后加载了目标文件", model.displayedItems.contains { $0.id == targetID })
+        check("微信附件异步加载后保持目标选中", model.selectedIDs == Set([targetID]))
+        _ = model.consumePendingSelection()
+        model.goBack()
+        check("从附件目录返回微信清理页", model.isWeChatCleanupView)
+        check("返回清理页保留原筛选条件", model.weChatCleanup.kind == "document" && model.weChatCleanup.search == "report")
+        let tab = WinFileTab(engine: engine, startDirectory: nil)
+        tab.model.navigate(to: .weChatCleanup)
+        check("微信清理页签标题正确", tab.title == L("wechat.title", "微信文件清理"))
+    }
+
+    @MainActor
+    private static func testWeChatFileActions(_ sandbox: URL) throws {
+        print("\n[微信附件文件操作]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("WeChatActionsHome")
+        let root = home.appendingPathComponent("Library/Containers/com.tencent.xinWeChat/Data/Documents/msg/file")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let first = root.appendingPathComponent("alpha.txt")
+        let second = root.appendingPathComponent("beta.txt")
+        try Data("alpha".utf8).write(to: first)
+        try Data("beta is longer".utf8).write(to: second)
+        let scanned = WeChatCleanupService.scan(roots: [root])
+        let store = WeChatCleanupModel(initialResult: scanned, homeDirectory: home, customRoots: [])
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([home])
+        let model = BrowserModel(engine: engine, startDirectory: nil, cleanupModel: store)
+        model.navigate(to: .weChatCleanup)
+        func waitForOperations() {
+            let deadline = Date().addingTimeInterval(10)
+            repeat {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+            } while (store.isScanning || model.isBusy || model.archiveProgress != nil) && Date() < deadline
+        }
+        model.selectedIDs = [first.path]
+        check("微信选择同步到共享文件操作", model.selectedItems.map(\.url) == [first] && store.selection == [first.path])
+        let snapshot = model.selectedItems.first!
+        check("附件保留文件属性与类型", snapshot.size == 5 && snapshot.category == .document && snapshot.created != nil && snapshot.isReadable)
+        store.selection = [second.path]
+        check("微信表格选择同步到工具栏", model.selectedIDs == [second.path] && model.selectedCount == 1)
+        model.selectAll()
+        check("微信全选支持多文件菜单", model.selectedCount == 2)
+        store.selectForContextMenu([first.path])
+        check("右键已选行保留多选", model.selectedCount == 2)
+        model.clearSelection()
+        store.selectForContextMenu([first.path])
+        check("右键未选行选中正确文件", model.selectedItems.map(\.url) == [first])
+        store.selectForContextMenu(["/invalid"])
+        check("右键忽略无效结果标识", model.selectedIDs == [first.path])
+        store.search = "alpha"
+        check("筛选同步清除共享选择", model.selectedCount == 0 && model.selectedIDs.isEmpty)
+        model.selectAll()
+        check("共享全选仅包含筛选结果", model.selectedItems.map(\.url) == [first])
+        store.search = ""
+        store.sort = "name"
+        let activated = store.itemForActivation(at: 1)
+        check("双击按当前名称排序定位", activated?.url == second && model.selectedIDs == [second.path])
+        store.sort = "size"
+        check("双击按当前大小排序定位", store.itemForActivation(at: 1)?.url == first)
+        store.search = "beta"
+        check("双击按筛选后的行定位", store.itemForActivation(at: 0)?.url == second)
+        check("双击空白行不打开旧选择", store.itemForActivation(at: -1) == nil && store.itemForActivation(at: 1) == nil && model.selectedIDs == [second.path])
+        store.search = ""
+        model.selectedIDs = [first.path]
+        model.copySelectionToClipboard()
+        check("微信复制使用真实附件路径", model.clipboard?.urls == [first] && model.clipboard?.mode == .copy)
+        model.cutSelectionToClipboard()
+        check("微信剪切支持共享剪贴板", model.clipboard?.urls == [first] && model.clipboard?.mode == .cut)
+        model.copyNameToClipboard()
+        check("微信复制文件名", NSPasteboard.general.string(forType: .string) == "alpha.txt")
+        model.copyPathToClipboard()
+        check("微信复制完整路径", NSPasteboard.general.string(forType: .string) == first.path)
+        model.deleteSelection(permanently: true)
+        check("微信右键清理仍要求确认且不会直接删除", store.confirmsTrash && store.pendingTrashFiles.map(\.url) == [first] && fm.fileExists(atPath: first.path))
+        store.confirmsTrash = false
+        model.rename(snapshot, to: "renamed.txt")
+        waitForOperations()
+        let renamed = root.appendingPathComponent("renamed.txt")
+        check("微信重命名使用共享操作并刷新结果", !fm.fileExists(atPath: first.path) && store.result.files.contains { $0.url == renamed })
+        model.selectedIDs = [renamed.path]
+        let countBeforeCopy = store.result.files.count
+        model.duplicateSelection()
+        waitForOperations()
+        check("微信制作副本后刷新结果", model.errorMessage == nil && store.result.files.count == countBeforeCopy + 1)
+        model.selectedIDs = [renamed.path]
+        check("微信页压缩菜单可用", model.canCompress)
+        model.compressSelection()
+        waitForOperations()
+        let archive = store.result.files.first { $0.url.pathExtension == "zip" }
+        check("微信压缩输出到附件所在目录并刷新", model.errorMessage == nil && archive?.url.deletingLastPathComponent().path == root.path)
+        if let archive {
+            try fm.removeItem(at: renamed)
+            model.selectedIDs = [archive.id]
+            check("微信压缩包显示解压操作", model.canExtract)
+            model.extractSelection()
+            waitForOperations()
+            check("微信解压到压缩包所在目录并刷新", model.errorMessage == nil && fm.fileExists(atPath: renamed.path) && store.result.files.contains { $0.url == renamed })
+        }
+        model.selectedIDs = [second.path]
+        model.openContainingFolder(of: second)
+        waitForOperations()
+        model.goBack()
+        check("跳转目录后返回保留微信选择", model.isWeChatCleanupView && model.selectedIDs == [second.path])
+    }
+
+    @MainActor
+    private static func testFunctionalImprovements(_ sandbox: URL) throws {
+        print("\n[功能一致性与扫描完整性]")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("Improvements")
+        let source = root.appendingPathComponent("Source")
+        let target = root.appendingPathComponent("Target")
+        for dir in [source, target] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let small = source.appendingPathComponent("alpha.pdf")
+        let large = source.appendingPathComponent("z-large.pdf")
+        try Data("a".utf8).write(to: small)
+        try Data(repeating: 0, count: 1000).write(to: large)
+        let pb = NSPasteboard(name: NSPasteboard.Name("WinFile-tests-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        let clipboard = FileClipboard(pasteboard: pb, monitor: false)
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([source])
+        let a = BrowserModel(engine: engine, startDirectory: source, clipboardStore: clipboard)
+        let b = BrowserModel(engine: engine, startDirectory: target, clipboardStore: clipboard)
+        func wait(_ model: BrowserModel) {
+            let deadline = Date().addingTimeInterval(12)
+            repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            while (model.isBusy || model.archiveProgress != nil) && Date() < deadline
+        }
+        wait(a); wait(b)
+        let oldField = a.sortField
+        let oldAscending = a.sortAscendingFlag
+        defer { a.sortField = oldField; a.sortAscendingFlag = oldAscending }
+        a.selectedIDs = [FileItem.canonicalID(for: small)]
+        a.copySelectionToClipboard()
+        check("跨页签共享复制内容", b.clipboard?.urls.map { FileItem.canonicalID(for: $0) } == [FileItem.canonicalID(for: small)] && b.canPaste)
+        b.paste(); wait(b)
+        check("跨页签粘贴复制到目标目录", fm.fileExists(atPath: target.appendingPathComponent("alpha.pdf").path))
+        a.cutSelectionToClipboard()
+        check("跨页签共享剪切模式", b.clipboard?.mode == .cut)
+        pb.clearContents(); pb.setString("new text", forType: .string)
+        check("系统文本剪贴板使旧剪切立即失效", a.clipboard == nil && !b.canPaste)
+        clipboard.refresh()
+        pb.clearContents(); pb.writeObjects([large as NSURL])
+        check("识别外部文件剪贴板且不误认为剪切", b.clipboard?.mode == .copy && b.clipboard?.urls.first?.path == large.path)
+        let generation = pb.changeCount
+        pb.clearContents(); pb.setString("newer contents", forType: .string)
+        clipboard.clear(ifGeneration: generation)
+        check("任务结束不清除更新的系统剪贴板", pb.string(forType: .string) == "newer contents")
+        a.sortField = .size; a.sortAscendingFlag = false
+        check("按大小排序", a.displayedItems.first?.name == "z-large.pdf")
+        a.reload(); wait(a)
+        check("目录刷新保持排序", a.displayedItems.first?.name == "z-large.pdf")
+        a.search("pdf"); wait(a)
+        check("搜索结果应用当前排序", a.displayedItems.first?.name == "z-large.pdf")
+        a.sortAscendingFlag = true
+        check("搜索结果响应排序切换", a.displayedItems.first?.name == "alpha.pdf")
+        a.reload(); wait(a)
+        check("刷新保留搜索词与搜索结果", a.isSearching && a.searchQuery == "pdf" && a.displayedItems.count == 2)
+        a.search("pdf"); a.clearSearch(); wait(a)
+        check("清空搜索不会残留忙碌状态", !a.isSearching && !a.isBusy)
+        a.search("pdf"); a.search(""); wait(a)
+        check("空搜索取消任务并恢复目录", !a.isSearching && !a.isBusy && a.displayedItems.count == 2)
+        a.navigate(to: .category(.pdf)); wait(a)
+        check("分类结果应用排序", a.displayedItems.first?.name == "alpha.pdf")
+        guard let selected = a.displayedItems.first(where: { $0.name == "alpha.pdf" }) else {
+            check("分类测试附件存在", false); return
+        }
+        a.rename(selected, to: "renamed.pdf"); wait(a)
+        check("分类改名后刷新不残留旧名称", a.isCategoryView && a.displayedItems.contains { $0.name == "renamed.pdf" } && !a.displayedItems.contains { $0.name == "alpha.pdf" })
+        let many = root.appendingPathComponent("Many")
+        try fm.createDirectory(at: many, withIntermediateDirectories: true)
+        for i in 0..<3001 { fm.createFile(atPath: many.appendingPathComponent("entry-\(i).pdf").path, contents: Data()) }
+        let limited = FileSystemService.categoryReport(.pdf, under: [many], budget: 40)
+        check("大目录不再整体跳过", limited.items.count == 40 && limited.limitReached)
+        let complete = FileSystemService.categoryReport(.pdf, under: [many], budget: 4000)
+        check("扩展结果上限可完整扫描大目录", complete.items.count == 3001 && !complete.isPartial)
+        check("大目录分类徽标也计数", FileSystemService.categoryCounts(under: [many])[.pdf] == 800)
+        let search = FileSystemService.searchReport(under: many, matching: "entry-", limit: 400)
+        check("搜索截断提供明确标记", search.items.count == 400 && search.limitReached)
+        let budget = FileSystemService.searchReport(under: many, matching: "unmatched", entryLimit: 5)
+        check("遍历预算单独报告", budget.visitLimitReached && budget.visited == 5)
+        let stopped = FileSystemService.categoryReport(.pdf, under: [many], cancelled: { true })
+        check("分类扫描响应取消", stopped.cancelled && stopped.items.isEmpty)
+        let stoppedSearch = FileSystemService.searchReport(under: many, matching: "entry", cancelled: { true })
+        check("搜索遍历响应取消", stoppedSearch.cancelled && stoppedSearch.items.isEmpty)
+        let deep = root.appendingPathComponent("Deep")
+        let nested = deep.appendingPathComponent("1/2/3/4/5/6/file.pdf")
+        try fm.createDirectory(at: nested.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("deep".utf8).write(to: nested)
+        let shallow = FileSystemService.categoryReport(.pdf, under: [deep])
+        check("浅层扫描提示未扫描的深层目录", shallow.items.isEmpty && shallow.depthLimited)
+        let deeper = FileSystemService.categoryReport(.pdf, under: [deep], depth: 12)
+        check("深入扫描找到深层文件", deeper.items.count == 1 && !deeper.isPartial)
+        let unavailable = FileSystemService.searchReport(under: root.appendingPathComponent("missing"), matching: "x")
+        check("无法读取的位置有完整性报告", unavailable.inaccessibleCount == 1 && unavailable.isPartial)
+        let model = BrowserModel(engine: engine, startDirectory: many, clipboardStore: clipboard)
+        wait(model)
+        model.search("entry-"); wait(model)
+        check("搜索页提供加载更多入口", model.canExpandScan && model.displayedItems.count == 400)
+        model.expandScan(); wait(model)
+        check("加载更多扩大结果并保留查询", model.displayedItems.count == 1200 && model.searchQuery == "entry-")
+        let other = root.appendingPathComponent("Other")
+        let output = root.appendingPathComponent("Output")
+        for dir in [other, output] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let first = target.appendingPathComponent("alpha.pdf")
+        let second = other.appendingPathComponent("alpha.pdf")
+        try Data("second".utf8).write(to: second)
+        let archive = try ArchiveService.compress([first, second], to: output, name: "combined")
+        let extracted = output.appendingPathComponent("Extracted")
+        try fm.createDirectory(at: extracted, withIntermediateDirectories: true)
+        _ = try ArchiveService.extract(archive, to: extracted)
+        check("跨目录同名附件保留两份且内容正确", (try? Data(contentsOf: extracted.appendingPathComponent("Target/alpha.pdf"))) == Data("a".utf8)
+            && (try? Data(contentsOf: extracted.appendingPathComponent("Other/alpha.pdf"))) == Data("second".utf8))
+        let sizes = root.appendingPathComponent("Sizes")
+        try fm.createDirectory(at: sizes, withIntermediateDirectories: true)
+        try Data(repeating: 0, count: 1000).write(to: sizes.appendingPathComponent(".hidden"))
+        try Data("x".utf8).write(to: sizes.appendingPathComponent("visible"))
+        let measured = FileSystemService.directorySize(sizes)
+        check("目录统计包含隐藏文件", measured.bytes == 1001 && measured.files == 2 && measured.isComplete)
+        let partial = FileSystemService.directorySize(sizes, limit: 1)
+        check("目录大小达到上限标注部分统计", !partial.isComplete && partial.files == 1)
+        check("目录统计可取消", !FileSystemService.directorySize(sizes, cancelled: { true }).isComplete)
+        let malformed = AndroidEntry.parseListOutput("-rw-r--r-- 1 user 1 2026-10-18", parent: "/tmp")
+        check("安卓异常列数不会越界崩溃", malformed.isEmpty)
+        let short = AndroidEntry.parseListOutput("-rw-r--r-- 1 user 1 2026-10-18 12:00 note.txt", parent: "/tmp")
+        check("安卓缺失用户组列仍可解析", short.first?.name == "note.txt")
+        check("本地删除菜单准确描述废纸篓", a.deleteActionTitle == L("action.moveToTrash", "移到废纸篓"))
+    }
+
+    @MainActor
+    private static func testExperienceImprovements(_ sandbox: URL) throws {
+        print("\n[扫描体验、任务、恢复与撤销]")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("Experience")
+        let source = root.appendingPathComponent("Source")
+        let target = root.appendingPathComponent("Target")
+        for dir in [source, target] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let first = source.appendingPathComponent("a.txt")
+        try Data("first".utf8).write(to: first)
+        func item(_ url: URL) -> FileItem { FileItem(url: url, resourceKeys: FileSystemService.resourceKeys, showHidden: true)! }
+        func spinUntil(_ finished: () -> Bool) {
+            let deadline = Date().addingTimeInterval(10)
+            repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.025)) }
+            while !finished() && Date() < deadline
+        }
+        var progress: [FileTransferProgress] = []
+        let copied = FileTransferService.transfer([item(first)], to: target, mode: .copy, token: ScanCancellation()) { progress.append($0) }
+        check("本地传输报告完成项目", copied.completed.count == 1 && copied.failures.isEmpty && !copied.cancelled)
+        check("本地复制报告进度且保留源文件", progress.last?.completed == 1 && fm.fileExists(atPath: first.path))
+        let cancel = ScanCancellation(); cancel.cancel()
+        let cancelled = FileTransferService.transfer([item(first)], to: target, mode: .copy, token: cancel) { _ in }
+        check("开始前取消不生成额外文件", cancelled.cancelled && cancelled.completed.isEmpty)
+        let directory = source.appendingPathComponent("Folder")
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: directory.appendingPathComponent("inside.txt"))
+        let duringCopy = ScanCancellation()
+        let interrupted = FileTransferService.transfer([item(directory)], to: target, mode: .copy, token: duringCopy) { update in
+            if update.currentName == "inside.txt" { duringCopy.cancel() }
+        }
+        check("取消递归复制不提交不完整目录", interrupted.cancelled && !fm.fileExists(atPath: target.appendingPathComponent("Folder").path))
+        let remnants = try fm.contentsOfDirectory(atPath: target.path).filter { $0.hasPrefix(".WinFile-transfer-") }
+        check("取消后清除自己的传输暂存目录", remnants.isEmpty)
+        let missing = source.appendingPathComponent("missing.txt")
+        try Data("gone".utf8).write(to: missing)
+        let missingItem = item(missing)
+        try fm.removeItem(at: missing)
+        let partial = FileTransferService.transfer([item(first), missingItem], to: target, mode: .copy, token: ScanCancellation()) { _ in }
+        check("部分传输失败保留成功列表和失败明细", partial.completed.count == 1 && partial.failures.count == 1)
+        let moving = source.appendingPathComponent("moving.txt")
+        try Data("move".utf8).write(to: moving)
+        let moved = FileTransferService.transfer([item(moving)], to: target, mode: .move, token: ScanCancellation()) { _ in }
+        check("移动后记录可撤销的真实目标", moved.moves.count == 1 && moved.moves.first?.stillExists == true && !fm.fileExists(atPath: moving.path))
+        let history = FileOperationHistory()
+        history.record(title: "Move", moves: moved.moves)
+        check("移动完成后可撤销", history.canUndo)
+        // Occupying the original path must not overwrite a newer file.
+        try Data("new original".utf8).write(to: moving)
+        history.undo(); spinUntil { !history.isBusy }
+        check("撤销冲突保留两端文件并允许重试", history.canUndo && history.errorMessage != nil && (try? Data(contentsOf: moving)) == Data("new original".utf8))
+        try fm.removeItem(at: moving)
+        history.errorMessage = nil
+        history.undo(); spinUntil { !history.isBusy }
+        check("移除冲突后撤销恢复原路径", !history.canUndo && (try? Data(contentsOf: moving)) == Data("move".utf8))
+        let renamed = source.appendingPathComponent("renamed.txt")
+        try fm.moveItem(at: first, to: renamed)
+        let record = FileMoveRecord(original: first, current: renamed)!
+        history.record(title: "Rename", moves: [record])
+        history.undo(); spinUntil { !history.isBusy }
+        check("撤销重命名恢复名称", fm.fileExists(atPath: first.path) && !fm.fileExists(atPath: renamed.path))
+        let replacement = target.appendingPathComponent("replacement.txt")
+        try fm.moveItem(at: first, to: replacement)
+        let identity = FileMoveRecord(original: first, current: replacement)!
+        try fm.moveItem(at: replacement, to: target.appendingPathComponent("kept-original.txt"))
+        try Data("different file".utf8).write(to: replacement)
+        let refused = FileOperationHistory.restore([identity])
+        check("撤销不移动同路径上替换的新文件", refused.remaining.count == 1 && !fm.fileExists(atPath: first.path) && (try? Data(contentsOf: replacement)) == Data("different file".utf8))
+        let engine = FSEngine(); engine.restrictScopeForTesting([source])
+        let watching = BrowserModel(engine: engine, startDirectory: target)
+        spinUntil { !watching.isBusy }
+        watching.beginWatchingDirectory()
+        let external = target.appendingPathComponent("external.txt")
+        try Data("created outside".utf8).write(to: external)
+        spinUntil { watching.displayedItems.contains { $0.id == FileItem.canonicalID(for: external) } }
+        check("目录外部新增文件自动刷新", watching.displayedItems.contains { $0.id == FileItem.canonicalID(for: external) })
+        let suite = "WinFileSessionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let sessionStore = BrowserSessionStore(defaults: defaults)
+        let manager = TabManager(engine: engine, startDirectory: source, restoreSession: true, sessionStore: sessionStore)
+        _ = manager.newTab(startDirectory: target)
+        manager.persistNow()
+        let loaded = sessionStore.load()
+        check("会话保存页签与活动索引", loaded?.tabs.count == 2 && loaded?.activeIndex == 1)
+        let restored = TabManager(engine: engine, startDirectory: nil, restoreSession: true, sessionStore: sessionStore)
+        check("会话恢复活动目录", restored.count == 2 && restored.activeModel.currentDirectory?.path == target.path)
+        spinUntil { !manager.activeModel.isBusy && !restored.activeModel.isBusy }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        let nextFolder = root.appendingPathComponent("SessionNext")
+        try fm.createDirectory(at: nextFolder, withIntermediateDirectories: true)
+        manager.activeModel.selectFolder(nextFolder)
+        spinUntil { sessionStore.load()?.tabs[1].path == nextFolder.path }
+        check("新活动页签的导航自动保存会话", sessionStore.load()?.tabs[1].path == nextFolder.path)
+
+        var invalid = loaded!
+        invalid.tabs[1].path = root.appendingPathComponent("does-not-exist").path
+        defaults.set(try JSONEncoder().encode(invalid), forKey: BrowserSessionStore.key)
+        let fallback = TabManager(engine: engine, startDirectory: nil, restoreSession: true, sessionStore: sessionStore)
+        check("会话中的失效目录回退主页", fallback.activeModel.isHomeView)
+        defaults.set(Data("broken".utf8), forKey: BrowserSessionStore.key)
+        check("损坏的会话数据安全忽略", sessionStore.load() == nil)
+        let attachmentRoot = root.appendingPathComponent("Caches/WeChat")
+        let paths = ["xwechat_files/wxid_a/msg/file/2026-09/a.pdf", "xwechat_files/wxid_a/cache/2026-10/thumb.jpg", "xwechat_files/wxid_b/msg/file/2026-10/b.pdf"]
+        for name in paths {
+            let url = attachmentRoot.appendingPathComponent(name)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("fixture".utf8).write(to: url)
+        }
+        var updates: [WeChatScanProgress] = []
+        let scanned = WeChatCleanupService.scan(roots: [], explicitRoots: [attachmentRoot], onProgress: { updates.append($0) })
+        let cleanup = WeChatCleanupModel(initialResult: scanned, homeDirectory: root, customRoots: [attachmentRoot])
+        check("微信扫描进度包含文件数与空间", updates.last?.files == 3 && updates.last?.bytes == 21 && (updates.last?.visited ?? 0) > 0)
+        check("微信识别账号与月份", cleanup.accounts == ["wxid_a", "wxid_b"] && cleanup.months == ["2026-10", "2026-09"])
+        check("微信总占用统计所有已扫描附件", cleanup.totalSize == 21 && cleanup.matchingSize == 21)
+        cleanup.account = "wxid_a"
+        check("微信按账号筛选", cleanup.visibleFiles.count == 2)
+        check("微信筛选占用不改变全部附件占用", cleanup.matchingSize == 14 && cleanup.totalSize == 21)
+        cleanup.source = "cache"
+        check("微信区分缓存缩略图与附件", cleanup.visibleFiles.count == 1 && cleanup.visibleFiles[0].isCache)
+        cleanup.selection = Set(cleanup.visibleFiles.map(\.id))
+        check("微信来源筛选与已选占用正确", cleanup.matchingSize == 7 && cleanup.selectedSize == 7)
+        cleanup.source = "attachment"; cleanup.month = "2026-09"
+        check("微信账号月份与来源组合筛选", cleanup.visibleFiles.count == 1 && cleanup.visibleFiles[0].url.lastPathComponent == "a.pdf")
+        check("微信切换筛选后清除已选占用", cleanup.matchingSize == 7 && cleanup.selectedSize == 0)
+        cleanup.month = "1900-01"
+        check("微信空筛选占用为零且保留总占用", cleanup.matchingSize == 0 && cleanup.totalSize == 21)
+        check("微信附件不受扫描根目录外的缓存路径影响", scanned.files.filter { !$0.isCache }.count == 2)
+        let cacheRoot = attachmentRoot.appendingPathComponent("xwechat_files/wxid_a/cache")
+        let cacheOnly = WeChatCleanupService.scan(roots: [], explicitRoots: [cacheRoot])
+        check("直接扫描缓存文件夹仍识别缓存", cacheOnly.files.count == 1 && cacheOnly.files[0].isCache)
+    }
+
+    @MainActor
+    private static func testLayoutAndFilterExperience(_ sandbox: URL) throws {
+        print("\n[工具栏、筛选与宽度记忆]")
+        func spinUntil(_ condition: () -> Bool) {
+            let deadline = Date().addingTimeInterval(5)
+            while !condition() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        }
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([sandbox])
+        let browser = BrowserModel(engine: engine, startDirectory: sandbox)
+        spinUntil { !browser.isBusy }
+        check("本地目录显示搜索、新建与列表工具", browser.supportsDirectorySearch && browser.supportsDirectoryCreation && browser.showsFileList)
+        browser.navigate(to: .weChatCleanup)
+        check("微信页隐藏目录搜索、新建与显示模式", !browser.supportsDirectorySearch && !browser.supportsDirectoryCreation && !browser.showsFileList)
+        browser.weChatCleanup.cancelScan()
+        browser.navigate(to: .home)
+        check("主页隐藏目录专属工具", !browser.supportsDirectorySearch && !browser.supportsDirectoryCreation && !browser.showsFileList)
+        browser.navigate(to: .category(.document))
+        check("分类保留显示排序但隐藏目录搜索与新建", browser.showsFileList && !browser.supportsDirectorySearch && !browser.supportsDirectoryCreation)
+
+        let root = sandbox.appendingPathComponent("FilterFixtures")
+        let oldDate = Date().addingTimeInterval(-200 * 86400)
+        let a = WeChatFile(url: root.appendingPathComponent("wxid_a/msg/file/2026-09/file2.pdf"), root: root,
+                           kind: .document, size: 20 * 1024 * 1024, modified: oldDate)
+        let b = WeChatFile(url: root.appendingPathComponent("wxid_b/cache/2026-10/file10.jpg"), root: root,
+                           kind: .image, size: 1, modified: Date())
+        let cleanup = WeChatCleanupModel(initialResult: WeChatScanResult(files: [b, a], roots: [root]), customRoots: [])
+        cleanup.search = "file2"; cleanup.kind = "document"; cleanup.account = "wxid_a"
+        cleanup.month = "2026-09"; cleanup.source = "attachment"; cleanup.minimumMB = 10; cleanup.olderThanDays = 90
+        check("七项筛选可同时生效且高级条件计数正确", cleanup.activeFilters.count == 7 && cleanup.advancedFilterCount == 5 && cleanup.visibleFiles.map(\.id) == [a.id])
+        check("每个启用条件都有可读标签", cleanup.activeFilters.allSatisfy { !cleanup.filterTitle($0).isEmpty })
+        cleanup.selection = [a.id]
+        cleanup.clearFilter(.account)
+        check("单独移除账号保留其他条件并清除选择", cleanup.account == "all" && cleanup.activeFilters.count == 6 && cleanup.search == "file2" && cleanup.selection.isEmpty)
+        cleanup.sort = "name"; cleanup.sortAscending = false
+        cleanup.resetFilters()
+        check("一键清除全部筛选并恢复完整统计", cleanup.activeFilters.isEmpty && cleanup.advancedFilterCount == 0 && cleanup.matchingCount == 2 && cleanup.matchingSize == a.size + b.size)
+        check("重置筛选保留排序、扫描位置与扫描结果", cleanup.sort == "name" && !cleanup.sortAscending && cleanup.result.roots == [root] && cleanup.result.files.count == 2)
+        for filter in WeChatCleanupModel.Filter.allCases {
+            cleanup.search = "file"; cleanup.kind = "document"; cleanup.account = "wxid_a"
+            cleanup.month = "2026-09"; cleanup.source = "attachment"; cleanup.minimumMB = 10; cleanup.olderThanDays = 90
+            cleanup.clearFilter(filter)
+            check("移除单个筛选 \(filter.rawValue)", cleanup.activeFilters.count == 6 && !cleanup.activeFilters.contains(filter))
+        }
+        cleanup.resetFilters()
+        cleanup.sort = "name"; cleanup.sortAscending = true
+        check("微信名称表头使用自然顺序", cleanup.visibleFiles.map(\.name) == ["file2.pdf", "file10.jpg"])
+        cleanup.selection = [a.id]
+        cleanup.sortAscending = false
+        check("微信反向排序刷新缓存且保留选择", cleanup.visibleFiles.map(\.id) == [b.id, a.id] && cleanup.selection == [a.id])
+        cleanup.sort = "size"
+        check("微信大小默认降序", cleanup.visibleFiles.map(\.id) == [a.id, b.id] && !cleanup.sortAscending)
+        cleanup.sortAscending = true
+        check("微信大小支持升序", cleanup.visibleFiles.map(\.id) == [b.id, a.id])
+        cleanup.sort = "date"
+        check("微信日期默认从新到旧", cleanup.visibleFiles.map(\.id) == [b.id, a.id])
+        cleanup.sortAscending = true
+        check("微信日期支持从旧到新", cleanup.visibleFiles.map(\.id) == [a.id, b.id])
+        cleanup.sort = "location"
+        check("微信目录列支持排序", cleanup.visibleFiles.map(\.id) == [a.id, b.id])
+        for field in WeChatSortOrderBridge.fields {
+            for ascending in [true, false] {
+                let comparator = WeChatSortOrderBridge.comparator(for: field, ascending: ascending)
+                check("微信表头字段与方向映射 \(field) \(ascending)", WeChatSortOrderBridge.field(for: comparator) == field && comparator.order == (ascending ? .forward : .reverse))
+            }
+        }
+        for field in SortField.allCases {
+            let comparator = SortOrderBridge.comparator(for: field, ascending: false)
+            check("文件表头字段反向映射 \(field.rawValue)", SortOrderBridge.field(for: comparator) == field && comparator.order == .reverse)
+        }
+        check("微信排序后双击使用当前行", cleanup.itemForActivation(at: 0)?.id == a.id)
+        let tie = WeChatFile(url: root.appendingPathComponent("wxid_b/msg/file2.pdf"), root: root,
+                             kind: .document, size: a.size, modified: a.modified)
+        let ties = WeChatCleanupModel(initialResult: WeChatScanResult(files: [tie, a], roots: [root]), customRoots: [])
+        ties.sort = "name"
+        let stable = ties.visibleFiles.map(\.id)
+        ties.sortAscending.toggle()
+        check("同名值排序有稳定路径次序", stable == ties.visibleFiles.map(\.id) && stable == [a.id, tie.id])
+
+        let full = PaneLayout.widths(total: 1180, sidebar: 216, inspector: 264, showsInspector: true)
+        check("宽窗口保留首选侧栏宽度", full.sidebar == 216 && full.inspector == 264)
+        let narrow = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: true)
+        check("窄窗口给内容保留至少四百点", narrow.sidebar >= 160 && narrow.inspector >= 200 && narrow.sidebar + narrow.inspector + 12 <= 460.01)
+        let hidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: false)
+        check("隐藏检查器释放空间", hidden.sidebar == 360 && hidden.inspector == 0)
+        let invalid = PaneLayout.widths(total: 1180, sidebar: .nan, inspector: .infinity, showsInspector: true)
+        check("损坏布局偏好回退默认宽度", invalid.sidebar == 216 && invalid.inspector == 264)
+        let limited = PaneLayout.widths(total: 2000, sidebar: -5, inspector: 5000, showsInspector: true)
+        check("首选宽度限定合理范围", limited.sidebar == 160 && limited.inspector == 420)
+
+        let suite = "WinFileLayoutTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        func table() -> NSTableView {
+            let result = NSTableView()
+            for name in ["name", "size"] {
+                let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(name))
+                column.minWidth = 70; column.maxWidth = 400; column.width = 100
+                result.addTableColumn(column)
+            }
+            return result
+        }
+        let first = table()
+        TableColumnPreferences.install(on: first, kind: "files", defaults: defaults)
+        check("列宽记忆安装到指定表格", TableColumnPreferences.isInstalled(on: first, kind: "files"))
+        TableColumnPreferences.install(on: first, kind: "wechat", defaults: defaults)
+        check("复用底层表格时切换正确的列宽配置", TableColumnPreferences.isInstalled(on: first, kind: "wechat") && !TableColumnPreferences.isInstalled(on: first, kind: "files"))
+        let prefs = TableColumnPreferences(table: first, kind: "test", defaults: defaults)
+        first.tableColumns[0].width = 245; first.tableColumns[1].width = 130
+        prefs.save()
+        let recreated = table()
+        let restored = TableColumnPreferences(table: recreated, kind: "test", defaults: defaults)
+        check("重建表格恢复两列用户宽度", recreated.tableColumns.map(\.width) == [245, 130])
+        let separate = table()
+        let other = TableColumnPreferences(table: separate, kind: "other", defaults: defaults)
+        check("普通文件和微信列表宽度分别保存", separate.tableColumns.map(\.width) == [100, 100])
+        defaults.set([10.0, 9999.0], forKey: "Layout.Columns.test.v1")
+        let clampedTable = table()
+        let clamped = TableColumnPreferences(table: clampedTable, kind: "test", defaults: defaults)
+        check("恢复列宽遵守最小最大值", clampedTable.tableColumns.map(\.width) == [70, 400])
+        defaults.set([10.0], forKey: "Layout.Columns.test.v1")
+        let mismatchTable = table()
+        let mismatch = TableColumnPreferences(table: mismatchTable, kind: "test", defaults: defaults)
+        check("列定义变化时忽略不匹配宽度", mismatchTable.tableColumns.map(\.width) == [100, 100])
+        let nativeTable = table()
+        let nativePrefs = TableColumnPreferences(table: nativeTable, kind: "native", defaults: defaults, userResize: { _ in true })
+        nativeTable.tableColumns[0].width = 230
+        NotificationCenter.default.post(name: NSTableView.columnDidResizeNotification, object: nativeTable)
+        check("原生表格列宽通知会保存宽度", defaults.array(forKey: "Layout.Columns.native.v1") as? [Double] == [230, 100])
+        let outline = NSOutlineView()
+        let outlineColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        outlineColumn.width = 280; outline.addTableColumn(outlineColumn)
+        let outlinePrefs = TableColumnPreferences(table: outline, kind: "outline", defaults: defaults, userResize: { _ in true })
+        NotificationCenter.default.post(name: NSOutlineView.columnDidResizeNotification, object: outline)
+        check("SwiftUI 大纲表格使用独立列宽通知", defaults.array(forKey: "Layout.Columns.outline.v1") as? [Double] == [280])
+        withExtendedLifetime([nativePrefs, outlinePrefs]) {}
+        withExtendedLifetime([prefs, restored, other, clamped, mismatch]) {}
+    }
+
+    @MainActor
+    private static func testRemainingImprovements(_ sandbox: URL) throws {
+        print("\n[导航、会话、页签与整理工具]")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("Remaining")
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        func wait(_ condition: () -> Bool) {
+            let deadline = Date().addingTimeInterval(10)
+            while !condition() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        }
+        func file(_ name: String, _ contents: Data) throws -> URL {
+            let url = root.appendingPathComponent(name)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try contents.write(to: url)
+            return url
+        }
+        let a = try file("Rename/Item-001.txt", Data("first".utf8))
+        let b = try file("Rename/Item-002.txt", Data("second".utf8))
+        let originalItems = try FileSystemService.list(a.deletingLastPathComponent(), showHidden: true)
+        let plain = BatchRenameService.preview(originalItems, rules: BatchRenameRules())
+        check("批量重命名无变化时不能提交", !plain.canApply)
+        var rules = BatchRenameRules(); rules.prefix = "照片_"; rules.suffix = "_完成"
+        let prefixed = BatchRenameService.preview(originalItems, rules: rules)
+        check("重命名预览保留扩展名且不修改文件", prefixed.entries[0].target.lastPathComponent == "照片_Item-001_完成.txt" && fm.fileExists(atPath: a.path))
+        rules.prefix = "invalid/"
+        check("批量重命名拒绝非法路径", !BatchRenameService.preview(originalItems, rules: rules).canApply)
+        rules = BatchRenameRules(); rules.numbered = true; rules.baseName = "Item"
+        let reverse = BatchRenameService.preview(Array(originalItems.reversed()), rules: rules)
+        check("批次允许目标属于同批源文件的名称交换", reverse.canApply)
+        let renamed = BatchRenameService.apply(reverse)
+        check("两阶段批量改名正确交换内容", renamed.errors.isEmpty && renamed.moves.count == 2 && (try? Data(contentsOf: a)) == Data("second".utf8) && (try? Data(contentsOf: b)) == Data("first".utf8))
+        let undone = BatchRenameService.undo(renamed.moves)
+        check("批量改名交换可整体撤销", undone.remaining.isEmpty && undone.errors.isEmpty && (try? Data(contentsOf: a)) == Data("first".utf8) && (try? Data(contentsOf: b)) == Data("second".utf8))
+        rules = BatchRenameRules(); rules.prefix = "new_"
+        let conflictPlan = BatchRenameService.preview(originalItems, rules: rules)
+        let occupied = conflictPlan.entries[1].target
+        try Data("external".utf8).write(to: occupied)
+        let conflicted = BatchRenameService.apply(conflictPlan)
+        check("预览后出现目标冲突时回滚整批", !conflicted.errors.isEmpty && conflicted.moves.isEmpty && fm.fileExists(atPath: a.path) && fm.fileExists(atPath: b.path) && (try? Data(contentsOf: occupied)) == Data("external".utf8))
+        check("改名回滚不遗留隐藏暂存项", try fm.contentsOfDirectory(atPath: a.deletingLastPathComponent().path).allSatisfy { !$0.hasPrefix(".WinFile-rename-") })
+        try fm.removeItem(at: occupied)
+        let replacedPlan = BatchRenameService.preview(originalItems, rules: rules)
+        try Data("replacement".utf8).write(to: a, options: .atomic)
+        check("预览后源文件被替换时拒绝整批改名", !BatchRenameService.apply(replacedPlan).errors.isEmpty && fm.fileExists(atPath: b.path))
+        let duplicateA = try file("Collisions/a.txt", Data())
+        _ = try file("Collisions/aa.txt", Data())
+        rules = BatchRenameRules(); rules.find = "a"
+        check("预览识别批次内目标重名", !BatchRenameService.preview(try FileSystemService.list(duplicateA.deletingLastPathComponent(), showHidden: true), rules: rules).canApply)
+
+        let content = Data(repeating: 0x41, count: 2 * 1024 * 1024)
+        let one = try file("Duplicates/a.bin", content)
+        _ = try file("Duplicates/sub/b.bin", content)
+        _ = try file("Duplicates/c.bin", content)
+        _ = try file("Duplicates/other.bin", Data(repeating: 0x42, count: content.count))
+        _ = try file("Duplicates/empty1", Data()); _ = try file("Duplicates/empty2", Data())
+        try fm.linkItem(at: one, to: one.deletingLastPathComponent().appendingPathComponent("hardlink.bin"))
+        try fm.createSymbolicLink(at: one.deletingLastPathComponent().appendingPathComponent("alias.bin"), withDestinationURL: one)
+        let duplicates = DuplicateFileService.scan(one.deletingLastPathComponent(), token: ScanCancellation())
+        check("重复文件按完整内容而非大小分组", duplicates.groups.count == 2 && duplicates.groups.first?.files.count == 3)
+        check("重复统计排除同一文件硬链接", duplicates.groups.reduce(Int64(0)) { $0 + $1.redundantBytes } == Int64(content.count * 2))
+        check("重复扫描跳过符号链接", duplicates.groups.flatMap(\.files).allSatisfy { $0.lastPathComponent != "alias.bin" })
+        check("空文件可作为重复内容分组", duplicates.groups.contains { $0.size == 0 && $0.files.count == 2 })
+        let cancelled = ScanCancellation(); cancelled.cancel()
+        check("重复查找预先取消立即停止", DuplicateFileService.scan(root, token: cancelled).cancelled)
+        check("重复查找达到遍历上限明确标注", DuplicateFileService.scan(root, limit: 1, token: ScanCancellation()).limited)
+
+        let boundaryRoot = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 500))
+        let boundary = BrowserInteractionBoundary.BoundaryView(frame: NSRect(x: 200, y: 400, width: 400, height: 34))
+        boundaryRoot.addSubview(boundary)
+        check("页签区域不被文件背景右键菜单拦截", EmptyAreaContextMenu.InstallerView.isExcluded(NSPoint(x: 300, y: 415), in: boundaryRoot))
+        check("页签排除标记不影响文件区域右键", !EmptyAreaContextMenu.InstallerView.isExcluded(NSPoint(x: 300, y: 300), in: boundaryRoot))
+
+        let engine = FSEngine(); engine.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engine, startDirectory: root)
+        wait { !model.isBusy }
+        model.loadHome(); model.selectFolder(a.deletingLastPathComponent())
+        wait { !model.isBusy }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        let folders = model.items.filter(\.isContainer).count
+        let expectedStatus = String(format: WLocalizedString("status.itemCount", comment: "项目统计"), model.items.count, folders, model.items.count - folders)
+        check("离开主页后旧任务不回写忙碌状态或提示", model.currentDirectory?.path == a.deletingLastPathComponent().path && !model.isBusy && !model.isLoadingHome && model.statusMessage == expectedStatus,
+              "dir=\(model.currentDirectory?.path ?? "nil") busy=\(model.isBusy) home=\(model.isLoadingHome) status=\(model.statusMessage) expected=\(expectedStatus)")
+        var criteria = FileSearchCriteria(minimumBytes: 1024 * 1024, maximumBytes: 3 * 1024 * 1024)
+        model.selectFolder(one.deletingLastPathComponent()); wait { !model.isBusy }
+        model.searchCriteria = criteria; model.search(""); wait { !model.isBusy }
+        check("无需名称即可按文件大小搜索", model.isSearching && model.displayedItems.count == 5 && model.displayedItems.allSatisfy { ($0.size ?? 0) >= 1024 * 1024 })
+        criteria.maximumBytes = 10
+        check("组合搜索拒绝反向大小范围", !criteria.isValid)
+        let listed = try FileSystemService.list(one.deletingLastPathComponent(), showHidden: true)
+        guard let sample = listed.first(where: { $0.id == FileItem.canonicalID(for: one) }) else { throw CocoaError(.fileReadNoSuchFile) }
+        let future = FileSearchCriteria(modifiedAfter: Date().addingTimeInterval(100))
+        check("组合搜索按日期范围过滤", !future.matches(sample))
+        let small = FileSystemService.searchReport(under: one.deletingLastPathComponent(), matching: "empty", criteria: FileSearchCriteria(maximumBytes: 0))
+        check("名称与大小条件同时满足", small.items.count == 2)
+
+        let suite = "WinFileRemaining-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = BrowserSessionStore(defaults: defaults)
+        let manager = TabManager(engine: engine, startDirectory: one.deletingLastPathComponent(), restoreSession: true, sessionStore: store)
+        wait { !manager.activeModel.isBusy }
+        manager.activeModel.layout = .icons; manager.activeModel.sortField = .size; manager.activeModel.sortAscendingFlag = false
+        manager.activeModel.searchCriteria = FileSearchCriteria(minimumBytes: 1024)
+        manager.activeModel.search(".bin"); wait { !manager.activeModel.isBusy }
+        let first = manager.activeTab
+        let second = manager.newTab(startDirectory: a.deletingLastPathComponent())
+        second.model.layout = .details; second.model.sortField = .name; second.model.sortAscendingFlag = true
+        check("各页签显示设置彼此独立", first.model.layout == .icons && first.model.sortField == .size && !first.model.sortAscendingFlag && second.model.layout == .details)
+        manager.togglePin(first)
+        check("固定页签排序在前且保留活动页签", manager.tabs.first?.id == first.id && manager.activeID == second.id)
+        manager.close(first)
+        check("固定页签不能误关闭", manager.count == 2)
+        let visible = manager.visibleTabs(width: 260)
+        check("溢出布局始终显示当前页签", visible.count == 1 && visible[0].id == second.id)
+        manager.close(second)
+        check("关闭页签进入恢复栈", manager.closedTabs.count == 1 && manager.activeID == first.id)
+        manager.restoreClosedTab()
+        check("恢复关闭页签的路径与显示状态", manager.count == 2 && manager.activeModel.currentDirectory == a.deletingLastPathComponent() && manager.activeModel.layout == .details)
+        manager.select(first); manager.persistNow()
+        let restored = TabManager(engine: engine, startDirectory: nil, restoreSession: true, sessionStore: store)
+        wait { !restored.activeModel.isBusy }
+        check("重启恢复搜索词及组合条件并重新搜索", restored.activeModel.isSearching && restored.activeModel.searchQuery == ".bin" && restored.activeModel.searchCriteria.minimumBytes == 1024 && !restored.activeModel.displayedItems.isEmpty)
+        check("重启恢复固定页签和独立显示设置", restored.activeTab.isPinned && restored.activeModel.layout == .icons && restored.tabs.last?.model.layout == .details)
+        restored.activeModel.clearSearch(); wait { !restored.activeModel.isBusy }
+        check("恢复搜索后清空可看到真实目录", !restored.activeModel.isSearching && !restored.activeModel.items.isEmpty)
+        let wechat = manager.newTab(); wechat.model.navigate(to: .weChatCleanup)
+        wechat.model.weChatCleanup.search = "invoice"; wechat.model.weChatCleanup.kind = "document"
+        wechat.model.weChatCleanup.month = "2026-10"; wechat.model.weChatCleanup.minimumMB = 10
+        wechat.model.weChatCleanup.sort = "name"; wechat.model.weChatCleanup.sortAscending = false
+        manager.persistNow()
+        let restoreWeChat = TabManager(engine: engine, startDirectory: nil, restoreSession: true, sessionStore: store)
+        check("重启恢复微信筛选和方向", restoreWeChat.activeModel.isWeChatCleanupView && restoreWeChat.activeModel.weChatCleanup.filterState == wechat.model.weChatCleanup.filterState)
+        let oldJSON = Data("{\"kind\":\"home\",\"sort\":\"name\",\"ascending\":true,\"layout\":\"details\",\"query\":\"\"}".utf8)
+        check("新增会话字段兼容旧记录", (try? JSONDecoder().decode(SavedBrowserTab.self, from: oldJSON))?.destination == .home)
+
+        print("\n[实际字节传输与中途取消]")
+        let transferSource = try file("Copy/source.bin", Data(repeating: 0x5a, count: 16 * 1024 * 1024))
+        let copyItems = try FileSystemService.list(transferSource.deletingLastPathComponent(), showHidden: true)
+        let output = root.appendingPathComponent("CopyOutput"); try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        let cancelCopy = ScanCancellation()
+        var bytesSeen: Int64 = 0
+        let interrupted = FileTransferService.transfer(copyItems, to: output, mode: .copy, token: cancelCopy) { update in
+            bytesSeen = max(bytesSeen, update.completedBytes)
+            if update.completedBytes > 0 && update.completed == 0 { cancelCopy.cancel() }
+        }
+        check("复制单个大文件可中途取消", interrupted.cancelled && interrupted.completed.isEmpty && bytesSeen > 0)
+        check("中止复制不提交残缺目标且可重试", !fm.fileExists(atPath: output.appendingPathComponent("source.bin").path) && interrupted.retryURLs.map { FileItem.canonicalID(for: $0) } == [FileItem.canonicalID(for: transferSource)])
+        check("中途取消清除私有暂存目录", try fm.contentsOfDirectory(atPath: output.path).isEmpty)
+        var updates: [FileTransferProgress] = []
+        let copied = FileTransferService.transfer(copyItems, to: output, mode: .copy, token: ScanCancellation()) { updates.append($0) }
+        check("传输完成实际字节数与总数一致", copied.failures.isEmpty && updates.last?.completedBytes == 16 * 1024 * 1024 && updates.last?.totalBytes == 16 * 1024 * 1024)
+        check("结果保留目标目录且只重试未完成项", copied.destination == output && copied.retryURLs.isEmpty && !copied.isMoving)
+        guard let copiedURL = copied.completed.first else { throw CocoaError(.fileReadNoSuchFile) }
+        check("复制后内容字节正确", try Data(contentsOf: copiedURL) == Data(contentsOf: transferSource))
+        let link = transferSource.deletingLastPathComponent().appendingPathComponent("link.bin")
+        try fm.createSymbolicLink(at: link, withDestinationURL: transferSource)
+        let linkItems = try FileSystemService.list(link.deletingLastPathComponent(), showHidden: true).filter { $0.name == link.lastPathComponent }
+        let linkResult = FileTransferService.transfer(linkItems, to: output, mode: .copy, token: ScanCancellation()) { _ in }
+        check("字节进度复制保留符号链接本身", linkResult.failures.isEmpty && (try? fm.destinationOfSymbolicLink(atPath: output.appendingPathComponent("link.bin").path)) == (try? fm.destinationOfSymbolicLink(atPath: link.path)), "items=\(linkItems.count), errors=\(linkResult.failures)")
+
+        let retryBoard = NSPasteboard(name: NSPasteboard.Name("WinFileRetry-\(UUID().uuidString)"))
+        let retryClipboard = FileClipboard(pasteboard: retryBoard, monitor: false)
+        let retryDestination = root.appendingPathComponent("RetryOutput")
+        try fm.createDirectory(at: retryDestination, withIntermediateDirectories: true)
+        let retryModel = BrowserModel(engine: engine, startDirectory: retryDestination, clipboardStore: retryClipboard)
+        wait { !retryModel.isBusy }
+        let moveOne = try file("RetrySources/one.txt", Data("one".utf8))
+        let missingTwo = moveOne.deletingLastPathComponent().appendingPathComponent("two.txt")
+        retryClipboard.write(ClipboardPayload(mode: .cut, urls: [moveOne, missingTwo]))
+        retryModel.paste(); wait { retryModel.fileTransferProgress == nil && !retryModel.isBusy }
+        try Data("two".utf8).write(to: missingTwo)
+        retryModel.retryFileTransfer(); wait { retryModel.fileTransferProgress == nil && !retryModel.isBusy }
+        check("部分移动重试成功后清理原剪切状态", retryModel.lastTransferOutcome?.failures.isEmpty == true && retryClipboard.localPayload == nil && fm.fileExists(atPath: retryDestination.appendingPathComponent("two.txt").path))
+        let missingThree = moveOne.deletingLastPathComponent().appendingPathComponent("three.txt")
+        retryClipboard.write(ClipboardPayload(mode: .cut, urls: [missingThree]))
+        retryModel.paste(); wait { retryModel.fileTransferProgress == nil && !retryModel.isBusy }
+        retryClipboard.write(ClipboardPayload(mode: .copy, urls: [one]))
+        try Data("three".utf8).write(to: missingThree)
+        retryModel.retryFileTransfer(); wait { retryModel.fileTransferProgress == nil && !retryModel.isBusy }
+        check("重试移动不清空后来复制的新剪贴板", retryClipboard.localPayload?.urls == [one] && retryModel.lastTransferOutcome?.failures.isEmpty == true)
+        for _ in 0..<31 { _ = manager.newTab(startDirectory: root); manager.activeModel.layout = .details }
+        manager.activeModel.layout = .icons; manager.persistNow()
+        let capped = store.load()
+        check("超过会话上限仍保留活动页签及固定页签", capped?.tabs.count == 30 && capped?.activeIndex == 29 && capped?.tabs.last?.layout == "icons" && capped?.tabs.first?.pinned == true)
+        let lastManager = TabManager(engine: engine, startDirectory: root)
+        lastManager.close(lastManager.activeTab)
+        check("关闭最后页签不会出现空管理器状态", lastManager.count == 1 && lastManager.activeModel.isHomeView && lastManager.closedTabs.count == 1)
+        wait { manager.tabs.allSatisfy { !$0.model.isBusy } && !lastManager.activeModel.isBusy }
+
+        let scannedRoot = root.appendingPathComponent("WeChatLocal")
+        try fm.createDirectory(at: scannedRoot, withIntermediateDirectories: true)
+        try Data("report".utf8).write(to: scannedRoot.appendingPathComponent("report.pdf"))
+        let cleanup = WeChatCleanupModel(homeDirectory: root, customRoots: [scannedRoot])
+        cleanup.scan(); wait { !cleanup.isScanning }
+        check("微信扫描完成记录扫描时间", cleanup.lastScanDate != nil && cleanup.result.files.count == 1)
+        check("微信按类型占用分布汇总正确", cleanup.usageBuckets(byMonth: false).first?.bytes == 6 && cleanup.usageBuckets(byMonth: false).first?.id == "document")
+        check("微信按月份占用分布汇总正确", cleanup.usageBuckets(byMonth: true).reduce(0) { $0 + $1.count } == cleanup.matchingCount)
     }
 
     // MARK: - 准备
@@ -658,6 +1565,12 @@ enum NativeTestSuite {
         check("含中文路径可往返",
               AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/文档"))?.path == "/a/文档")
 
+        let crumbs = AndroidURL.ancestors(AndroidURL.make(serial: "HA2B7QSF", path: "/storage/我的文件"))
+        check("安卓面包屑包含根目录和逐层路径", crumbs.compactMap { AndroidURL.split($0)?.path } == ["/", "/storage", "/storage/我的文件"])
+        check("安卓面包屑保留设备序列号且不产生本地 URL", crumbs.allSatisfy { !$0.isFileURL && AndroidURL.split($0)?.serial == "HA2B7QSF" })
+        check("安卓根路径只生成一个面包屑", AndroidURL.ancestors(AndroidURL.make(serial: "S1", path: "/")).count == 1)
+        check("本地路径不生成安卓面包屑", AndroidURL.ancestors(URL(fileURLWithPath: "/tmp")).isEmpty)
+
         // adb 可用性（本机已安装）
         check("检测到 adb", AdbRunner.isAvailable, AdbRunner.adbPath() ?? "未找到")
     }
@@ -671,6 +1584,11 @@ enum NativeTestSuite {
         let probe = AndroidProbe.run()
         print("  探测结果: \(probe.summary)")
         check("检测到 adb", probe.adbAvailable, probe.adbPath ?? "未找到")
+
+        guard !CommandLine.arguments.contains("--skip-device-tests") else {
+            print("  本次跳过真实设备文件操作（--skip-device-tests）")
+            return
+        }
 
         guard probe.isUsable, let serial = probe.readySerials.first,
               let root = probe.storageRoot else {
@@ -990,6 +1908,7 @@ enum NativeTestSuite {
         }
         check("目标文件确实在该目录中",
               model.displayedItems.contains { $0.id == item.id })
+        check("目录异步加载完成后目标保持选中", model.selectedIDs == Set([item.id]))
 
         // 界面读取后应清空，避免影响后续导航
         let consumed = model.consumePendingSelection()
@@ -1002,6 +1921,35 @@ enum NativeTestSuite {
         // 分类视图算聚合视图
         model.navigate(to: .category(.pdf))
         check("分类视图属于聚合视图", model.isAggregatedView)
+
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([base])
+        let manager = TabManager(engine: engine, startDirectory: nil)
+        let original = manager.activeTab
+        original.model.navigate(to: .weChatCleanup)
+        original.model.weChatCleanup.search = "目标"
+        original.model.weChatCleanup.month = "2026-10"
+        original.model.selectedIDs = [item.id]
+        original.model.openContainingFolder(of: item)
+        let destination = manager.activeTab
+        check("打开所在文件夹创建并激活新页签", manager.count == 2 && destination.id != original.id)
+        check("新页签跳转保留原微信清理页", original.model.isWeChatCleanupView && original.model.currentDirectory == nil)
+        check("新页签跳转保留微信筛选与选择", original.model.weChatCleanup.search == "目标"
+              && original.model.weChatCleanup.month == "2026-10" && original.model.selectedIDs == [item.id])
+        let tabDeadline = Date().addingTimeInterval(10)
+        while destination.model.isBusy && Date() < tabDeadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        check("新页签加载目标目录并选中文件", destination.model.currentDirectory?.path == deep.path
+              && destination.model.displayedItems.contains { $0.id == item.id } && destination.model.selectedIDs == [item.id])
+        check("新页签保留滚动定位目标", destination.model.pendingSelectionID == item.id)
+        let otherWindow = TabManager(engine: engine, startDirectory: nil)
+        destination.model.openContainingFolder(of: target)
+        check("新建页签仍归属原窗口且每次新开", manager.count == 3 && otherWindow.count == 1
+              && manager.activeTab.id != destination.id)
+        let countBeforeInvalid = manager.count
+        manager.activeModel.openContainingFolder(of: URL(string: "https://example.com/file")!)
+        check("无效文件位置不会新建空页签", manager.count == countBeforeInvalid && manager.activeModel.errorMessage != nil)
     }
 
     // MARK: - 真实磁盘分类结果是否有重复
@@ -1405,6 +2353,189 @@ enum NativeTestSuite {
                            encoding: .utf8)) == "tar 内容")
     }
 
+    @MainActor
+    static func testExpandedArchives(_ sandbox: URL) throws {
+        print("\n[RAR / 7Z 与完整解压流程]")
+        let fm = FileManager.default
+        let root = sandbox.appendingPathComponent("扩展解压测试")
+        let source = root.appendingPathComponent("source")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        guard let engine = ArchiveService.sevenZipURL else { throw ArchiveError.engineMissing }
+        check("应用自带可运行的双架构解压引擎", fm.isExecutableFile(atPath: engine.path))
+        func run(_ executable: URL, _ arguments: [String], cwd: URL = source) throws {
+            let p = Process(); p.executableURL = executable; p.arguments = arguments; p.currentDirectoryURL = cwd
+            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
+            try p.run(); p.waitUntilExit()
+            if p.terminationStatus != 0 { throw ArchiveError.commandFailed("test fixture creation", p.terminationStatus) }
+        }
+        func output(_ name: String) throws -> URL {
+            let url = root.appendingPathComponent(name); try fm.createDirectory(at: url, withIntermediateDirectories: true); return url
+        }
+        func fixture(_ name: String) -> URL {
+            let bundled = Bundle.main.resourceURL?.appendingPathComponent("TestFixtures/" + name)
+            if let bundled, fm.fileExists(atPath: bundled.path) { return bundled }
+            return URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/" + name)
+        }
+        func fails(_ name: String, _ action: () throws -> Void, where expected: (Error) -> Bool = { _ in true }) {
+            do { try action(); check(name, false) } catch { check(name, expected(error), error.localizedDescription) }
+        }
+        let nested = source.appendingPathComponent("中文 子目录")
+        try fm.createDirectory(at: nested.appendingPathComponent("空目录"), withIntermediateDirectories: true)
+        let text = nested.appendingPathComponent("报告.txt")
+        try Data("Unicode extraction ✓".utf8).write(to: text)
+        let seven = root.appendingPathComponent("资料.7z")
+        try run(engine, ["a", "-t7z", seven.path, "中文 子目录"])
+        check("识别 RAR 与 7Z 格式且不区分扩展名大小写", ArchiveService.isArchive(URL(fileURLWithPath: "/a.RAR")) && ArchiveService.isArchive(URL(fileURLWithPath: "/a.7Z")))
+        let sevenOut = try output("7z还原")
+        _ = try ArchiveService.extract(seven, to: sevenOut)
+        check("7Z 还原中文名称和完整文件内容", (try? Data(contentsOf: sevenOut.appendingPathComponent("中文 子目录/报告.txt"))) == Data("Unicode extraction ✓".utf8))
+        check("7Z 保留空文件夹", fm.fileExists(atPath: sevenOut.appendingPathComponent("中文 子目录/空目录").path))
+        let rarOut = try output("rar5还原")
+        _ = try ArchiveService.extract(fixture("stored-rar5.rar"), to: rarOut)
+        check("真实 RAR5 样本解压内容正确", (try? String(contentsOf: rarOut.appendingPathComponent("helloworld.txt"))) == "hello libarchive test suite!\n")
+        let rar4Out = try output("rar4还原")
+        _ = try ArchiveService.extract(fixture("legacy-rar4.rar"), to: rar4Out)
+        check("真实 RAR4 样本解压内容正确", (try? String(contentsOf: rar4Out.appendingPathComponent("test.txt"))) == "test text document\r\n")
+        check("RAR4 内部相对符号链接保持在解压目录", (try? fm.destinationOfSymbolicLink(atPath: rar4Out.appendingPathComponent("testlink").path)) == "test.txt")
+        let compressedRarOut = try output("RAR5压缩还原")
+        _ = try ArchiveService.extract(fixture("compressed-rar5.rar"), to: compressedRarOut)
+        var expectedRarData = Data()
+        for k in 1...300 {
+            var value = UInt32(max(0, k * k - 3 * k + 1)).littleEndian
+            withUnsafeBytes(of: &value) { expectedRarData.append(contentsOf: $0) }
+        }
+        check("RAR5 压缩算法还原全部原始字节", (try? Data(contentsOf: compressedRarOut.appendingPathComponent("test.bin"))) == expectedRarData)
+        let folderOut = try output("独立文件夹")
+        let own = try ArchiveService.extract(seven, to: folderOut, createFolder: true)
+        let ownAgain = try ArchiveService.extract(seven, to: folderOut, createFolder: true)
+        check("独立文件夹模式使用包名且重名保留两者", own.first?.lastPathComponent == "资料" && ownAgain.first?.lastPathComponent == "资料 2")
+        check("复合压缩扩展名用于文件夹命名时完整移除", ArchiveService.extractionBaseName(URL(fileURLWithPath: "/项目.tar.gz")) == "项目" && ArchiveService.extractionBaseName(URL(fileURLWithPath: "/项目.part01.rar")) == "项目")
+        let password = "Test 密码$ with spaces"
+        let protected = root.appendingPathComponent("加密.7z")
+        try run(engine, ["a", "-t7z", "-mhe=on", "-p" + password, protected.path, "中文 子目录"])
+        let protectedOut = try output("加密还原")
+        fails("加密文件头要求输入密码", { _ = try ArchiveService.extract(protected, to: protectedOut) }, where: { if case ArchiveError.passwordRequired = $0 { return true }; return false })
+        fails("错误密码返回可重试错误", { _ = try ArchiveService.extract(protected, to: protectedOut, password: "incorrect") }, where: { if case ArchiveError.wrongPassword = $0 { return true }; return false })
+        check("密码失败不会提交任何文件", (try? fm.contentsOfDirectory(atPath: protectedOut.path))?.isEmpty == true)
+        _ = try ArchiveService.extract(protected, to: protectedOut, password: password)
+        check("密码通过标准输入支持中文空格和符号", (try? Data(contentsOf: protectedOut.appendingPathComponent("中文 子目录/报告.txt"))) == Data("Unicode extraction ✓".utf8))
+        let aesZip = root.appendingPathComponent("加密.zip")
+        try run(engine, ["a", "-tzip", "-mem=AES256", "-pAES-test-password", aesZip.path, "中文 子目录"])
+        _ = try ArchiveService.extract(aesZip, to: output("AESZIP还原"), password: "AES-test-password")
+        check("支持 AES 加密 ZIP 解压", fm.fileExists(atPath: root.appendingPathComponent("AESZIP还原/中文 子目录/报告.txt").path))
+        let plain = source.appendingPathComponent("report.txt")
+        try Data("single compressed file".utf8).write(to: plain)
+        for (ext, type) in [("gz", "gzip"), ("bz2", "bzip2"), ("xz", "xz")] {
+            let compressed = root.appendingPathComponent("report.txt." + ext)
+            try run(engine, ["a", "-t" + type, compressed.path, "report.txt"])
+            let restored = try output("stream-" + ext)
+            _ = try ArchiveService.extract(compressed, to: restored)
+            check("独立单文件 \(ext) 正确解压", (try? Data(contentsOf: restored.appendingPathComponent("report.txt"))) == Data("single compressed file".utf8))
+        }
+        for (suffix, flag) in [("tar.gz", "-czf"), ("tar.bz2", "-cjf"), ("tar.xz", "-cJf")] {
+            let archive = root.appendingPathComponent("nested." + suffix)
+            try run(URL(fileURLWithPath: "/usr/bin/tar"), [flag, archive.path, "-C", source.path, "中文 子目录"])
+            let restored = try output(suffix)
+            _ = try ArchiveService.extract(archive, to: restored)
+            check("\(suffix) 自动解开压缩流和 TAR 两层", fm.fileExists(atPath: restored.appendingPathComponent("中文 子目录/报告.txt").path))
+        }
+        let random = source.appendingPathComponent("volume.bin")
+        let randomData = Data((0..<30000).map { UInt8($0 % 251) })
+        try randomData.write(to: random)
+        let split = root.appendingPathComponent("split.7z")
+        try run(engine, ["a", "-t7z", "-mx=0", "-v4096b", split.path, "volume.bin"])
+        let first = root.appendingPathComponent("split.7z.001"), second = root.appendingPathComponent("split.7z.002")
+        check("7Z 分卷被识别为可解压文件", ArchiveService.isArchive(first) && ArchiveService.isArchive(second))
+        check("选择后续分卷自动定位首卷", try ArchiveService.firstVolume(for: second).path == first.path)
+        let splitOut = try output("分卷还原")
+        _ = try ArchiveService.extract(second, to: splitOut)
+        check("7Z 多分卷完整还原", (try? Data(contentsOf: splitOut.appendingPathComponent("volume.bin"))) == randomData)
+        check("分卷文件归入压缩包分类", FileTypeDB.info(name: "split.7z.002", isDirectory: false, isSymlink: false, isBundle: false).category == .archive)
+        let volumeNames = try fm.contentsOfDirectory(atPath: root.path).filter { $0.hasPrefix("split.7z.") }.sorted()
+        let lastVolume = root.appendingPathComponent(volumeNames.last!)
+        let lastVolumeBytes = try Data(contentsOf: lastVolume)
+        try fm.removeItem(at: lastVolume)
+        let missingOut = try output("缺失分卷")
+        fails("缺失后续分卷时拒绝提交残缺文件", { _ = try ArchiveService.extract(first, to: missingOut) })
+        check("缺失分卷的暂存内容已清除", (try? fm.contentsOfDirectory(atPath: missingOut.path))?.isEmpty == true)
+        try lastVolumeBytes.write(to: lastVolume)
+        let zipVolumeData = Data(repeating: 0x59, count: 160000)
+        try zipVolumeData.write(to: random)
+        let classicZip = root.appendingPathComponent("classic.zip")
+        try run(URL(fileURLWithPath: "/usr/bin/zip"), ["-0", "-s", "64k", classicZip.path, "volume.bin"])
+        let classicOut = try output("ZIP传统分卷")
+        _ = try ArchiveService.extract(root.appendingPathComponent("classic.z01"), to: classicOut)
+        check("传统 ZIP 分卷自动使用多卷引擎", (try? Data(contentsOf: classicOut.appendingPathComponent("volume.bin"))) == zipVolumeData)
+        let numberedZip = root.appendingPathComponent("numbered.zip")
+        try run(engine, ["a", "-tzip", "-mx=0", "-v32768b", numberedZip.path, "volume.bin"])
+        let numberedOut = try output("ZIP数字分卷")
+        _ = try ArchiveService.extract(root.appendingPathComponent("numbered.zip.002"), to: numberedOut)
+        check("数字 ZIP 分卷完整解压", (try? Data(contentsOf: numberedOut.appendingPathComponent("volume.bin"))) == zipVolumeData)
+        let firstUnicode = root.appendingPathComponent("İstanbul.part01.rar")
+        try Data().write(to: firstUnicode)
+        check("Unicode 文件名的 RAR 分卷定位不改变原始名称", try ArchiveService.firstVolume(for: root.appendingPathComponent("İstanbul.part02.rar")).lastPathComponent == firstUnicode.lastPathComponent)
+        check("TAR 压缩别名归入压缩包分类", ["tbz", "tbz2", "txz"].allSatisfy { FileTypeDB.info(name: "sample." + $0, isDirectory: false, isSymlink: false, isBundle: false).category == .archive })
+        let absent = root.appendingPathComponent("不存在.part02.rar")
+        fails("缺首卷时给出分卷提示", { _ = try ArchiveService.firstVolume(for: absent) }, where: { if case ArchiveError.missingVolume = $0 { return true }; return false })
+        let broken = root.appendingPathComponent("damaged.7z")
+        try Data("not an archive".utf8).write(to: broken)
+        let brokenOut = try output("损坏还原")
+        fails("损坏压缩包报错且不提交残缺内容", { _ = try ArchiveService.extract(broken, to: brokenOut) })
+        check("损坏解压清除暂存目录", (try? fm.contentsOfDirectory(atPath: brokenOut.path))?.isEmpty == true)
+        let cancelledOut = try output("取消还原")
+        let stopped = ScanCancellation(); stopped.cancel()
+        fails("解压开始前可取消", { _ = try ArchiveService.extract(seven, to: cancelledOut, cancellation: stopped) }, where: { if case ArchiveError.cancelled = $0 { return true }; return false })
+        let during = ScanCancellation()
+        fails("运行中取消不提交当前压缩包", {
+            _ = try ArchiveService.extract(seven, to: cancelledOut, cancellation: during) { value in
+                if value == nil { DispatchQueue.global().asyncAfter(deadline: .now() + 0.12) { during.cancel() } }
+            }
+        }, where: { if case ArchiveError.cancelled = $0 { return true }; return false })
+        check("取消解压清除暂存并保留原包", (try? fm.contentsOfDirectory(atPath: cancelledOut.path))?.isEmpty == true && fm.fileExists(atPath: seven.path))
+        // Mutate only archive entry names (same byte count), leaving CRC and data intact.
+        let placeholder = source.appendingPathComponent("___escape.txt")
+        try Data("must not escape".utf8).write(to: placeholder)
+        let malicious = root.appendingPathComponent("unsafe.zip")
+        try run(engine, ["a", "-tzip", malicious.path, "___escape.txt"])
+        var bytes = try Data(contentsOf: malicious)
+        let old = Data("___escape.txt".utf8), replacement = Data("../escape.txt".utf8)
+        var offset = 0
+        while offset < bytes.count, let range = bytes.range(of: old, in: offset..<bytes.count) {
+            bytes.replaceSubrange(range, with: replacement); offset = range.upperBound
+        }
+        try bytes.write(to: malicious)
+        let unsafeOut = try output("安全验证")
+        fails("拒绝包含目录穿越条目的 ZIP", { _ = try ArchiveService.extract(malicious, to: unsafeOut) }, where: { if case ArchiveError.unsafePath = $0 { return true }; return false })
+        check("目录穿越没有写入外部路径", !fm.fileExists(atPath: root.appendingPathComponent("escape.txt").path))
+        let outside = root.appendingPathComponent("outside.txt")
+        try Data("untouched".utf8).write(to: outside)
+        try fm.createSymbolicLink(atPath: source.appendingPathComponent("outside-link").path, withDestinationPath: outside.path)
+        let linkZip = root.appendingPathComponent("link.zip")
+        try run(URL(fileURLWithPath: "/usr/bin/zip"), ["-y", "-q", linkZip.path, "outside-link"])
+        fails("拒绝指向解压目录外部的符号链接", { _ = try ArchiveService.extract(linkZip, to: unsafeOut) })
+        check("外部链接目标内容保持不变", (try? Data(contentsOf: outside)) == Data("untouched".utf8))
+        let danglingOut = try output("断链冲突")
+        try fm.createSymbolicLink(atPath: danglingOut.appendingPathComponent("中文 子目录").path, withDestinationPath: "missing-target")
+        let conflict = try ArchiveService.extract(seven, to: danglingOut)
+        check("断开的符号链接也视为同名冲突并保留", (try? fm.destinationOfSymbolicLink(atPath: danglingOut.appendingPathComponent("中文 子目录").path)) == "missing-target" && conflict.first?.lastPathComponent == "资料 解压")
+        let engineModel = FSEngine(); engineModel.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engineModel, startDirectory: root)
+        func wait() {
+            let until = Date().addingTimeInterval(30)
+            while (model.isBusy || model.archiveProgress != nil) && Date() < until { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) }
+        }
+        wait()
+        model.selectedIDs = [FileItem.canonicalID(for: seven), FileItem.canonicalID(for: broken)]
+        let batchOut = try output("批量输出")
+        model.extractSelection(to: batchOut)
+        wait()
+        check("批量解压保留成功结果和失败明细", model.lastTransferOutcome?.completed.count == 1 && model.lastTransferOutcome?.failures.count == 1 && fm.fileExists(atPath: batchOut.appendingPathComponent("中文 子目录/报告.txt").path))
+        model.selectedIDs = [FileItem.canonicalID(for: first), FileItem.canonicalID(for: second)]
+        model.extractSelection(to: try output("批量分卷"))
+        wait()
+        check("同时选中多个分卷只解压一次", model.lastTransferOutcome?.completed.count == 1 && model.lastTransferOutcome?.failures.isEmpty == true)
+    }
+
     // MARK: - 侧边栏分类管理
 
     @MainActor
@@ -1534,6 +2665,11 @@ enum NativeTestSuite {
     @MainActor
     static func testAndroidBrowsing() {
         print("\n[安卓目录浏览]")
+
+        guard !CommandLine.arguments.contains("--skip-device-tests") else {
+            print("  本次跳过真实设备浏览（--skip-device-tests）")
+            return
+        }
 
         let probe = AndroidProbe.run()
         guard probe.isUsable, let serial = probe.readySerials.first,

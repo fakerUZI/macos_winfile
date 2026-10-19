@@ -6,11 +6,13 @@ import SwiftUI
 struct WinFileApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var engine = FSEngine()
+    @ObservedObject private var localization = Localization.shared
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
 
     var body: some Scene {
         WindowGroup {
             MainView(engine: engine)
+                .environment(\.locale, localization.locale)
                 .frame(minWidth: 860, minHeight: 520)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
@@ -18,6 +20,7 @@ struct WinFileApp: App {
 
         Settings {
             SettingsView(engine: engine)
+                .environment(\.locale, localization.locale)
         }
     }
 
@@ -108,6 +111,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tabbingGuardTimer: Timer?
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated { WindowBridge.shared.tabManager?.persistNow() }
+    }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // 关闭 macOS 自带的窗口标签页。
@@ -181,8 +187,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let index = CommandLine.arguments.firstIndex(of: "--selftest-tabs"),
            index + 1 < CommandLine.arguments.count {
             let target = CommandLine.arguments[index + 1]
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                let ok = TabSmokeTest.run(to: target)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                let ok = await TabSmokeTest.run(to: target)
                 exit(ok ? 0 : 1)
             }
         }
@@ -204,11 +211,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - 菜单栏命令（中文，符合 macOS 习惯）
 
 struct WinFileCommands: Commands {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @FocusedValue(\.browserModel) private var model
     @FocusedValue(\.tabCount) private var tabCount
+    @FocusedValue(\.canRestoreTab) private var canRestoreTab
+
+    @ObservedObject private var operationHistory = FileOperationHistory.shared
+    private var editingText: Bool { NSApp.keyWindow?.firstResponder is NSTextView }
+    private func clipboardAction(_ selector: String, action: () -> Void) {
+        if editingText { NSApp.sendAction(Selector(selector), to: nil, from: nil) }
+        else { action() }
+    }
 
     var body: some Commands {
+        CommandGroup(replacing: .pasteboard) {
+            Button(L("action.cut", "剪切")) { clipboardAction("cut:") { model?.cutSelectionToClipboard() } }
+                .keyboardShortcut("x", modifiers: .command)
+            Button(L("action.copy", "复制")) { clipboardAction("copy:") { model?.copySelectionToClipboard() } }
+                .keyboardShortcut("c", modifiers: .command)
+            Button(L("action.paste", "粘贴")) { clipboardAction("paste:") { model?.paste() } }
+                .keyboardShortcut("v", modifiers: .command)
+        }
+        CommandGroup(replacing: .undoRedo) {
+            Button(operationHistory.undoTitle) {
+                if editingText { NSApp.sendAction(Selector(("undo:")), to: nil, from: nil) }
+                else { operationHistory.undo() }
+            }
+            .keyboardShortcut("z", modifiers: .command)
+            .disabled(!editingText && !operationHistory.canUndo)
+            Button(L("operation.redoText", "重做文本编辑")) {
+                NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+            }.keyboardShortcut("z", modifiers: [.command, .shift]).disabled(!editingText)
+        }
         // 文件
         CommandGroup(replacing: .newItem) {
             // 页签：与 Windows 资源管理器一致
@@ -218,20 +253,24 @@ struct WinFileCommands: Commands {
             .keyboardShortcut("t", modifiers: .command)
 
             Button(L("tab.close", "关闭标签页")) {
-                NotificationCenter.default.post(name: .winFileCloseTab, object: nil)
+                if model == nil { NSApp.keyWindow?.performClose(nil) }
+                else { NotificationCenter.default.post(name: .winFileCloseTab, object: nil) }
             }
             .keyboardShortcut("w", modifiers: .command)
-            .disabled((tabCount ?? 1) <= 1)
+
+            Button(L("tab.restore", "恢复关闭的标签页")) { model?.tabManager?.restoreClosedTab() }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(canRestoreTab != true)
 
             Divider()
 
-            Button(NSLocalizedString("menu.newFolder", comment: "新建文件夹")) {
-                model?.createFolder(named: NSLocalizedString("default.newFolderName", comment: "新建文件夹"))
+            Button(WLocalizedString("menu.newFolder", comment: "新建文件夹")) {
+                model?.createFolder(named: WLocalizedString("default.newFolderName", comment: "新建文件夹"))
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             .disabled(model?.currentDirectory == nil)
 
-            Button(NSLocalizedString("menu.newTab", comment: "在新窗口中打开")) {
+            Button(WLocalizedString("menu.newTab", comment: "在新窗口中打开")) {
                 if let url = model?.currentDirectory {
                     NSWorkspace.shared.open(url)
                 }
@@ -241,24 +280,24 @@ struct WinFileCommands: Commands {
 
         CommandGroup(after: .pasteboard) {
             Divider()
-            Button(NSLocalizedString("menu.copyPath", comment: "复制路径")) {
+            Button(WLocalizedString("menu.copyPath", comment: "复制路径")) {
                 model?.copyPathToClipboard()
             }
             .keyboardShortcut("c", modifiers: [.command, .option])
 
-            Button(NSLocalizedString("menu.copyName", comment: "复制文件名")) {
+            Button(WLocalizedString("menu.copyName", comment: "复制文件名")) {
                 model?.copyNameToClipboard()
             }
             .disabled(model?.selectedIDs.isEmpty ?? true)
 
             Divider()
-            Button(NSLocalizedString("menu.duplicate", comment: "制作副本")) {
+            Button(WLocalizedString("menu.duplicate", comment: "制作副本")) {
                 model?.duplicateSelection()
             }
             .keyboardShortcut("d", modifiers: .command)
             .disabled(model?.selectedIDs.isEmpty ?? true)
 
-            Button(NSLocalizedString("menu.rename", comment: "重命名")) {
+            Button(WLocalizedString("menu.rename", comment: "重命名")) {
                 NotificationCenter.default.post(name: .winFileBeginRename, object: nil)
             }
             .keyboardShortcut(.return, modifiers: [])
@@ -267,29 +306,29 @@ struct WinFileCommands: Commands {
 
         // 显示
         CommandGroup(after: .toolbar) {
-            Button(NSLocalizedString("menu.toggleHidden", comment: "显示隐藏文件")) {
+            Button(WLocalizedString("menu.toggleHidden", comment: "显示隐藏文件")) {
                 model?.toggleHiddenFiles()
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
 
-            Picker(NSLocalizedString("menu.layout", comment: "视图方式"), selection: Binding(
+            Picker(WLocalizedString("menu.layout", comment: "视图方式"), selection: Binding(
                 get: { model?.layout ?? .details },
                 set: { model?.setLayout($0) }
             )) {
-                Text(NSLocalizedString("layout.details", comment: "详细信息")).tag(ViewLayout.details)
-                Text(NSLocalizedString("layout.icons", comment: "大图标")).tag(ViewLayout.icons)
+                Text(WLocalizedString("layout.details", comment: "详细信息")).tag(ViewLayout.details)
+                Text(WLocalizedString("layout.icons", comment: "大图标")).tag(ViewLayout.icons)
             }
         }
 
         // 前往
-        CommandMenu(NSLocalizedString("menu.go", comment: "前往")) {
-            Button(NSLocalizedString("menu.back", comment: "后退")) { model?.goBack() }
+        CommandMenu(WLocalizedString("menu.go", comment: "前往")) {
+            Button(WLocalizedString("menu.back", comment: "后退")) { model?.goBack() }
                 .keyboardShortcut("[", modifiers: .command)
                 .disabled(!(model?.canGoBack ?? false))
-            Button(NSLocalizedString("menu.forward", comment: "前进")) { model?.goForward() }
+            Button(WLocalizedString("menu.forward", comment: "前进")) { model?.goForward() }
                 .keyboardShortcut("]", modifiers: .command)
                 .disabled(!(model?.canGoForward ?? false))
-            Button(NSLocalizedString("menu.up", comment: "上一级")) { model?.goUp() }
+            Button(WLocalizedString("menu.up", comment: "上一级")) { model?.goUp() }
                 .keyboardShortcut(.upArrow, modifiers: .command)
                 .disabled(!(model?.canGoUp ?? false))
             Divider()
@@ -298,16 +337,16 @@ struct WinFileCommands: Commands {
             Button(L("view.thisPC", "此电脑")) { model?.navigate(to: .thisPC) }
                 .keyboardShortcut("2", modifiers: [.command, .option])
             Divider()
-            Button(NSLocalizedString("menu.home", comment: "个人文件夹")) {
+            Button(WLocalizedString("menu.home", comment: "个人文件夹")) {
                 model?.selectFolder(FileManager.default.homeDirectoryForCurrentUser)
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
-            Button(NSLocalizedString("menu.applications", comment: "应用程序")) {
+            Button(WLocalizedString("menu.applications", comment: "应用程序")) {
                 model?.navigate(to: .applications)
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
             Divider()
-            Button(NSLocalizedString("menu.chooseFolder", comment: "打开文件夹…")) {
+            Button(WLocalizedString("menu.chooseFolder", comment: "打开文件夹…")) {
                 NotificationCenter.default.post(name: .winFileOpenFolder, object: nil)
             }
             .keyboardShortcut("o", modifiers: .command)
@@ -315,7 +354,7 @@ struct WinFileCommands: Commands {
 
         // 帮助
         CommandGroup(replacing: .help) {
-            Button(NSLocalizedString("menu.help", comment: "WinFile 帮助")) {
+            Button(WLocalizedString("menu.help", comment: "WinFile 帮助")) {
                 NotificationCenter.default.post(name: .winFileShowHelp, object: nil)
             }
             Divider()
@@ -347,7 +386,13 @@ struct TabCountKey: FocusedValueKey {
     typealias Value = Int
 }
 
+struct CanRestoreTabKey: FocusedValueKey { typealias Value = Bool }
+
 extension FocusedValues {
+    var canRestoreTab: Bool? {
+        get { self[CanRestoreTabKey.self] }
+        set { self[CanRestoreTabKey.self] = newValue }
+    }
     var browserModel: BrowserModel? {
         get { self[BrowserModelKey.self] }
         set { self[BrowserModelKey.self] = newValue }

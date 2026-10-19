@@ -10,6 +10,7 @@ enum SidebarSelection: Hashable {
     case folder(URL)
     case applications
     case appData
+    case weChatCleanup
     /// 安卓设备页（显示该设备的存储位置）
     case androidDevice(serial: String)
     case category(FileCategory)
@@ -24,10 +25,10 @@ enum SortField: String, CaseIterable {
 
     var localizedTitle: String {
         switch self {
-        case .name: return NSLocalizedString("sort.name", comment: "按名称")
-        case .modified: return NSLocalizedString("sort.modified", comment: "按修改日期")
-        case .type: return NSLocalizedString("sort.type", comment: "按类型")
-        case .size: return NSLocalizedString("sort.size", comment: "按大小")
+        case .name: return WLocalizedString("sort.name", comment: "按名称")
+        case .modified: return WLocalizedString("sort.modified", comment: "按修改日期")
+        case .type: return WLocalizedString("sort.type", comment: "按类型")
+        case .size: return WLocalizedString("sort.size", comment: "按大小")
         }
     }
 }
@@ -39,21 +40,41 @@ struct ClipboardPayload {
 
     var localizedVerb: String {
         mode == .copy
-            ? NSLocalizedString("clipboard.copied", comment: "已复制")
-            : NSLocalizedString("clipboard.cut", comment: "已剪切")
+            ? WLocalizedString("clipboard.copied", comment: "已复制")
+            : WLocalizedString("clipboard.cut", comment: "已剪切")
     }
 }
 
 @MainActor
 final class BrowserModel: ObservableObject {
+    /// Route new-tab navigation through the window that owns this model.
+    weak var tabManager: TabManager?
 
     // 导航
     @Published var selection: SidebarSelection?
     @Published private(set) var currentDirectory: URL?
     @Published private(set) var items: [FileItem] = []
-    @Published var selectedIDs: Set<String> = []
+    @Published private var fileSelectedIDs: Set<String> = []
+    var selectedIDs: Set<String> {
+        get { isWeChatCleanupView ? weChatCleanup.selection : fileSelectedIDs }
+        set {
+            if isWeChatCleanupView { weChatCleanup.selection = newValue }
+            else { fileSelectedIDs = newValue }
+        }
+    }
     @Published private(set) var isSearching = false
     @Published private(set) var searchResults: [FileItem] = []
+    @Published private(set) var searchQuery = ""
+    @Published var searchCriteria = FileSearchCriteria()
+    @Published private(set) var scanReport = FileScanReport()
+    private var searchLimit = 400
+    private var categoryLimit = 800
+    private var categoryDepth = 4
+    private var scanEntryLimit = 100_000
+    private var searchCancellation: ScanCancellation?
+    private var categoryCancellation: ScanCancellation?
+    private var searchID = UUID()
+    private var categoryID = UUID()
     /// 分类视图结果（在整个可浏览范围内按类型收集）
     @Published private(set) var categoryResults: [FileItem] = []
     @Published private(set) var isLoadingCategory = false
@@ -79,36 +100,99 @@ final class BrowserModel: ObservableObject {
     @Published var transferProgress: AndroidTransferProgress?
     /// 压缩/解压进度
     @Published var archiveProgress: ArchiveProgress?
+    private var archiveCancellation: ScanCancellation?
+    private var archiveID = UUID()
     private var transferTask: Task<Void, Never>?
+    @Published private(set) var fileTransferProgress: FileTransferProgress?
+    @Published var lastTransferOutcome: FileTransferOutcome?
+    private var fileTransferCancellation: ScanCancellation?
+    private var fileTransferID = UUID()
+    private var directoryWatcher: DirectoryWatcher?
+    private var watchedDirectory: URL?
+    private var watchesChanges = false
+    private var directoryRefreshTask: Task<Void, Never>?
+    private var filesChangedSubscription: AnyCancellable?
 
     // 视图选项
-    @AppStorage("ViewLayout") var layoutRaw: String = ViewLayout.details.rawValue
-    @AppStorage("ShowHiddenFiles") var showHidden: Bool = false
-    @AppStorage("SortField") private var sortFieldRaw: String = SortField.name.rawValue
-    @AppStorage("SortAscending") private var sortAscending: Bool = true
+    @Published var layoutRaw: String = UserDefaults.standard.string(forKey: "ViewLayout") ?? ViewLayout.details.rawValue { didSet { UserDefaults.standard.set(layoutRaw, forKey: "ViewLayout") } }
+    @Published var showHidden: Bool = UserDefaults.standard.bool(forKey: "ShowHiddenFiles") { didSet { UserDefaults.standard.set(showHidden, forKey: "ShowHiddenFiles") } }
+    @Published private var sortFieldRaw: String = UserDefaults.standard.string(forKey: "SortField") ?? SortField.name.rawValue { didSet { UserDefaults.standard.set(sortFieldRaw, forKey: "SortField") } }
+    @Published private var sortAscending: Bool = (UserDefaults.standard.object(forKey: "SortAscending") as? Bool) ?? true { didSet { UserDefaults.standard.set(sortAscending, forKey: "SortAscending") } }
 
     // 剪贴板
-    @Published private(set) var clipboard: ClipboardPayload?
+    let clipboardStore: FileClipboard
+    var clipboard: ClipboardPayload? { clipboardStore.localPayload }
+    var canPaste: Bool { !isCategoryView && !isBusy && archiveProgress == nil && fileTransferProgress == nil && currentDirectory != nil && (clipboard != nil || (isAndroidPath && androidClipboard != nil)) }
+    var canMutateFiles: Bool {
+        !isBusy && !FileOperationHistory.shared.isBusy && fileTransferProgress == nil && archiveProgress == nil
+            && (!isWeChatCleanupView || (!weChatCleanup.isScanning && !weChatCleanup.isCleaning))
+    }
+    var deleteActionTitle: String { isAndroidPath ? L("android.deletePermanent", "永久删除…") : L("action.moveToTrash", "移到废纸篓") }
+    var confirmAndroidDeletion: (([AndroidEntry]) -> Bool)?
     @Published var statusMessage: String = ""
     @Published var errorMessage: String?
     @Published var isBusy = false
     @Published var categoryFilter: FileCategory?
 
     let engine: FSEngine
+    let weChatCleanup: WeChatCleanupModel
     private var backStack: [SidebarSelection] = []
     private var forwardStack: [SidebarSelection] = []
     private var listingTask: Task<Void, Never>?
     private var searchTask: Task<Void, Never>?
     private var categoryTask: Task<Void, Never>?
     private var homeTask: Task<Void, Never>?
+    private var navigationID = UUID()
+    private var languageSubscription: AnyCancellable?
+    private var cleanupSubscription: AnyCancellable?
+    private var clipboardSubscription: AnyCancellable?
 
-    init(engine: FSEngine, startDirectory: URL?) {
+    init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, clipboardStore: FileClipboard? = nil) {
         self.engine = engine
+        self.clipboardStore = clipboardStore ?? .shared
+        self.weChatCleanup = cleanupModel ?? WeChatCleanupModel()
+        filesChangedSubscription = NotificationCenter.default.publisher(for: .winFileFilesChanged)
+            .receive(on: RunLoop.main).sink { [weak self] _ in
+                guard let self, !self.isBusy, self.showsFileList || self.isWeChatCleanupView else { return }
+                self.reload()
+            }
+        clipboardSubscription = self.clipboardStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        cleanupSubscription = weChatCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        languageSubscription = Localization.shared.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshLocalizedContent() }
         if let start = startDirectory {
             currentDirectory = start
             selection = .folder(start)
             reload()
         }
+    }
+
+    deinit {
+        archiveCancellation?.cancel()
+        searchCancellation?.cancel()
+        categoryCancellation?.cancel()
+        fileTransferCancellation?.cancel()
+        directoryRefreshTask?.cancel()
+        listingTask?.cancel()
+        searchTask?.cancel()
+        categoryTask?.cancel()
+        homeTask?.cancel()
+    }
+
+    private func refreshLocalizedContent() {
+        quickAccess = PlacesService.quickAccessFolders()
+        if isHomeView {
+            statusMessage = recentEntries.isEmpty ? L("status.homeEmpty", "最近没有修改或打开过文件")
+                : L("status.homeCount", "最近使用 %d 项", recentEntries.count)
+        } else if isAppDataView {
+            statusMessage = L("status.appDataCount", "共 %d 个应用数据目录（%d 个可浏览）", appDataItems.count, appDataItems.filter(\.isReadable).count)
+        } else if showsFileList && !isBusy {
+            updateStatus()
+        } else {
+            statusMessage = ""
+        }
+        objectWillChange.send()
     }
 
     var layout: ViewLayout {
@@ -145,6 +229,8 @@ final class BrowserModel: ObservableObject {
         return false
     }
 
+    var isWeChatCleanupView: Bool { selection == .weChatCleanup }
+
     /// 是否处于「安卓设备」视图
     var isAndroidDeviceView: Bool {
         if case .androidDevice = selection { return true }
@@ -163,7 +249,15 @@ final class BrowserModel: ObservableObject {
     /// `displayedItems` 对它们恒为空 —— 若不排除，空状态提示会叠在页面上。
     var showsFileList: Bool {
         !isHomeView && !isThisPCView && !isAppDataView
-            && !isAndroidDeviceView && !isApplicationsView
+            && !isAndroidDeviceView && !isApplicationsView && !isWeChatCleanupView
+    }
+
+    var supportsDirectorySearch: Bool {
+        showsFileList && currentDirectory != nil && !isCategoryView && !isAndroidPath
+    }
+
+    var supportsDirectoryCreation: Bool {
+        showsFileList && currentDirectory != nil && !isCategoryView
     }
 
     /// 当前是否为安卓路径（安卓目录浏览由 adb 提供，与本地文件区分处理）
@@ -196,7 +290,8 @@ final class BrowserModel: ObservableObject {
     }
 
     var selectedItems: [FileItem] {
-        displayedItems.filter { selectedIDs.contains($0.id) }
+        if isWeChatCleanupView { return weChatCleanup.selectedFiles.map { FileItem(weChatFile: $0) } }
+        return displayedItems.filter { selectedIDs.contains($0.id) }
     }
 
     /// 选中数量。
@@ -220,6 +315,8 @@ final class BrowserModel: ObservableObject {
             return L("view.applications", "应用程序")
         case .appData:
             return L("view.appData", "应用数据")
+        case .weChatCleanup:
+            return L("wechat.title", "微信文件清理")
         case .androidDevice(let serial):
             return AndroidDeviceRegistry.shared.device(serial: serial)?.displayName
                 ?? L("view.androidDevice", "安卓设备")
@@ -228,7 +325,7 @@ final class BrowserModel: ObservableObject {
         case .folder(let url):
             // 根目录的 lastPathComponent 为空，直接显示磁盘名
             return url.path == "/"
-                ? NSLocalizedString("place.macintoshHD", comment: "启动磁盘")
+                ? WLocalizedString("place.macintoshHD", comment: "启动磁盘")
                 : url.lastPathComponent
         case nil:
             return ""
@@ -237,12 +334,33 @@ final class BrowserModel: ObservableObject {
 
     // MARK: - 导航
 
+    private func beginPageLoad() {
+        navigationID = UUID()
+        listingTask?.cancel(); homeTask?.cancel()
+        isLoadingHome = false; isLoadingDrives = false; isLoadingAppData = false; isLoadingAndroid = false
+    }
+
     func navigate(to target: SidebarSelection, recordHistory: Bool = true) {
         if recordHistory, let current = selection, current != target {
             backStack.append(current)
             forwardStack.removeAll()
         }
         TabDiagnostics.shared.record("navigate", detail: "目标=\(describe(target)) 旧=\(describe(selection))")
+        navigationID = UUID()
+        listingTask?.cancel()
+        homeTask?.cancel()
+        isLoadingHome = false; isLoadingDrives = false; isLoadingAppData = false; isLoadingAndroid = false
+        isLoadingCategory = false
+        directoryWatcher = nil
+        watchedDirectory = nil
+        directoryRefreshTask?.cancel()
+        searchCancellation?.cancel()
+        searchTask?.cancel()
+        categoryCancellation?.cancel()
+        categoryTask?.cancel()
+        searchID = UUID()
+        categoryID = UUID()
+        scanReport = FileScanReport()
         selection = target
         switch target {
         case .home:
@@ -255,6 +373,8 @@ final class BrowserModel: ObservableObject {
             loadApplications()
         case .appData:
             loadAppData()
+        case .weChatCleanup:
+            loadWeChatCleanup()
         case .androidDevice(let serial):
             loadAndroidDevice(serial: serial)
         case .category(let category):
@@ -277,6 +397,7 @@ final class BrowserModel: ObservableObject {
         case .thisPC: return "此电脑"
         case .applications: return "应用程序"
         case .appData: return "应用数据"
+        case .weChatCleanup: return "微信文件清理"
         case .androidDevice(let serial): return "安卓设备:\(serial)"
         case .category(let c): return "分类:\(c.rawValue)"
         case .folder(let url): return "文件夹:\(url.lastPathComponent)"
@@ -306,6 +427,13 @@ final class BrowserModel: ObservableObject {
     // MARK: - 加载
 
     func reload() {
+        if isWeChatCleanupView { weChatCleanup.scan(); return }
+        if let category = categoryFilter { loadCategory(category, expanding: true); return }
+        if isSearching { search(searchQuery, expanding: true); return }
+        if isHomeView { loadHome(); return }
+        if isThisPCView { loadThisPC(); return }
+        if isAppDataView { loadAppData(); return }
+        if case .androidDevice(let serial) = selection { loadAndroidDevice(serial: serial); return }
         guard let dir = currentDirectory else {
             if case .applications = selection { loadApplications() }
             return
@@ -313,14 +441,52 @@ final class BrowserModel: ObservableObject {
         load(directory: dir, resetCategory: false)
     }
 
+    var canExpandScan: Bool { (isSearching || isCategoryView) && scanReport.isPartial && !isBusy }
+    func expandScan() {
+        scanEntryLimit = min(scanEntryLimit * 2, 2_000_000)
+        if let category = categoryFilter {
+            categoryLimit += 800
+            categoryDepth += 4
+            loadCategory(category, expanding: true)
+        } else if isSearching {
+            searchLimit += 800
+            search(searchQuery, expanding: true)
+        }
+    }
+    func cancelScan() {
+        if isSearching { clearSearch() }
+        else if isLoadingCategory {
+            categoryCancellation?.cancel()
+            categoryTask?.cancel()
+            categoryID = UUID()
+            isLoadingCategory = false
+            isBusy = false
+        }
+    }
+
+    var scanCompletenessMessage: String? {
+        guard isSearching || isCategoryView, scanReport.isPartial else { return nil }
+        var parts: [String] = []
+        if scanReport.limitReached { parts.append(L("scan.resultLimit", "已达到当前显示数量，可继续加载")) }
+        if scanReport.depthLimited { parts.append(L("scan.depthLimit", "还有更深层目录未扫描")) }
+        if scanReport.visitLimitReached { parts.append(L("scan.visitLimit", "已达到本次遍历上限")) }
+        if scanReport.inaccessibleCount > 0 { parts.append(L("scan.unreadable", "%d 个位置无法读取", scanReport.inaccessibleCount)) }
+        return parts.joined(separator: "；")
+    }
+
     private func load(directory: URL, resetCategory: Bool = true) {
+        beginPageLoad()
         // 安卓路径走 adb 列目录（本地 FileManager 无法访问设备文件）
         if AndroidURL.isAndroid(directory) {
             loadAndroidDirectory(directory)
             return
         }
+        homeTask?.cancel()
         listingTask?.cancel()
+        searchTask?.cancel()
+        searchCancellation?.cancel()
         categoryTask?.cancel()
+        categoryCancellation?.cancel()
         currentDirectory = directory
         isSearching = false
         searchResults = []
@@ -333,6 +499,7 @@ final class BrowserModel: ObservableObject {
         isLoadingDrives = false
         isBusy = true
         let showHidden = showHidden
+        let navigation = navigationID
         listingTask = Task { [weak self] in
             var loaded: [FileItem] = []
             var failure: String?
@@ -345,23 +512,56 @@ final class BrowserModel: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.items = loaded
-                self.selectedIDs = self.selectedIDs.filter { id in loaded.contains { $0.id == id } }
+                guard let self, self.navigationID == navigation else { return }
+                self.items = FileSystemService.sort(loaded, field: self.sortField, ascending: self.sortAscending)
+                if let pendingID = self.pendingSelectionID,
+                   loaded.contains(where: { $0.id == pendingID }) {
+                    self.selectedIDs = [pendingID]
+                } else {
+                    self.selectedIDs = self.selectedIDs.filter { id in loaded.contains { $0.id == id } }
+                    self.pendingSelectionID = nil
+                }
                 self.isBusy = false
                 if let failure {
                     self.errorMessage = failure
                     self.statusMessage = failure
                 } else {
                     self.updateStatus()
+                    self.installDirectoryWatcher()
                 }
             }
+        }
+    }
+
+    func beginWatchingDirectory() {
+        watchesChanges = true
+        installDirectoryWatcher()
+    }
+    private func installDirectoryWatcher() {
+        guard watchesChanges, let directory = currentDirectory, directory.isFileURL, !isCategoryView else { return }
+        guard watchedDirectory?.path != directory.path else { return }
+        watchedDirectory = directory
+        directoryWatcher = DirectoryWatcher(directory: directory) { [weak self] in
+            Task { @MainActor [weak self] in self?.scheduleDirectoryRefresh(directory) }
+        }
+    }
+    private func scheduleDirectoryRefresh(_ directory: URL) {
+        directoryRefreshTask?.cancel()
+        directoryRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled, let self, self.currentDirectory?.path == directory.path,
+                  !self.isBusy, self.archiveProgress == nil, self.fileTransferProgress == nil else { return }
+            var isDirectory: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
+                self.navigate(to: .home)
+            } else { self.reload() }
         }
     }
 
     // MARK: - 主页（Home）
 
     func loadHome() {
+        beginPageLoad()
         homeTask?.cancel()
         if case .home = selection {} else { selection = .home }
         categoryFilter = nil
@@ -376,13 +576,14 @@ final class BrowserModel: ObservableObject {
         statusMessage = L("status.loadingHome", "正在整理主页…")
         refreshFavorites()
         let roots = engine.browsableRoots
+        let navigation = navigationID
         homeTask = Task { [weak self] in
             let entries = await Task.detached(priority: .userInitiated) {
                 PlacesService.recentEntries(under: roots, limit: 40)
             }.value
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, self.navigationID == navigation else { return }
                 self.recentEntries = entries
                 self.isLoadingHome = false
                 self.isBusy = false
@@ -421,12 +622,30 @@ final class BrowserModel: ObservableObject {
 
     // MARK: - 此电脑（This PC）
 
+    private func loadWeChatCleanup() {
+        listingTask?.cancel()
+        searchTask?.cancel()
+        categoryTask?.cancel()
+        homeTask?.cancel()
+        categoryFilter = nil
+        categoryResults = []
+        isLoadingCategory = false
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        fileSelectedIDs = []
+        isBusy = false
+        statusMessage = ""
+    }
+
     /// 载入「应用数据」列表。
     ///
     /// 说明：读取其它应用的容器需要「完整磁盘访问权限」，
     /// 该权限只能由用户在系统设置中手动授予。未授权时相关目录不可读，
     /// 这里会置起 needsFullDiskAccess 以便界面给出明确指引。
     func loadAppData() {
+        beginPageLoad()
         homeTask?.cancel()
         if case .appData = selection {} else { selection = .appData }
         categoryFilter = nil
@@ -440,6 +659,7 @@ final class BrowserModel: ObservableObject {
         isBusy = true
         statusMessage = L("status.scanningAppData", "正在扫描应用数据目录…")
 
+        let navigation = navigationID
         homeTask = Task { [weak self] in
             let scanned = await Task.detached(priority: .userInitiated) {
                 AppDataService.scan()
@@ -447,7 +667,7 @@ final class BrowserModel: ObservableObject {
             let sufficient = await Task.detached(priority: .userInitiated) {
                 AppDataService.hasSufficientAccess(scanned)
             }.value
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, self.navigationID == navigation else { return }
             self.needsFullDiskAccess = !sufficient
             self.appDataItems = scanned
             self.isLoadingAppData = false
@@ -465,6 +685,7 @@ final class BrowserModel: ObservableObject {
 
     /// 载入安卓目录（经 adb 列目录）
     func loadAndroidDirectory(_ url: URL) {
+        beginPageLoad()
         guard let (serial, path) = AndroidURL.split(url) else {
             errorMessage = L("android.error.badURL", "无法解析设备路径：%@", url.absoluteString)
             return
@@ -481,6 +702,7 @@ final class BrowserModel: ObservableObject {
         statusMessage = L("status.androidLoading", "正在读取设备目录…")
         let showHidden = self.showHidden
 
+        let navigation = navigationID
         homeTask = Task { [weak self] in
             let result: Result<[AndroidEntry], Error> = await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -496,7 +718,7 @@ final class BrowserModel: ObservableObject {
                     }
                 }
             }
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, self.navigationID == navigation else { return }
             switch result {
             case .success(let entries):
                 self.androidEntries = entries
@@ -520,20 +742,35 @@ final class BrowserModel: ObservableObject {
 
     /// 当前视图是否为「跨目录聚合」：分类与搜索结果来自多个目录，
     /// 因此需要「打开所在文件夹」才能回到文件的真实位置。
-    var isAggregatedView: Bool { isCategoryView || isSearching }
+    var isAggregatedView: Bool { isCategoryView || isSearching || isWeChatCleanupView }
 
     /// 跳到指定文件所在的文件夹，并把它选中。
     ///
     /// 用途：分类视图与搜索结果里的文件不在当前目录下，
     /// 用户需要一键回到它的真实位置（Windows 的「打开文件位置」）。
     func openContainingFolder(of item: FileItem) {
-        if AndroidURL.isAndroid(item.url) {
+        openContainingFolder(of: item.url)
+    }
+
+    /// Opens a foreground tab while preserving this page's filters and selection.
+    /// Standalone models can also be used to perform the destination navigation.
+    func openContainingFolder(of url: URL, inNewTab: Bool = true) {
+        if AndroidURL.isAndroid(url) {
             errorMessage = L("android.hint.revealUnsupported",
                              "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。")
             return
         }
-        let directory = item.url.deletingLastPathComponent()
-        pendingSelectionID = item.id
+        guard url.isFileURL else {
+            errorMessage = L("error.notAccessible", "无法访问该位置")
+            return
+        }
+        if inNewTab, let tabManager {
+            let tab = tabManager.newTab(startDirectory: url.deletingLastPathComponent())
+            tab.model.pendingSelectionID = FileItem.canonicalID(for: url)
+            return
+        }
+        let directory = url.deletingLastPathComponent()
+        pendingSelectionID = FileItem.canonicalID(for: url)
         selectFolder(directory)
     }
 
@@ -552,6 +789,18 @@ final class BrowserModel: ObservableObject {
         let entries = selectedAndroidEntries
         guard !entries.isEmpty else { return }
         guard AndroidURL.split(currentDirectory ?? entries[0].url) != nil else { return }
+        let confirmed: Bool
+        if let confirmAndroidDeletion { confirmed = confirmAndroidDeletion(entries) }
+        else {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = L("android.deleteTitle", "永久删除设备上的 %d 项？", entries.count)
+            alert.informativeText = L("android.deleteMessage", "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 WinFile 撤销。")
+            alert.addButton(withTitle: L("android.deleteConfirm", "永久删除"))
+            alert.addButton(withTitle: L("button.cancel", "取消"))
+            confirmed = alert.runModal() == .alertFirstButtonReturn
+        }
+        guard confirmed else { return }
         runAndroidOperation(L("status.deleting", "正在删除…")) { service in
             for entry in entries { try service.remove(entry.path) }
         }
@@ -591,13 +840,27 @@ final class BrowserModel: ObservableObject {
         selectedItems.filter { !$0.isDirectory && ArchiveService.isArchive($0.url) }
     }
 
-    var canExtract: Bool { !selectedArchives.isEmpty && !isAndroidPath }
+    var canExtract: Bool { canMutateFiles && !selectedArchives.isEmpty && !isAndroidPath }
 
-    var canCompress: Bool { !selectedItems.isEmpty && !isAndroidPath }
+    var canCompress: Bool { canMutateFiles && !selectedItems.isEmpty && !isAndroidPath && (currentDirectory != nil || isWeChatCleanupView) }
+
+    /// Aggregated cleanup results can span folders; ask where to save a combined archive.
+    private func archiveDestination() -> URL? {
+        if let currentDirectory { return currentDirectory }
+        guard isWeChatCleanupView else { return nil }
+        let parents = Set(selectedItems.map { $0.url.deletingLastPathComponent() })
+        if parents.count == 1 { return parents.first }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = L("settings.choose", "选择…")
+        panel.message = L("wechat.archiveDestination", "选择压缩文件的保存位置")
+        return panel.runModal() == .OK ? panel.url : nil
+    }
 
     /// 压缩选中项到当前目录
     func compressSelection() {
-        guard canCompress, let directory = currentDirectory else { return }
+        guard canCompress, let directory = archiveDestination() else { return }
         let urls = selectedItems.map(\.url)
         let name = ArchiveService.defaultArchiveName(for: urls)
         archiveProgress = ArchiveProgress(name: name, isCompressing: true)
@@ -621,33 +884,90 @@ final class BrowserModel: ObservableObject {
         }
     }
 
-    /// 解压选中的压缩包到当前目录
-    func extractSelection() {
-        guard let archive = selectedArchives.first, let directory = currentDirectory else { return }
-        archiveProgress = ArchiveProgress(name: archive.name, isCompressing: false)
+    /// Process every selected archive; a volume set is extracted only once.
+    func extractSelection(to chosenDirectory: URL? = nil, createFolder: Bool = false) {
+        guard canExtract else { return }
+        let archives = selectedArchives.map(\.url)
+        let currentDestination = chosenDirectory ?? currentDirectory
+        let token = ScanCancellation()
+        archiveCancellation = token
+        archiveID = UUID()
+        let operationID = archiveID
+        lastTransferOutcome = nil
+        archiveProgress = ArchiveProgress(name: archives[0].lastPathComponent, isCompressing: false, total: archives.count)
         Task { [weak self] in
-            var failure: String?
-            var created: [URL] = []
-            do {
-                created = try await Task.detached(priority: .userInitiated) {
-                    try ArchiveService.extract(archive.url, to: directory)
-                }.value
-            } catch {
-                failure = error.localizedDescription
-            }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.archiveProgress = nil
-                if let failure {
-                    self.errorMessage = failure
-                } else {
-                    self.statusMessage = created.isEmpty
-                        ? L("status.extracted", "已解压")
-                        : L("status.extractedCount", "已解压 %d 项", created.count)
-                    self.reload()
+            var outcome = FileTransferOutcome()
+            var processed = Set<String>()
+            for (index, selected) in archives.enumerated() {
+                if token.isCancelled { break }
+                let archive: URL
+                do { archive = try ArchiveService.firstVolume(for: selected) }
+                catch { outcome.failures.append("\(selected.lastPathComponent): \(error.localizedDescription)"); continue }
+                guard processed.insert(FileItem.canonicalID(for: archive)).inserted else { continue }
+                let destination = currentDestination ?? archive.deletingLastPathComponent()
+                var password: String?
+                var retry = false
+                while !token.isCancelled {
+                    do {
+                        let attemptPassword = password
+                        let created = try await Task.detached(priority: .userInitiated) {
+                            try ArchiveService.extract(archive, to: destination, password: attemptPassword,
+                                createFolder: createFolder, cancellation: token) { fraction in
+                                Task { @MainActor [weak self] in
+                                    guard let self, self.archiveID == operationID, self.archiveProgress != nil, !token.isCancelled else { return }
+                                    self.archiveProgress = ArchiveProgress(name: archive.lastPathComponent, isCompressing: false,
+                                        fraction: fraction, index: index + 1, total: archives.count)
+                                }
+                            }
+                        }.value
+                        outcome.completed.append(contentsOf: created)
+                        break
+                    } catch ArchiveError.passwordRequired, ArchiveError.wrongPassword {
+                        guard !token.isCancelled,
+                              let entered = self?.askArchivePassword(for: archive, retry: retry) else { token.cancel(); break }
+                        password = entered
+                        retry = true
+                    } catch ArchiveError.cancelled {
+                        token.cancel(); break
+                    } catch {
+                        outcome.failures.append("\(archive.lastPathComponent): \(error.localizedDescription)")
+                        break
+                    }
                 }
+                password = nil
             }
+            outcome.cancelled = token.isCancelled
+            guard let self, self.archiveID == operationID else { return }
+            self.archiveProgress = nil
+            self.archiveCancellation = nil
+            self.lastTransferOutcome = outcome
+            self.reload()
         }
+    }
+
+    func chooseExtractionDestination() {
+        guard canExtract else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.prompt = L("action.extract", "解压")
+        panel.message = L("archive.chooseDestination", "选择解压文件的保存位置")
+        if panel.runModal() == .OK, let directory = panel.url { extractSelection(to: directory) }
+    }
+
+    func cancelArchiveExtraction() { archiveCancellation?.cancel() }
+
+    private func askArchivePassword(for archive: URL, retry: Bool) -> String? {
+        let alert = NSAlert()
+        alert.messageText = L("archive.password.title", "输入解压密码")
+        alert.informativeText = (retry ? L("archive.error.wrongPassword", "密码错误或加密数据损坏，请检查后重试。") + "\n" : "") + archive.lastPathComponent
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = L("archive.password.placeholder", "密码（仅用于本次解压）")
+        alert.accessoryView = field
+        alert.addButton(withTitle: L("action.extract", "解压"))
+        alert.addButton(withTitle: L("button.cancel", "取消"))
+        alert.window.initialFirstResponder = field
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
     }
 
     /// 把选中的安卓条目下载到本机（弹出目录选择）
@@ -684,6 +1004,11 @@ final class BrowserModel: ObservableObject {
 
         // 情况二：安卓文件 → 设备内复制/移动
         guard let payload = androidClipboard else { return }
+        guard payload.entry.serial == serial else {
+            errorMessage = L("android.crossDevicePaste", "跨设备粘贴请先下载到本机，再上传到目标设备。")
+            return
+        }
+        let clipboardGeneration = clipboardStore.changeCount
         let move = payload.isCut
         transferProgress = AndroidTransferProgress(name: payload.entry.name,
                                                    direction: .upload)
@@ -712,7 +1037,7 @@ final class BrowserModel: ObservableObject {
                 self.statusMessage = move
                     ? L("status.moved", "已移动")
                     : L("status.copied", "已复制")
-                if move { self.androidClipboard = nil }
+                if move { self.clipboardStore.clear(ifGeneration: clipboardGeneration) }
                 if let dir = self.currentDirectory { self.loadAndroidDirectory(dir) }
             }
         }
@@ -750,7 +1075,7 @@ final class BrowserModel: ObservableObject {
         let entry: AndroidEntry
         let isCut: Bool
     }
-    @Published var androidClipboard: AndroidClipboardPayload?
+    var androidClipboard: AndroidClipboardPayload? { clipboardStore.androidPayload }
 
     /// 当前选中的安卓条目
     var selectedAndroidEntries: [AndroidEntry] {
@@ -848,6 +1173,7 @@ final class BrowserModel: ObservableObject {
     }
 
     func loadThisPC() {
+        beginPageLoad()
         homeTask?.cancel()
         if case .thisPC = selection {} else { selection = .thisPC }
         categoryFilter = nil
@@ -860,13 +1186,14 @@ final class BrowserModel: ObservableObject {
         isLoadingDrives = true
         isBusy = true
         statusMessage = L("status.loadingDrives", "正在读取磁盘信息…")
+        let navigation = navigationID
         homeTask = Task { [weak self] in
             let found = await Task.detached(priority: .userInitiated) {
                 PlacesService.drives()
             }.value
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, self.navigationID == navigation else { return }
                 self.drives = found
                 self.isLoadingDrives = false
                 self.isBusy = false
@@ -893,8 +1220,21 @@ final class BrowserModel: ObservableObject {
     }
 
     /// 在整个可浏览范围内按类型收集文件（Windows 式「按类型分类」视图）
-    func loadCategory(_ category: FileCategory) {
+    func loadCategory(_ category: FileCategory, expanding: Bool = false) {
         categoryTask?.cancel()
+        categoryCancellation?.cancel()
+        listingTask?.cancel()
+        searchCancellation?.cancel()
+        searchTask?.cancel()
+        if !expanding { categoryLimit = 800; categoryDepth = 4; scanEntryLimit = 100_000 }
+        let token = ScanCancellation()
+        categoryCancellation = token
+        let id = UUID()
+        categoryID = id
+        let budget = categoryLimit
+        let depth = categoryDepth
+        let entryLimit = scanEntryLimit
+        let oldSelection = selectedIDs
         categoryFilter = category
         isSearching = false
         searchResults = []
@@ -904,20 +1244,23 @@ final class BrowserModel: ObservableObject {
         statusMessage = L("status.categoryLoading", "正在归类「%@」…", category.localizedName)
         let roots = engine.browsableRoots
         categoryTask = Task { [weak self] in
-            let found = await Task.detached(priority: .userInitiated) {
-                FileSystemService.categoryFiles(category, under: roots)
+            let report = await Task.detached(priority: .userInitiated) {
+                FileSystemService.categoryReport(category, under: roots, depth: depth, budget: budget,
+                    entryLimit: entryLimit, cancelled: { token.isCancelled })
             }.value
+            let found = report.items
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
-                guard let self, self.categoryFilter == category else { return }
-                self.categoryResults = found
+                guard let self, self.categoryID == id, self.categoryFilter == category else { return }
+                self.scanReport = report
+                self.categoryResults = FileSystemService.sort(found, field: self.sortField, ascending: self.sortAscending)
                 self.isLoadingCategory = false
                 self.isBusy = false
-                self.selectedIDs = []
+                self.selectedIDs = oldSelection.intersection(Set(found.map(\.id)))
                 if found.isEmpty {
                     self.statusMessage = L("status.categoryEmpty", "%@：没有找到文件", category.localizedName)
                 } else {
-                    let truncated = found.count >= FileSystemService.categoryBudget
+                    let truncated = report.limitReached
                     let key = truncated ? "status.categoryCount.truncated" : "status.categoryCount"
                     let fallback = truncated
                         ? "%@：显示前 %d 个（已达上限，可在文件夹中查看更精确的结果）"
@@ -929,6 +1272,7 @@ final class BrowserModel: ObservableObject {
     }
 
     func loadApplications() {
+        beginPageLoad()
         listingTask?.cancel()
         categoryTask?.cancel()
         currentDirectory = nil
@@ -937,16 +1281,17 @@ final class BrowserModel: ObservableObject {
         categoryResults = []
         isLoadingCategory = false
         isBusy = true
+        let navigation = navigationID
         listingTask = Task { [weak self] in
             let apps = await Task.detached(priority: .userInitiated) {
                 FileSystemService.listApplications()
             }.value
             await MainActor.run { [weak self] in
-                guard let self, !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled, self.navigationID == navigation else { return }
                 self.items = apps
                 self.selectedIDs = []
                 self.isBusy = false
-                self.statusMessage = String(format: NSLocalizedString("status.appCount", comment: "应用数量"), apps.count)
+                self.statusMessage = String(format: WLocalizedString("status.appCount", comment: "应用数量"), apps.count)
             }
         }
     }
@@ -979,6 +1324,8 @@ final class BrowserModel: ObservableObject {
 
     private func applySort() {
         items = FileSystemService.sort(items, field: sortField, ascending: sortAscending)
+        searchResults = FileSystemService.sort(searchResults, field: sortField, ascending: sortAscending)
+        categoryResults = FileSystemService.sort(categoryResults, field: sortField, ascending: sortAscending)
     }
 
     // MARK: - 选择
@@ -994,7 +1341,7 @@ final class BrowserModel: ObservableObject {
     }
 
     func selectAll() {
-        selectedIDs = Set(displayedItems.map(\.id))
+        selectedIDs = isWeChatCleanupView ? Set(weChatCleanup.visibleFiles.map(\.id)) : Set(displayedItems.map(\.id))
     }
 
     func clearSelection() {
@@ -1062,6 +1409,14 @@ final class BrowserModel: ObservableObject {
         statusMessage = L("assoc.cleared", "已恢复跟随系统打开 .%@", ext)
     }
 
+    func previewSelection() {
+        guard !isAndroidPath else {
+            errorMessage = L("android.hint.downloadFirst", "请先下载到本机后预览。")
+            return
+        }
+        QuickLookService.shared.show(selectedItems.map(\.url))
+    }
+
     func openSelection() {
         for item in selectedItems { activate(item) }
     }
@@ -1091,18 +1446,13 @@ final class BrowserModel: ObservableObject {
         // 安卓条目无法写入系统剪贴板（不是本地文件），单独记录
         if isAndroidPath {
             if let entry = selectedAndroidEntries.first {
-                androidClipboard = AndroidClipboardPayload(entry: entry, isCut: false)
-                clipboard = nil
+                clipboardStore.writeAndroid(AndroidClipboardPayload(entry: entry, isCut: false))
                 statusMessage = L("clipboard.copied", "已复制")
             }
             return
         }
-        clipboard = ClipboardPayload(mode: .copy, urls: urls)
-        // 同时写入系统剪贴板，可直接粘到其它应用
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects(urls as [NSURL])
-        statusMessage = String(format: NSLocalizedString("status.copied", comment: "已复制到剪贴板"), urls.count)
+        clipboardStore.write(ClipboardPayload(mode: .copy, urls: urls))
+        statusMessage = String(format: WLocalizedString("status.copied", comment: "已复制到剪贴板"), urls.count)
     }
 
     func cutSelectionToClipboard() {
@@ -1110,17 +1460,13 @@ final class BrowserModel: ObservableObject {
         guard !urls.isEmpty else { return }
         if isAndroidPath {
             if let entry = selectedAndroidEntries.first {
-                androidClipboard = AndroidClipboardPayload(entry: entry, isCut: true)
-                clipboard = nil
+                clipboardStore.writeAndroid(AndroidClipboardPayload(entry: entry, isCut: true))
                 statusMessage = L("clipboard.cut", "已剪切")
             }
             return
         }
-        clipboard = ClipboardPayload(mode: .cut, urls: urls)
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.writeObjects(urls as [NSURL])
-        statusMessage = String(format: NSLocalizedString("status.cut", comment: "已剪切到剪贴板"), urls.count)
+        clipboardStore.write(ClipboardPayload(mode: .cut, urls: urls))
+        statusMessage = String(format: WLocalizedString("status.cut", comment: "已剪切到剪贴板"), urls.count)
     }
 
     /// 复制选中的文件路径文本到剪贴板
@@ -1130,7 +1476,7 @@ final class BrowserModel: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
-        statusMessage = NSLocalizedString("status.pathCopied", comment: "路径已复制")
+        statusMessage = WLocalizedString("status.pathCopied", comment: "路径已复制")
     }
 
     func copyNameToClipboard() {
@@ -1139,47 +1485,92 @@ final class BrowserModel: ObservableObject {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(names.joined(separator: "\n"), forType: .string)
-        statusMessage = NSLocalizedString("status.nameCopied", comment: "名称已复制")
+        statusMessage = WLocalizedString("status.nameCopied", comment: "名称已复制")
     }
 
     func paste() {
+        guard canMutateFiles else { return }
         // 目标是安卓目录时走 adb（上传或设备内复制/移动）
         if isAndroidPath {
             pasteIntoAndroid()
             return
         }
         guard let clipboard, let directory = currentDirectory else { return }
-        let urls = clipboard.urls
-        let mode: FSEngine.TransferMode = clipboard.mode == .copy ? .copy : .move
+        startFileTransfer(clipboard.urls, to: directory, mode: clipboard.mode == .copy ? .copy : .move,
+                          clipboardGeneration: clipboardStore.changeCount)
+    }
+
+    func retryFileTransfer() {
+        guard let result = lastTransferOutcome, let directory = result.destination, !result.retryURLs.isEmpty else { return }
+        startFileTransfer(result.retryURLs, to: directory, mode: result.isMoving ? .move : .copy, clipboardGeneration: result.clipboardGeneration)
+    }
+
+    func copyFiles(_ urls: [URL], to directory: URL) {
+        guard directory.isFileURL else { return }
+        startFileTransfer(urls.filter(\.isFileURL), to: directory, mode: .copy)
+    }
+
+    func openTransferResult() {
+        guard let directory = lastTransferOutcome?.destination else { return }
+        if let manager = tabManager { manager.newTab(startDirectory: directory) }
+        else { selectFolder(directory) }
+    }
+
+    private func startFileTransfer(_ urls: [URL], to directory: URL, mode: FSEngine.TransferMode, clipboardGeneration: Int? = nil) {
+        guard canMutateFiles, !urls.isEmpty else { return }
+        let navigation = navigationID
+        let token = ScanCancellation()
+        fileTransferCancellation = token
+        let id = UUID()
+        fileTransferID = id
         isBusy = true
+        lastTransferOutcome = nil
+        fileTransferProgress = FileTransferProgress(total: urls.count, isMoving: mode == .move)
         Task { [weak self] in
-            var failure: String?
-            do {
-                let items = await Self.fileItems(for: urls)
-                _ = try await Task.detached(priority: .userInitiated) {
-                    try FSEngine.transfer(items, to: directory, mode: mode)
-                }.value
-            } catch {
-                failure = error.localizedDescription
-            }
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.isBusy = false
-                if let failure {
-                    self.errorMessage = failure
-                } else {
-                    let verb = mode == .copy
-                        ? NSLocalizedString("action.pasted", comment: "已粘贴")
-                        : NSLocalizedString("action.moved", comment: "已移动")
-                    self.statusMessage = "\(verb) \(urls.count) \(NSLocalizedString("unit.items", comment: "项"))"
-                    if mode == .move { self.clipboard = nil }
+            let items = await Self.fileItems(for: urls, cancelled: { token.isCancelled })
+            var outcome = await Task.detached(priority: .userInitiated) { [weak self] in
+                FileTransferService.transfer(items, to: directory, mode: mode, token: token) { progress in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.fileTransferID == id else { return }
+                        self.fileTransferProgress = progress
+                    }
                 }
+            }.value
+            if !token.isCancelled {
+                let existing = Set(items.map { FileItem.canonicalID(for: $0.url) })
+                outcome.failures += urls.filter { !existing.contains(FileItem.canonicalID(for: $0)) }
+                    .map { L("operation.sourceMissing", "源文件不存在或不可读取：%@", $0.path) }
+            }
+            guard let self, self.fileTransferID == id else { return }
+            outcome.retryURLs += urls.filter { url in !items.contains { $0.id == FileItem.canonicalID(for: url) } }
+            outcome.clipboardGeneration = clipboardGeneration
+            self.lastTransferOutcome = outcome
+            self.fileTransferID = UUID()
+            self.fileTransferProgress = nil
+            self.fileTransferCancellation = nil
+            if self.navigationID == navigation { self.isBusy = false }
+            FileOperationHistory.shared.record(title: L("action.moved", "移动"), moves: outcome.moves)
+            if mode == .move, !outcome.cancelled, outcome.failures.isEmpty, let clipboardGeneration {
+                self.clipboardStore.clear(ifGeneration: clipboardGeneration)
+            }
+            if self.navigationID == navigation {
+                self.statusMessage = L("operation.finished", "已完成 %d 项，失败 %d 项%@", outcome.completed.count,
+                    outcome.failures.count, outcome.cancelled ? L("operation.cancelledSuffix", "（已取消）") : "")
                 self.reload()
             }
+            NotificationCenter.default.post(name: .winFileFilesChanged, object: nil)
         }
     }
 
+    func cancelFileTransfer() { fileTransferCancellation?.cancel() }
+
     func deleteSelection(permanently: Bool = false) {
+        guard canMutateFiles else { return }
+        if isWeChatCleanupView {
+            guard !isBusy, archiveProgress == nil else { return }
+            weChatCleanup.requestTrash()
+            return
+        }
         let items = selectedItems
         guard !items.isEmpty else { return }
         // 安卓条目走 adb 删除（本地 FileManager 不适用）
@@ -1207,7 +1598,7 @@ final class BrowserModel: ObservableObject {
                 if let failure {
                     self.errorMessage = failure
                 } else {
-                    self.statusMessage = String(format: NSLocalizedString("status.deleted", comment: "已删除"), items.count)
+                    self.statusMessage = String(format: WLocalizedString("status.deleted", comment: "已删除"), items.count)
                     self.selectedIDs.removeAll()
                 }
                 self.reload()
@@ -1216,8 +1607,14 @@ final class BrowserModel: ObservableObject {
     }
 
     func duplicateSelection() {
+        guard canMutateFiles else { return }
         let items = selectedItems
         guard !items.isEmpty else { return }
+        if !isAndroidPath, Set(items.map { $0.url.deletingLastPathComponent() }).count == 1,
+           let directory = items.first?.url.deletingLastPathComponent() {
+            copyFiles(items.map(\.url), to: directory)
+            return
+        }
         isBusy = true
         Task { [weak self] in
             var failure: String?
@@ -1232,7 +1629,7 @@ final class BrowserModel: ObservableObject {
                 guard let self else { return }
                 self.isBusy = false
                 if let failure { self.errorMessage = failure } else {
-                    self.statusMessage = String(format: NSLocalizedString("status.duplicated", comment: "已生成副本"), items.count)
+                    self.statusMessage = String(format: WLocalizedString("status.duplicated", comment: "已生成副本"), items.count)
                 }
                 self.reload()
             }
@@ -1240,13 +1637,19 @@ final class BrowserModel: ObservableObject {
     }
 
     /// 在后台把 URL 列表解析成 FileItem（逐次 stat，量大时不占主线程）
-    private static func fileItems(for urls: [URL]) async -> [FileItem] {
+    private static func fileItems(for urls: [URL], cancelled: @escaping @Sendable () -> Bool = { false }) async -> [FileItem] {
         await Task.detached(priority: .userInitiated) {
-            urls.compactMap { FileItem(url: $0, resourceKeys: FileSystemService.resourceKeys, showHidden: true) }
+            var items: [FileItem] = []
+            for url in urls {
+                if cancelled() { break }
+                if let item = FileItem(url: url, resourceKeys: FileSystemService.resourceKeys, showHidden: true) { items.append(item) }
+            }
+            return items
         }.value
     }
 
     func rename(_ item: FileItem, to newName: String) {
+        guard canMutateFiles else { return }
         // 安卓条目走 adb 重命名
         if AndroidURL.isAndroid(item.url),
            let entry = androidEntries.first(where: { $0.path == item.url.path }) {
@@ -1254,8 +1657,11 @@ final class BrowserModel: ObservableObject {
             return
         }
         do {
-            _ = try FSEngine.rename(item, to: newName)
-            statusMessage = NSLocalizedString("status.renamed", comment: "已重命名")
+            let target = try FSEngine.rename(item, to: newName)
+            if target.path != item.url.path, let move = FileMoveRecord(original: item.url, current: target) {
+                FileOperationHistory.shared.record(title: L("action.rename", "重命名"), moves: [move])
+            }
+            statusMessage = WLocalizedString("status.renamed", comment: "已重命名")
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -1270,7 +1676,7 @@ final class BrowserModel: ObservableObject {
         guard let directory = currentDirectory else { return }
         do {
             let url = try FSEngine.createFolder(in: directory, named: name)
-            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            statusMessage = String(format: WLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -1281,7 +1687,7 @@ final class BrowserModel: ObservableObject {
         guard let directory = currentDirectory else { return }
         do {
             let url = try FSEngine.createTextFile(in: directory, named: name, contents: contents)
-            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            statusMessage = String(format: WLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
         } catch {
             errorMessage = error.localizedDescription
@@ -1297,7 +1703,7 @@ final class BrowserModel: ObservableObject {
         let safe = firstLine.replacingOccurrences(of: "/", with: "_").prefix(40)
         do {
             let url = try FSEngine.createTextFile(in: directory, named: "\(safe).txt", contents: text)
-            statusMessage = String(format: NSLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
+            statusMessage = String(format: WLocalizedString("status.created", comment: "已创建"), url.lastPathComponent)
             reload()
             return url.lastPathComponent
         } catch {
@@ -1312,39 +1718,60 @@ final class BrowserModel: ObservableObject {
 
     // MARK: - 搜索
 
-    func search(_ text: String) {
+    func search(_ text: String, expanding: Bool = false) {
+        if isWeChatCleanupView { weChatCleanup.search = text; return }
+        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty || searchCriteria.isActive else { clearSearch(); return }
+        guard searchCriteria.isValid else { return }
+        guard let root = currentDirectory, !isAndroidPath else { return }
         searchTask?.cancel()
+        searchCancellation?.cancel()
+        categoryTask?.cancel()
+        categoryCancellation?.cancel()
+        listingTask?.cancel()
+        let oldSelection = selectedIDs
         categoryFilter = nil
         categoryResults = []
         isLoadingCategory = false
-        let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !needle.isEmpty, let root = currentDirectory else {
-            isSearching = false
-            searchResults = []
-            updateStatus()
-            return
-        }
+        if !expanding { searchLimit = 400; scanEntryLimit = 100_000 }
+        let limit = searchLimit
+        let entryLimit = scanEntryLimit
+        let hidden = showHidden
+        let criteria = searchCriteria
+        let token = ScanCancellation()
+        searchCancellation = token
+        let id = UUID()
+        searchID = id
+        searchQuery = needle
         isSearching = true
         isBusy = true
         searchTask = Task { [weak self] in
-            let found = await Task.detached(priority: .userInitiated) {
-                FileSystemService.search(under: root, matching: needle)
+            let report = await Task.detached(priority: .userInitiated) {
+                FileSystemService.searchReport(under: root, matching: needle, limit: limit,
+                    entryLimit: entryLimit, showHidden: hidden, criteria: criteria, cancelled: { token.isCancelled })
             }.value
-            await MainActor.run { [weak self] in
-                // 双守卫：任务被取消、或搜索已被清空/切走时，过期结果不得回写
-                guard let self, !Task.isCancelled, self.isSearching else { return }
-                self.searchResults = found
-                self.isBusy = false
-                self.statusMessage = String(format: NSLocalizedString("status.searchResult", comment: "搜索结果"), found.count, needle)
-            }
+            guard let self, !Task.isCancelled, self.searchID == id, self.isSearching else { return }
+            self.scanReport = report
+            self.searchResults = FileSystemService.sort(report.items, field: self.sortField, ascending: self.sortAscending)
+            self.selectedIDs = oldSelection.intersection(Set(report.items.map(\.id)))
+            self.isBusy = false
+            self.statusMessage = needle.isEmpty
+                ? L("status.filteredSearch", "找到 %d 项符合条件的结果", report.items.count)
+                : L("status.searchResult", "找到 %d 项匹配「%@」的结果", report.items.count, needle)
         }
     }
 
     func clearSearch() {
+        let wasSearching = isSearching
         searchTask?.cancel()
+        searchCancellation?.cancel()
+        searchID = UUID()
         isSearching = false
+        searchQuery = ""
+        searchCriteria = FileSearchCriteria()
         searchResults = []
-        updateStatus()
+        if wasSearching { isBusy = false; scanReport = FileScanReport(); updateStatus() }
+        if wasSearching, items.isEmpty, let directory = currentDirectory { load(directory: directory, resetCategory: false) }
     }
 
     // MARK: - 状态
@@ -1352,7 +1779,7 @@ final class BrowserModel: ObservableObject {
     private func updateStatus() {
         let folders = items.filter(\.isContainer).count
         let files = items.count - folders
-        statusMessage = String(format: NSLocalizedString("status.itemCount", comment: "项目统计"), items.count, folders, files)
+        statusMessage = String(format: WLocalizedString("status.itemCount", comment: "项目统计"), items.count, folders, files)
     }
 
     var selectionSummary: String {

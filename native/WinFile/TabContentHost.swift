@@ -8,6 +8,7 @@ import AppKit
 import SwiftUI
 
 struct TabContentHost: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 直接观察 TabManager：切换页签与页签内导航都会触发本视图重新求值。
     /// （此前经由 reader 间接取模型，切页签时 reader 未重新绑定，
@@ -21,6 +22,7 @@ struct TabContentHost: View {
 
     /// 当前渲染的视图类型（供自动化验证内容区是否真的切换）
     private var renderedKind: String {
+        if model.isWeChatCleanupView { return "wechatCleanup" }
         if model.isHomeView { return "home" }
         if model.isThisPCView { return "thisPC" }
         if model.isCategoryView { return "category:\(model.categoryFilter?.rawValue ?? "")" }
@@ -44,6 +46,8 @@ struct TabContentHost: View {
                 HomeView(engine: engine, manager: reader.manager)
             } else if model.isThisPCView {
                 ThisPCView(engine: engine, manager: reader.manager)
+            } else if model.isWeChatCleanupView {
+                WeChatCleanupView(model: model, dialog: $dialog)
             } else if model.isAppDataView {
                 AppDataView(engine: engine, model: model)
             } else if case .androidDevice(let serial) = model.selection {
@@ -59,26 +63,49 @@ struct TabContentHost: View {
                 EmptyStateView(engine: engine, model: model, openPanel: openFolderPanel)
             }
             if model.isBusy {
-                ProgressView()
-                    .controlSize(.small)
+                HStack {
+                    ProgressView().controlSize(.small)
+                    if model.isSearching || model.isLoadingCategory {
+                        Button(L("button.cancel", "取消")) { model.cancelScan() }
+                    }
+                }
                     .padding(8)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
+        .background(FileKeyboardShortcuts(model: model).frame(width: 0, height: 0))
+        .onAppear { model.beginWatchingDirectory() }
+        .onChange(of: reader.manager.activeID) { _ in model.beginWatchingDirectory() }
+        .onChange(of: model.currentDirectory) { _ in model.beginWatchingDirectory() }
         .overlay(alignment: .top) {
             VStack(spacing: 0) {
+                if let message = model.scanCompletenessMessage {
+                    HStack {
+                        Text(message).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(L("scan.continue", "继续加载 / 深入扫描")) { model.expandScan() }
+                            .disabled(!model.canExpandScan)
+                    }.padding(8).background(.regularMaterial)
+                }
+                if let outcome = model.lastTransferOutcome {
+                    FileTransferSummary(outcome: outcome, dismiss: { model.lastTransferOutcome = nil },
+                                        openResult: model.openTransferResult, retry: model.retryFileTransfer)
+                }
+                if let progress = model.fileTransferProgress {
+                    FileTransferBanner(progress: progress, cancel: { model.cancelFileTransfer() })
+                }
                 if let progress = model.transferProgress {
                     AndroidTransferBanner(progress: progress)
                 }
                 if let progress = model.archiveProgress {
-                    ArchiveProgressBanner(progress: progress)
+                    ArchiveProgressBanner(progress: progress, cancel: model.cancelArchiveExtraction)
                 }
             }
         }
         .overlay(alignment: .bottom) {
-            StatusBarView(engine: engine, model: model)
+            if !model.isWeChatCleanupView { StatusBarView(engine: engine, model: model) }
         }
     }
 }

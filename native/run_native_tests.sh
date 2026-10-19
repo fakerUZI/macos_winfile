@@ -7,6 +7,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/native/WinFile"
 BUILD="$ROOT/native/native-build"
 mkdir -p "$BUILD"
+OPT=-O
+if [[ " ${*:-} " == *" --quick "* ]]; then OPT=-Onone; fi
+TEST_ARGS=(--run-tests)
+if [[ " ${*:-} " == *" --skip-device-tests "* ]]; then TEST_ARGS+=(--skip-device-tests); fi
 
 CORE=(
   "$SRC/Localization.swift"
@@ -16,38 +20,57 @@ CORE=(
   "$SRC/ClosureMenuItem.swift"
   "$SRC/ContextMenuCatcher.swift"
   "$SRC/FSEngine.swift"
+  "$SRC/FileClipboard.swift"
+  "$SRC/QuickLookService.swift"
+  "$SRC/DirectoryWatcher.swift"
+  "$SRC/BrowserSession.swift"
+  "$SRC/FileSearchCriteria.swift"
+  "$SRC/BatchRenameService.swift"
+  "$SRC/DuplicateFileService.swift"
+  "$SRC/FileOperationHistory.swift"
+  "$SRC/FileTransferService.swift"
   "$SRC/BrowserModel.swift"
   "$SRC/TabManager.swift"
   "$SRC/TabDiagnostics.swift"
   "$SRC/AppDataService.swift"
+  "$SRC/WeChatCleanupService.swift"
+  "$SRC/WeChatCleanupModel.swift"
   "$SRC/ArchiveService.swift"
+  "$SRC/ArchiveExtraction.swift"
   "$SRC/ThumbnailService.swift"
   "$SRC/FileAssociations.swift"
   "$SRC/DefaultAppService.swift"
   "$SRC/SidebarPreferences.swift"
+  "$SRC/SortOrderBridge.swift"
+  "$SRC/LayoutPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"
   $(find "$SRC/Android" -name "*.swift" | sort)
 )
 
 echo "== 1) 命令行测试 =="
-/usr/bin/swiftc -swift-version 5 -O \
+/usr/bin/swiftc -swift-version 5 "$OPT" \
   -target arm64-apple-macos13.0 \
   -framework AppKit -framework SwiftUI \
   -o "$BUILD/WinFileTests" \
   "${CORE[@]}" \
   "$ROOT/native/WinFileTests/NativeTestSuite.swift" \
   "$ROOT/native/WinFileTests/cli-main.swift"
-"$BUILD/WinFileTests"
+"$BUILD/WinFileTests" "${TEST_ARGS[@]}"
+if [[ " ${*:-} " == *" --cli-only "* ]]; then exit 0; fi
 
 echo
 echo "== 2) 构建应用并在真实 bundle 中测试 =="
 "$ROOT/native/build_native.sh" --in-place >/dev/null
-"$ROOT/WinFile.app/Contents/MacOS/WinFile" --run-tests
+"$ROOT/WinFile.app/Contents/MacOS/WinFile" "${TEST_ARGS[@]}"
 
 echo
 echo "== 3) 页签切换冒烟测试（真实界面像素比对）=="
 SMOKE_LOG="$(mktemp -t winfile-tabtest)"
-"$ROOT/WinFile.app/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG"
+if [[ " ${*:-} " == *" --skip-device-tests "* ]]; then
+  "$ROOT/WinFile.app/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG" --skip-device-tests
+else
+  "$ROOT/WinFile.app/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG"
+fi
 cat "$SMOKE_LOG"
 rm -f "$SMOKE_LOG"

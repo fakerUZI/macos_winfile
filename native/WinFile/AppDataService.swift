@@ -35,23 +35,25 @@ struct AppDataItem: Identifiable, Hashable {
 enum AppDataService {
 
     /// 常见应用的中文名（系统接口取不到时兜底）
-    private static let knownNames: [String: String] = [
-        "com.tencent.xinWeChat": "微信",
+    private static var knownNames: [String: String] { [
+        "com.tencent.xinWeChat": L("appData.name.com.tencent.xinWeChat", "微信"),
         "com.tencent.qq": "QQ",
-        "com.tencent.WeWorkMac": "企业微信",
-        "com.apple.Safari": "Safari 浏览器",
-        "com.apple.mail": "邮件",
-        "com.apple.iChat": "信息",
+        "com.tencent.WeWorkMac": L("appData.name.com.tencent.WeWorkMac", "企业微信"),
+        "com.apple.Safari": L("appData.name.com.apple.Safari", "Safari 浏览器"),
+        "com.apple.mail": L("appData.name.com.apple.mail", "邮件"),
+        "com.apple.iChat": L("appData.name.com.apple.iChat", "信息"),
         "com.apple.dt.Xcode": "Xcode",
         "com.microsoft.VSCode": "Visual Studio Code",
         "com.google.Chrome": "Google Chrome",
         "com.spotify.client": "Spotify",
-        "com.apple.Photos": "照片",
-        "com.apple.Music": "音乐",
-        "com.apple.iCal": "日历",
-        "com.apple.Notes": "备忘录",
-        "com.apple.reminders": "提醒事项",
-    ]
+        "com.apple.Photos": L("appData.name.com.apple.Photos", "照片"),
+        "com.apple.Music": L("appData.name.com.apple.Music", "音乐"),
+        "com.apple.iCal": L("appData.name.com.apple.iCal", "日历"),
+        "com.apple.Notes": L("appData.name.com.apple.Notes", "备忘录"),
+        "com.apple.reminders": L("appData.name.com.apple.reminders", "提醒事项"),
+    ] }
+
+    static func localizedName(for item: AppDataItem) -> String { knownNames[item.bundleID] ?? item.name }
 
     /// 扫描应用数据目录。
     /// - Parameters:

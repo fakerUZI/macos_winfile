@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - 重命名
 
 struct RenameSheet: View {
+    @ObservedObject private var localization = Localization.shared
     let item: FileItem
     let onCommit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -19,20 +20,20 @@ struct RenameSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(NSLocalizedString("dialog.rename.title", comment: "重命名")).font(.headline)
-            TextField(NSLocalizedString("dialog.name", comment: "名称"), text: $name)
+            Text(WLocalizedString("dialog.rename.title", comment: "重命名")).font(.headline)
+            TextField(WLocalizedString("dialog.name", comment: "名称"), text: $name)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit(commit)
                 .frame(width: 360)
-            Text(NSLocalizedString("dialog.rename.hint", comment: "扩展名不会被自动修改"))
+            Text(WLocalizedString("dialog.rename.hint", comment: "扩展名不会被自动修改"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                Button(NSLocalizedString("button.cancel", comment: "取消")) { dismiss() }
+                Button(WLocalizedString("button.cancel", comment: "取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(NSLocalizedString("button.ok", comment: "好"), action: commit)
+                Button(WLocalizedString("button.ok", comment: "好"), action: commit)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -53,6 +54,7 @@ struct RenameSheet: View {
 // MARK: - 通用文本输入
 
 struct TextInputSheet: View {
+    @ObservedObject private var localization = Localization.shared
     let titleKey: String
     let defaultText: String
     let onCommit: (String) -> Void
@@ -69,17 +71,17 @@ struct TextInputSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(NSLocalizedString(titleKey, comment: "对话框标题")).font(.headline)
-            TextField(NSLocalizedString("dialog.name", comment: "名称"), text: $text)
+            Text(WLocalizedString(titleKey, comment: "对话框标题")).font(.headline)
+            TextField(WLocalizedString("dialog.name", comment: "名称"), text: $text)
                 .textFieldStyle(.roundedBorder)
                 .focused($focused)
                 .onSubmit(commit)
                 .frame(width: 340)
             HStack {
                 Spacer()
-                Button(NSLocalizedString("button.cancel", comment: "取消")) { dismiss() }
+                Button(WLocalizedString("button.cancel", comment: "取消")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(NSLocalizedString("button.create", comment: "创建"), action: commit)
+                Button(WLocalizedString("button.create", comment: "创建"), action: commit)
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }
@@ -99,6 +101,7 @@ struct TextInputSheet: View {
 // MARK: - 打开方式（原生应用选择列表，取代手填输入）
 
 struct OpenWithSheet: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let item: FileItem
     let onPick: (URL) -> Void
@@ -125,10 +128,10 @@ struct OpenWithSheet: View {
             HStack(spacing: 8) {
                 FileIconView(engine: engine, item: item, size: 22)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(String(format: NSLocalizedString("dialog.openWith.title", comment: "打开方式"), item.name))
+                    Text(String(format: WLocalizedString("dialog.openWith.title", comment: "打开方式"), item.name))
                         .font(.headline)
                     if let defaultApp {
-                        Text(String(format: NSLocalizedString("dialog.openWith.default", comment: "系统默认"), displayName(for: defaultApp)))
+                        Text(String(format: WLocalizedString("dialog.openWith.default", comment: "系统默认"), displayName(for: defaultApp)))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -137,7 +140,7 @@ struct OpenWithSheet: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField(NSLocalizedString("dialog.openWith.search", comment: "搜索应用"), text: $query)
+                TextField(WLocalizedString("dialog.openWith.search", comment: "搜索应用"), text: $query)
                     .textFieldStyle(.plain)
             }
             .padding(6)
@@ -150,7 +153,7 @@ struct OpenWithSheet: View {
                         appRow(app)
                     }
                     if filtered.isEmpty {
-                        Text(NSLocalizedString("dialog.openWith.empty", comment: "没有匹配的应用"))
+                        Text(WLocalizedString("dialog.openWith.empty", comment: "没有匹配的应用"))
                             .foregroundStyle(.secondary)
                             .padding(20)
                     }
@@ -162,7 +165,7 @@ struct OpenWithSheet: View {
 
             HStack {
                 Spacer()
-                Button(NSLocalizedString("button.cancel", comment: "取消")) { dismiss() }
+                Button(WLocalizedString("button.cancel", comment: "取消")) { dismiss() }
                 Button(L("assoc.setDefault", "设为默认（仅本应用）")) {
                     if let selected {
                         onSetDefault?(selected)
@@ -171,7 +174,7 @@ struct OpenWithSheet: View {
                 }
                 .disabled(selected == nil)
                     .keyboardShortcut(.cancelAction)
-                Button(NSLocalizedString("dialog.openWith.confirm", comment: "用选中的应用打开")) {
+                Button(WLocalizedString("dialog.openWith.confirm", comment: "用选中的应用打开")) {
                     if let selected { onPick(selected) }
                     dismiss()
                 }
@@ -203,7 +206,7 @@ struct OpenWithSheet: View {
                 }
                 Spacer(minLength: 0)
                 if isDefault {
-                    Text(NSLocalizedString("dialog.openWith.badge", comment: "默认"))
+                    Text(WLocalizedString("dialog.openWith.badge", comment: "默认"))
                         .font(.caption2)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -228,6 +231,7 @@ struct OpenWithSheet: View {
 // MARK: - 应用图标
 
 struct AppIconView: View {
+    @ObservedObject private var localization = Localization.shared
     let url: URL
     var size: CGFloat = 20
     @State private var image: NSImage?
@@ -259,25 +263,26 @@ struct AppIconView: View {
 // MARK: - 帮助
 
 struct HelpSheet: View {
+    @ObservedObject private var localization = Localization.shared
     @Environment(\.dismiss) private var dismiss
 
     private var rows: [(String, String)] {
         [
-            ("⌘C / ⌘V", NSLocalizedString("help.copyPaste", comment: "复制、粘贴文件；复制时会同时写入系统剪贴板")),
-            ("⌘⌥C", NSLocalizedString("help.copyPath", comment: "复制所选文件的完整路径")),
-            ("Return", NSLocalizedString("help.rename", comment: "重命名所选项目")),
-            ("⌘⌫", NSLocalizedString("help.delete", comment: "移到废纸篓")),
-            ("⌘⇧N", NSLocalizedString("help.newFolder", comment: "新建文件夹")),
-            ("⌘[ / ⌘]", NSLocalizedString("help.backForward", comment: "后退 / 前进")),
-            ("⌘↑", NSLocalizedString("help.up", comment: "返回上一级文件夹")),
-            ("⌘⇧.", NSLocalizedString("help.hidden", comment: "显示或隐藏隐藏文件")),
+            ("⌘C / ⌘V", WLocalizedString("help.copyPaste", comment: "复制、粘贴文件；复制时会同时写入系统剪贴板")),
+            ("⌘⌥C", WLocalizedString("help.copyPath", comment: "复制所选文件的完整路径")),
+            ("Return", WLocalizedString("help.rename", comment: "重命名所选项目")),
+            ("⌘⌫", WLocalizedString("help.delete", comment: "移到废纸篓")),
+            ("⌘⇧N", WLocalizedString("help.newFolder", comment: "新建文件夹")),
+            ("⌘[ / ⌘]", WLocalizedString("help.backForward", comment: "后退 / 前进")),
+            ("⌘↑", WLocalizedString("help.up", comment: "返回上一级文件夹")),
+            ("⌘⇧.", WLocalizedString("help.hidden", comment: "显示或隐藏隐藏文件")),
         ]
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(NSLocalizedString("help.title", comment: "WinFile 使用提示")).font(.headline)
-            Text(NSLocalizedString("help.intro", comment: "帮助说明"))
+            Text(WLocalizedString("help.title", comment: "WinFile 使用提示")).font(.headline)
+            Text(WLocalizedString("help.intro", comment: "帮助说明"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -292,7 +297,7 @@ struct HelpSheet: View {
             }
             HStack {
                 Spacer()
-                Button(NSLocalizedString("button.ok", comment: "好")) { dismiss() }
+                Button(WLocalizedString("button.ok", comment: "好")) { dismiss() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
             }

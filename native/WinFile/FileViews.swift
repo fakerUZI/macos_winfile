@@ -5,6 +5,7 @@ import SwiftUI
 // MARK: - 原生图标
 
 struct FileIconView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let item: FileItem
     var size: CGFloat = 18
@@ -97,6 +98,7 @@ struct FileIconView: View {
 // MARK: - 详细信息表格
 
 struct FileTableView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
@@ -113,10 +115,11 @@ struct FileTableView: View {
     var body: some View {
         table
             // 从分类/搜索跳转过来时，定位并选中目标文件
-            .onReceive(model.$pendingSelectionID.compactMap { $0 }) { id in
-                guard model.displayedItems.contains(where: { $0.id == id }) else { return }
-                model.selectedIDs = [id]
-                _ = model.consumePendingSelection()
+            .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
+                selectPendingItem()
+            }
+            .onChange(of: model.displayedItems.map(\.id)) { _ in
+                selectPendingItem()
             }
             // 行以下空白处的右键菜单（Windows 资源管理器行为）
             .background(
@@ -126,6 +129,13 @@ struct FileTableView: View {
                 )
                 .frame(width: 0, height: 0)
             )
+    }
+
+    private func selectPendingItem() {
+        guard let id = model.pendingSelectionID,
+              model.displayedItems.contains(where: { $0.id == id }) else { return }
+        model.selectedIDs = [id]
+        _ = model.consumePendingSelection()
     }
 
     /// 表格本体（拆出来便于叠加背景捕获层）
@@ -144,7 +154,7 @@ struct FileTableView: View {
 
     private var table: some View {
         Table(model.displayedItems, selection: selection, sortOrder: sortOrder) {
-            TableColumn(NSLocalizedString("column.name", comment: "名称")) { item in
+            TableColumn(WLocalizedString("column.name", comment: "名称"), value: \FileItem.name, comparator: .localizedStandard) { item in
                 HStack(spacing: 6) {
                     FileIconView(engine: engine, item: item, size: 18)
                     Text(item.name)
@@ -161,21 +171,21 @@ struct FileTableView: View {
             }
             .width(min: 200, ideal: 320)
 
-            TableColumn(NSLocalizedString("column.modified", comment: "修改日期")) { item in
+            TableColumn(WLocalizedString("column.modified", comment: "修改日期"), value: \FileItem.sortableModified) { item in
                 Text(item.modified.map(Self.dateText) ?? "—")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
             .width(min: 120, ideal: 150)
 
-            TableColumn(NSLocalizedString("column.type", comment: "类型")) { item in
+            TableColumn(WLocalizedString("column.type", comment: "类型"), value: \FileItem.typeDescription, comparator: .localizedStandard) { item in
                 Text(item.typeDescription)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             .width(min: 100, ideal: 140)
 
-            TableColumn(NSLocalizedString("column.size", comment: "大小")) { item in
+            TableColumn(WLocalizedString("column.size", comment: "大小"), value: \FileItem.sortableSize) { item in
                 Text(item.sizeText)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -196,6 +206,7 @@ struct FileTableView: View {
         // 这比依赖 SwiftUI 的 primaryAction 可靠 —— 后者在部分情况下不会触发。
         .background(
             TableDoubleClickInstaller { table in
+                TableColumnPreferences.install(on: table, kind: "files")
                 TableDiagnostics.installDoubleClick(on: table) { row in
                     guard row >= 0, row < model.displayedItems.count else { return }
                     let item = model.displayedItems[row]
@@ -240,26 +251,26 @@ struct FileTableView: View {
 
     @ViewBuilder
     private var emptyAreaMenu: some View {
-        Button(NSLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
-        Button(NSLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
+        Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
+        Button(WLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
         if model.clipboardHasText {
-            Button(NSLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
+            Button(WLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
                 _ = model.saveClipboardTextAsFile()
             }
         }
         Divider()
-        Button(NSLocalizedString("action.paste", comment: "粘贴")) { model.paste() }
-            .disabled(model.clipboard == nil)
+        Button(WLocalizedString("action.paste", comment: "粘贴")) { model.paste() }
+            .disabled(!model.canPaste)
         Divider()
-        Button(NSLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) { model.toggleHiddenFiles() }
-        Button(NSLocalizedString("action.reload", comment: "重新载入")) { model.reload() }
+        Button(WLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) { model.toggleHiddenFiles() }
+        Button(WLocalizedString("action.reload", comment: "重新载入")) { model.reload() }
     }
 
     // MARK: - 空白处右键菜单（原生 NSMenu）
 
     static func makeBackgroundMenu(model: BrowserModel, dialog: Binding<DialogKind?>) -> NSMenu {
         let menu = NSMenu()
-        let inFolder = model.currentDirectory != nil
+        let inFolder = model.currentDirectory != nil && !model.isCategoryView
 
         func add(_ title: String, _ action: @escaping () -> Void, enabled: Bool = true,
                  key: String = "", symbol: String? = nil) {
@@ -284,7 +295,7 @@ struct FileTableView: View {
 
         // 粘贴
         add(L("action.paste", "粘贴"), { model.paste() },
-            enabled: inFolder && model.clipboard != nil, key: "v", symbol: "clipboard")
+            enabled: model.canPaste, key: "v", symbol: "clipboard")
         menu.addItem(.separator())
 
         // 排序
@@ -372,17 +383,7 @@ struct FileTableView: View {
         }
         group.notify(queue: .main) {
             guard !urls.isEmpty else { return }
-            let items = urls.compactMap { FileItem(url: $0, resourceKeys: FSEngine.resourceKeys, showHidden: true) }
-            Task { @MainActor in
-                do {
-                    _ = try await Task.detached(priority: .userInitiated) {
-                        try FSEngine.transfer(items, to: directory, mode: .copy)
-                    }.value
-                    model.reload()
-                } catch {
-                    model.errorMessage = error.localizedDescription
-                }
-            }
+            model.copyFiles(urls, to: directory)
         }
         return true
     }
@@ -395,6 +396,7 @@ struct FileTableView: View {
 // MARK: - 大图标网格
 
 struct FileIconGridView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
@@ -459,11 +461,11 @@ struct FileIconGridView: View {
             .onAppear { gridWidth = proxy.size.width }
             .onChange(of: proxy.size.width) { newValue in gridWidth = newValue }
             // 从分类/搜索跳转过来时，滚动到目标并选中
-            .onReceive(model.$pendingSelectionID.compactMap { $0 }) { id in
-                guard model.displayedItems.contains(where: { $0.id == id }) else { return }
-                model.selectedIDs = [id]
-                withAnimation { scroller.scrollTo(id, anchor: .center) }
-                _ = model.consumePendingSelection()
+            .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
+                selectPendingItem(scroller: scroller)
+            }
+            .onChange(of: model.displayedItems.map(\.id)) { _ in
+                selectPendingItem(scroller: scroller)
             }
             }
         }
@@ -480,17 +482,7 @@ struct FileIconGridView: View {
                 }
             }
             group.notify(queue: .main) {
-                let items = urls.compactMap { FileItem(url: $0, resourceKeys: FSEngine.resourceKeys, showHidden: true) }
-                Task { @MainActor in
-                    do {
-                        _ = try await Task.detached(priority: .userInitiated) {
-                            try FSEngine.transfer(items, to: directory, mode: .copy)
-                        }.value
-                        model.reload()
-                    } catch {
-                        model.errorMessage = error.localizedDescription
-                    }
-                }
+                model.copyFiles(urls, to: directory)
             }
             return true
         }
@@ -502,6 +494,14 @@ struct FileIconGridView: View {
             )
             .frame(width: 0, height: 0)
         )
+    }
+
+    private func selectPendingItem(scroller: ScrollViewProxy) {
+        guard let id = model.pendingSelectionID,
+              model.displayedItems.contains(where: { $0.id == id }) else { return }
+        model.selectedIDs = [id]
+        withAnimation { scroller.scrollTo(id, anchor: .center) }
+        _ = model.consumePendingSelection()
     }
 
     /// 单个磁贴：含双击标记、单击选择、右键菜单
@@ -530,6 +530,7 @@ struct FileIconGridView: View {
 
 /// 文件右键菜单（列表视图与图标视图**共用同一份**，保证功能一致）
 struct FileItemContextMenu: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
@@ -539,10 +540,13 @@ struct FileItemContextMenu: View {
     var selectedCount: Int { model.selectedCount }
 
     var body: some View {
-        Button(NSLocalizedString("action.open", comment: "打开")) { model.openSelection() }
+        Button(WLocalizedString("action.open", comment: "打开")) { model.openSelection() }
+        if !model.isAndroidPath {
+            Button(L("action.quickLook", "快速预览")) { model.previewSelection() }
+        }
         // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
         if selectedCount <= 1, let item, !AndroidURL.isAndroid(item.url) {
-            Button(NSLocalizedString("action.openWith", comment: "打开方式…")) { dialog = .openWith(item) }
+            Button(WLocalizedString("action.openWith", comment: "打开方式…")) { dialog = .openWith(item) }
             // 仅在本应用内生效的默认打开方式（不改动 macOS 的关联设置）
             Menu(L("assoc.menu", "默认打开方式（仅本应用）")) {
                 if let ext = FileAssociations.key(for: item.url) {
@@ -581,19 +585,19 @@ struct FileItemContextMenu: View {
                 model.downloadSelectedToLocalFolder()
             }
         } else {
-            Button(NSLocalizedString("action.reveal", comment: "在访达中显示")) { model.revealSelection() }
+            Button(WLocalizedString("action.reveal", comment: "在访达中显示")) { model.revealSelection() }
         }
         Divider()
-        Button(NSLocalizedString("action.cut", comment: "剪切")) { model.cutSelectionToClipboard() }
-        Button(NSLocalizedString("action.copy", comment: "复制")) { model.copySelectionToClipboard() }
+        Button(WLocalizedString("action.cut", comment: "剪切")) { model.cutSelectionToClipboard() }
+        Button(WLocalizedString("action.copy", comment: "复制")) { model.copySelectionToClipboard() }
         if selectedCount == 1, let item, item.isDirectory {
-            Button(NSLocalizedString("action.pasteInto", comment: "粘贴到此处")) { model.paste() }
-                .disabled(model.clipboard == nil)
+            Button(WLocalizedString("action.pasteInto", comment: "粘贴到此处")) { model.paste() }
+                .disabled(!model.canPaste)
         }
-        Menu(NSLocalizedString("action.copyAs", comment: "复制为")) {
-            Button(NSLocalizedString("action.copyPath", comment: "完整路径")) { model.copyPathToClipboard() }
-            Button(NSLocalizedString("action.copyName", comment: "文件名")) { model.copyNameToClipboard() }
-            Button(NSLocalizedString("action.copyDir", comment: "所在目录")) {
+        Menu(WLocalizedString("action.copyAs", comment: "复制为")) {
+            Button(WLocalizedString("action.copyPath", comment: "完整路径")) { model.copyPathToClipboard() }
+            Button(WLocalizedString("action.copyName", comment: "文件名")) { model.copyNameToClipboard() }
+            Button(WLocalizedString("action.copyDir", comment: "所在目录")) {
                 model.copyPathToClipboard(includeDirectory: true)
             }
         }
@@ -601,28 +605,35 @@ struct FileItemContextMenu: View {
         // 压缩与解压（安卓路径不适用，走 adb 无对应能力）
         if !model.isAndroidPath {
             if model.canExtract {
-                Button(L("action.extractHere", "解压到当前文件夹")) { model.extractSelection() }
+                Button(model.currentDirectory == nil ? L("action.extractBeside", "解压到所在文件夹") : L("action.extractHere", "解压到当前文件夹")) { model.extractSelection() }
+                Button(L("action.extractFolder", "解压到独立文件夹")) { model.extractSelection(createFolder: true) }
+                Button(L("action.extractTo", "解压到…")) { model.chooseExtractionDestination() }
             }
             Button(L("action.compress", "压缩为 zip")) { model.compressSelection() }
                 .disabled(!model.canCompress)
             Divider()
         }
-        Button(NSLocalizedString("menu.duplicate", comment: "制作副本")) { model.duplicateSelection() }
-        Button(NSLocalizedString("action.rename", comment: "重命名…")) {
+        Button(WLocalizedString("menu.duplicate", comment: "制作副本")) { model.duplicateSelection() }
+        if selectedCount > 1, !model.isAndroidPath {
+            Button(L("rename.batch", "批量重命名")) { dialog = .batchRename(model.selectedItems) }
+                .disabled(!model.canMutateFiles)
+        }
+        Button(WLocalizedString("action.rename", comment: "重命名…")) {
             if let target = item ?? model.selectedItems.first { dialog = .rename(target) }
         }
         .disabled(selectedCount != 1)
-        Button(NSLocalizedString("action.moveToTrash", comment: "移到废纸篓"), role: .destructive) {
+        Button(model.deleteActionTitle, role: .destructive) {
             model.deleteSelection()
         }
         Divider()
-        Button(NSLocalizedString("action.getInfo", comment: "显示简介")) {
+        Button(WLocalizedString("action.getInfo", comment: "显示简介")) {
             NotificationCenter.default.post(name: .winFileGetInfo, object: nil)
         }
     }
 }
 
 struct FileTile: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     let item: FileItem
     let selected: Bool

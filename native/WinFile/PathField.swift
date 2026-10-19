@@ -20,7 +20,7 @@ struct PathField: NSViewRepresentable {
         field.isBezeled = true
         field.bezelStyle = .roundedBezel
         field.font = .systemFont(ofSize: 13)
-        field.placeholderString = NSLocalizedString("path.placeholder", comment: "输入路径")
+        field.placeholderString = WLocalizedString("path.placeholder", comment: "输入路径")
         field.lineBreakMode = .byTruncatingHead
         field.usesSingleLineMode = true
         field.cell?.wraps = false
@@ -81,6 +81,7 @@ struct PathField: NSViewRepresentable {
 
 /// 补全下拉列表（SwiftUI 绘制，浮在输入框下方）
 struct PathSuggestionList: View {
+    @ObservedObject private var localization = Localization.shared
     let suggestions: [PathSuggestion]
     let onPick: (PathSuggestion) -> Void
 

@@ -9,7 +9,7 @@ import SwiftUI
 enum TabSmokeTest {
 
     /// 在真实窗口里跑：返回 (是否全部通过, 报告文本)
-    static func run(to path: String) -> Bool {
+    static func run(to path: String) async -> Bool {
         var lines: [String] = ["=== 页签切换冒烟测试 ===", ""]
         var failures: [String] = []
 
@@ -30,6 +30,18 @@ enum TabSmokeTest {
         try? "b2".write(to: dirB.appendingPathComponent("乙文件2.txt"), atomically: true, encoding: .utf8)
         defer { try? fm.removeItem(at: base) }
 
+        // A direct CLI launch may not receive the open-application AppleEvent that
+        // creates WindowGroup's first window. Provide the same real view for the test.
+        if NSApp.windows.isEmpty {
+            let testWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1180, height: 720),
+                                      styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            testWindow.isReleasedWhenClosed = false
+            let hosting = NSHostingView(rootView: MainView(engine: FSEngine()))
+            hosting.frame = NSRect(x: 0, y: 0, width: 1180, height: 720)
+            testWindow.contentView = hosting
+            testWindow.makeKeyAndOrderFront(nil)
+            await pump(2)
+        }
         guard let window = NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first,
               let root = window.contentView else {
             lines.append("没有可用窗口")
@@ -87,7 +99,7 @@ enum TabSmokeTest {
 
         // 页签 2：新建后切到「此电脑」（内容与主页明显不同）
         NotificationCenter.default.post(name: .winFileNewTab, object: nil)
-        pump(1.2)
+        await pump(1.2)
         let secondPixels = capturePixels()
         let homeVsSecond = pixelDifference(homePixels, secondPixels)
         lines.append("页签1(主页) vs 页签2(主页): 差异像素 \(homeVsSecond)")
@@ -109,7 +121,7 @@ enum TabSmokeTest {
         TabDiagnostics.shared.clear()
 
         // ---- 合成真实鼠标点击：在页签栏区域内按下/抬起 ----
-        func syntheticClick(at pointInWindow: NSPoint, clickCount: Int = 1) -> Bool {
+        func syntheticClick(at pointInWindow: NSPoint, clickCount: Int = 1) async -> Bool {
             guard let content = window.contentView else { return false }
             let inContent = content.convert(pointInWindow, from: nil)
             let target = content.hitTest(inContent)
@@ -123,10 +135,10 @@ enum TabSmokeTest {
                                         windowNumber: window.windowNumber, context: nil,
                                         eventNumber: 2, clickCount: clickCount, pressure: 0)
             guard let down, let up else { return false }
-            NSApp.sendEvent(down)
-            pump(0.15)
-            NSApp.sendEvent(up)
-            pump(0.8)
+            // Queue both events before yielding: AppKit may track mouseDown until mouseUp.
+            NSApp.postEvent(down, atStart: false)
+            NSApp.postEvent(up, atStart: false)
+            await pump(0.8)
             return true
         }
 
@@ -140,6 +152,7 @@ enum TabSmokeTest {
             case .thisPC: view = "此电脑"
             case .applications: view = "应用程序"
             case .appData: view = "应用数据"
+            case .weChatCleanup: view = "微信文件清理"
             case .androidDevice: view = "安卓设备"
             case .category(let c): view = "分类:\(c.rawValue)"
             case .folder(let url): view = "文件夹:\(url.lastPathComponent)"
@@ -156,11 +169,11 @@ enum TabSmokeTest {
 
         // 让第 2 个页签进入「此电脑」，使两个页签内容明显不同
         manager.activeModel.navigate(to: .thisPC)
-        pump(1.5)
+        await pump(1.5)
         let secondState = activeState()
         lines.append("页签2 状态: id=\(secondState.id) 视图=\(secondState.view)")
         // 用页签上报的真实位置点击（不再猜坐标）
-        pump(1.5)
+        await pump(1.5)
         let chips = WindowBridge.shared.orderedChipFrames()
         lines.append("页签位置: " + chips.map { "\($0.title)@(\(Int($0.frame.midX)),\(Int($0.frame.midY)))" }.joined(separator: " "))
         check("页签上报了自身位置", chips.count >= 2, "\(chips.count) 个")
@@ -169,9 +182,9 @@ enum TabSmokeTest {
         if chips.count >= 2 {
             let target = chips[0].frame
             TabDiagnostics.shared.record("test.syntheticClick.begin", detail: "点击页签「\(chips[0].title)」")
-            let clickHit = syntheticClick(at: NSPoint(x: target.midX, y: target.midY))
+            let clickHit = await syntheticClick(at: NSPoint(x: target.midX, y: target.midY))
             TabDiagnostics.shared.record("test.syntheticClick.end")
-            pump(1.0)
+            await pump(1.0)
             firstState = activeState()
             lines.append("点击页签1 后: id=\(firstState.id) 视图=\(firstState.view)")
             lines.append("  点击是否被接收: \(clickHit)")
@@ -184,9 +197,9 @@ enum TabSmokeTest {
         if chips.count >= 2 {
             let target = chips[1].frame
             TabDiagnostics.shared.record("test.syntheticClick.begin", detail: "点击页签「\(chips[1].title)」")
-            _ = syntheticClick(at: NSPoint(x: target.midX, y: target.midY))
+            _ = await syntheticClick(at: NSPoint(x: target.midX, y: target.midY))
             TabDiagnostics.shared.record("test.syntheticClick.end")
-            pump(1.0)
+            await pump(1.0)
         }
         let backState = activeState()
         lines.append("点击页签2 后: id=\(backState.id) 视图=\(backState.view)")
@@ -220,7 +233,7 @@ enum TabSmokeTest {
             let target = buttons[0]
             TabDiagnostics.shared.record("test.beforeClick", detail: target.accessibilityIdentifier())
             target.performClick(nil)
-            pump(1.2)
+            await pump(1.2)
             let afterClick = capturePixels()
             let diffFromSecond = pixelDifference(afterClick, secondPixels)
             check("点击页签 1 后界面切换", diffFromSecond > 100,
@@ -272,32 +285,32 @@ enum TabSmokeTest {
         try? fm.createDirectory(at: dirB2, withIntermediateDirectories: true)
 
         manager.select(index: 0)
-        pump(1.0)
+        await pump(1.0)
         manager.activeModel.selectFolder(dirA2)
-        pump(1.6)
+        await pump(1.6)
         let barInA = stripInAddressBar()
         let stateA = activeState()
         lines.append("导航到 甲 后: 视图=\(stateA.view) 地址栏采样=\(barInA.count)")
 
         // 先验证「取样带内确实有变化的东西」：同目录多等一会儿再取一次，
         // 若为 0 说明该条带是静态的（可能取错了位置）
-        pump(1.0)
+        await pump(1.0)
         let barInA2 = stripInAddressBar()
         lines.append("同目录重复取样差异: \(pixelDifference(barInA, barInA2))（应为 0）")
 
         // 参照物：整窗口像素在同一目录下也会有噪声，用于校准
         let fullA = capturePixels()
-        pump(0.8)
+        await pump(0.8)
         let fullA2 = capturePixels()
         lines.append("同目录整窗口噪声基线: \(pixelDifference(fullA, fullA2))")
 
         // 决定性校验：主页 vs 此电脑 是整页级别的视觉变化，
         // 若取样带连这个都测不出差异，说明 cacheDisplay 抓到的是陈旧位图
         manager.activeModel.navigate(to: .home)
-        pump(1.5)
+        await pump(1.5)
         let barHome = stripInAddressBar()
         manager.activeModel.navigate(to: .thisPC)
-        pump(1.5)
+        await pump(1.5)
         let barThisPC = stripInAddressBar()
         let bigChange = pixelDifference(barHome, barThisPC)
         lines.append("（像素法已证伪，仅供参考）主页↔此电脑 差异: \(bigChange)")
@@ -308,10 +321,10 @@ enum TabSmokeTest {
         let probeModel = manager.activeModel
         let cancellable = probeModel.objectWillChange.sink { _ in publishCount += 1 }
         probeModel.navigate(to: .home)
-        pump(0.8)
+        await pump(0.8)
         let afterFirst = publishCount
         probeModel.navigate(to: .thisPC)
-        pump(0.8)
+        await pump(0.8)
         lines.append("模型 objectWillChange 次数: 导航2次后=\(publishCount)（首次后=\(afterFirst)）")
         check("模型会发出变更通知", publishCount >= 2, "\(publishCount)")
         _ = cancellable
@@ -320,18 +333,18 @@ enum TabSmokeTest {
         _ = bridge
         let evalsBeforeNav = MainView.outerBodyEvaluations
         bridge.navigate?(.home)
-        pump(1.6)
+        await pump(1.6)
 
         bridge.navigate?(.folder(dirA2))
-        pump(1.8)
-        pump(0.8)   // 标题同步是异步的，多等一拍再读
+        await pump(1.8)
+        await pump(0.8)   // 标题同步是异步的，多等一拍再读
         let titleA = window.title
         let addrA = bridge.currentAddressIdentity
         let stateA2 = activeState()
 
         bridge.navigate?(.folder(dirB2))
-        pump(1.8)
-        pump(0.8)
+        await pump(1.8)
+        await pump(0.8)
         let titleB = window.title
         let addrB = bridge.currentAddressIdentity
         let stateB2 = activeState()
@@ -357,7 +370,7 @@ enum TabSmokeTest {
         check("标题反映的是乙目录", titleB.contains("地址栏乙"), titleB)
 
         manager.activeModel.selectFolder(dirA2)
-        pump(1.5)
+        await pump(1.5)
 
         // 侧边栏区域作为"已知会更新"的对照：切换目录后侧边栏高亮会变
         func stripInSidebar() -> [Int] {
@@ -384,7 +397,7 @@ enum TabSmokeTest {
         let sidebarA = stripInSidebar()
 
         manager.activeModel.selectFolder(dirB2)
-        pump(1.6)
+        await pump(1.6)
         let barInB = stripInAddressBar()
         let stateB = activeState()
         lines.append("导航到 乙 后: 视图=\(stateB.view)")
@@ -400,7 +413,7 @@ enum TabSmokeTest {
 
         // ---- 主页点击后内容区是否立即切换（无需切页签） ----
         bridge.navigate?(.home)
-        pump(1.6)
+        await pump(1.6)
         let kindOnHome = bridge.lastContentKind
         lines.append("主页内容区渲染: \(kindOnHome)")
         check("主页渲染的是主页视图", kindOnHome == "home", kindOnHome)
@@ -413,10 +426,10 @@ enum TabSmokeTest {
             for x in [300, 420, 540, 660] {
                 let pt = NSPoint(x: CGFloat(x), y: window.frame.height - CGFloat(yFromTop))
                 // 双击：第二次事件必须带 clickCount=2，SwiftUI 才会识别为双击
-                _ = syntheticClick(at: pt, clickCount: 1)
-                pump(0.10)
-                _ = syntheticClick(at: pt, clickCount: 2)
-                pump(0.9)
+                _ = await syntheticClick(at: pt, clickCount: 1)
+                await pump(0.10)
+                _ = await syntheticClick(at: pt, clickCount: 2)
+                await pump(0.9)
                 tried.append("(\(x),\(yFromTop))")
                 if bridge.lastContentKind != "home" {
                     hitKind = bridge.lastContentKind
@@ -440,7 +453,7 @@ enum TabSmokeTest {
             let beforeCount = m.count
             let beforeID = m.activeTab.id
             NotificationCenter.default.post(name: .winFileNewTab, object: nil)
-            pump(1.2)
+            await pump(1.2)
             let newID = m.activeTab.id
             lines.append("新建页签: \(beforeCount) → \(m.count) 个；活动 \(beforeID.uuidString.prefix(4)) → \(newID.uuidString.prefix(4))")
             check("新建页签后活动页签已切换", newID != beforeID)
@@ -449,7 +462,7 @@ enum TabSmokeTest {
             let probe = fm.temporaryDirectory.appendingPathComponent("新页签可用性-\(UUID().uuidString)")
             try? fm.createDirectory(at: probe, withIntermediateDirectories: true)
             m.activeModel.selectFolder(probe)
-            pump(1.5)
+            await pump(1.5)
             lines.append("新页签直接导航后目录: \(m.activeModel.currentDirectory?.lastPathComponent ?? "无")")
             lines.append("内容区渲染: \(bridge.lastContentKind)")
             check("新页签无需切换即可导航",
@@ -462,30 +475,27 @@ enum TabSmokeTest {
         }
 
         // ---- 安卓路径回退（用户报告此处弹系统对话框）----
-        if let m2 = bridge.tabManager {
+        if !CommandLine.arguments.contains("--skip-device-tests"), let m2 = bridge.tabManager {
             let probe = AndroidProbe.run()
             if let serial = probe.readySerials.first {
                 m2.activeModel.selectFolder(AndroidURL.make(serial: serial, path: "/storage/emulated/0/Download"))
-                pump(2.0)
+                await pump(2.0)
                 lines.append("安卓导航: \(bridge.lastContentKind) 项目=\(m2.activeModel.items.count)")
 
                 // 逐级回退，模拟用户点「向上」
                 for _ in 0..<3 {
                     m2.activeModel.goUp()
-                    pump(1.5)
+                    await pump(1.5)
                     lines.append("  回退后: \(m2.activeModel.currentDirectory?.path ?? "无") 项目=\(m2.activeModel.items.count) 错误=\(m2.activeModel.errorMessage ?? "无")")
                 }
                 check("安卓路径多次回退后无错误", m2.activeModel.errorMessage == nil,
                       m2.activeModel.errorMessage ?? "无")
-                // 已知测量限制：应用内的模型由界面驱动，在 --selftest-tabs 的
-                // 同步运行循环下异步加载不完成；该路径已由模型层测试覆盖
-                // （安卓目录浏览：载入/子目录/上级回退/重复进入）。
-                lines.append("  应用内安卓回退后项目=\(m2.activeModel.items.count)（异步加载在同步测试下不完成，仅记录）")
+                lines.append("  应用内安卓回退后项目=\(m2.activeModel.items.count)")
 
                 // 面包屑点击：回退到中间层级
                 if let dir = m2.activeModel.currentDirectory {
                     m2.activeModel.selectFolder(dir)
-                    pump(1.2)
+                    await pump(1.2)
                     check("重复进入同一安卓目录无错误", m2.activeModel.errorMessage == nil,
                           m2.activeModel.errorMessage ?? "无")
                 }
@@ -499,9 +509,23 @@ enum TabSmokeTest {
         try? "x".write(to: listDir.appendingPathComponent("aaa.txt"), atomically: true, encoding: .utf8)
 
         bridge.navigate?(.folder(base))
+        bridge.tabManager?.activeModel.layout = .details
+        await pump(1.0)
+        var detailTables: [NSTableView] = []
+        func collectDetailTables(_ view: NSView) {
+            if let table = view as? NSTableView { detailTables.append(table) }
+            for child in view.subviews { collectDetailTables(child) }
+        }
+        collectDetailTables(root)
+        check("文件列表正确安装列宽记忆", detailTables.contains {
+            $0.tableColumns.count == 4 && TableColumnPreferences.isInstalled(on: $0, kind: "files")
+        })
+        check("列宽记忆没有误装到侧边栏", detailTables.filter { $0.tableColumns.count == 1 }.allSatisfy {
+            !TableColumnPreferences.isInstalled(on: $0, kind: "files")
+        })
         // 切到图标视图：用户实际使用的就是这个视图（此处验证图标视图双击）
         bridge.tabManager?.activeModel.layout = .icons
-        pump(2.0)
+        await pump(2.0)
         lines.append("列表内容区渲染: \(bridge.lastContentKind)")
 
         // 找到表格里的第一行视图，取其中心点双击
@@ -510,7 +534,7 @@ enum TabSmokeTest {
         // 收集所有表格，取最宽的那个 = 文件列表（侧边栏只有 216pt 宽）
         var tables: [NSTableView] = []
         func collectTables(_ view: NSView) {
-            if let table = view as? NSTableView, table.numberOfRows > 0 { tables.append(table) }
+            if let table = view as? NSTableView, table.numberOfRows > 0, table.tableColumns.count > 1 { tables.append(table) }
             for child in view.subviews { collectTables(child) }
         }
         collectTables(root)
@@ -545,19 +569,19 @@ enum TabSmokeTest {
             let points: [NSPoint] = [NSPoint(x: 418, y: 631), NSPoint(x: 290, y: 631), NSPoint(x: 418, y: 525)]
             for pt in points {
                 TabDiagnostics.shared.record("test.doubleClickTile.begin", detail: "位置=(\(Int(pt.x)),\(Int(pt.y)))")
-                _ = syntheticClick(at: pt, clickCount: 1)
-                pump(0.12)
-                _ = syntheticClick(at: pt, clickCount: 2)
-                pump(0.9)
+                _ = await syntheticClick(at: pt, clickCount: 1)
+                await pump(0.12)
+                _ = await syntheticClick(at: pt, clickCount: 2)
+                await pump(0.9)
                 if bridge.lastContentKind.contains("被双击的文件夹") { break }
             }
             TabDiagnostics.shared.record("test.doubleClickTile.end")
         } else {
             TabDiagnostics.shared.record("test.doubleClickRow.begin")
-            _ = syntheticClick(at: rowPoint!, clickCount: 1)
-            pump(0.15)
-            _ = syntheticClick(at: rowPoint!, clickCount: 2)
-            pump(1.5)
+            _ = await syntheticClick(at: rowPoint!, clickCount: 1)
+            await pump(0.15)
+            _ = await syntheticClick(at: rowPoint!, clickCount: 2)
+            await pump(1.5)
             TabDiagnostics.shared.record("test.doubleClickRow.end")
         }
         if true {
@@ -601,7 +625,7 @@ enum TabSmokeTest {
         // 关闭页签
         let beforeClose = capturePixels()
         NotificationCenter.default.post(name: .winFileCloseTab, object: nil)
-        pump(1.2)
+        await pump(1.2)
         let afterClose = capturePixels()
         lines.append("关闭页签：像素差异 \(pixelDifference(afterClose, beforeClose))")
         if let managerStill = MainView.currentTabManager {
@@ -625,11 +649,9 @@ enum TabSmokeTest {
         return failures.isEmpty
     }
 
-    private static func pump(_ seconds: TimeInterval) {
-        let deadline = Date().addingTimeInterval(seconds)
-        while Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
+    private static func pump(_ seconds: TimeInterval) async {
+        // Release the main actor so directory Tasks and SwiftUI updates can finish.
+        try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
     private static func write(_ lines: [String], _ path: String) {

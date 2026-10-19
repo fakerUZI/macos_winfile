@@ -436,3 +436,439 @@
 "settings.assoc.hint" = "Affects this app only; macOS file associations are unchanged.";
 "settings.assoc.empty" = "Nothing set yet. Use a file's context menu to assign one.";
 "settings.assoc.showBadge" = "Show associated app at the file icon's corner";
+
+// Language settings and WeChat attachment cleanup
+"settings.language" = "Language";
+"settings.language.system" = "Follow System";
+"settings.language.hint" = "Changes apply immediately. Unsupported system languages use English.";
+"wechat.title" = "WeChat Cleanup";
+"wechat.explain" = "Find locally downloaded WeChat attachments. Cleaned attachments may no longer open in WeChat. Chat databases are excluded.";
+"wechat.confirmTitle" = "Move selected attachments to Trash?";
+"wechat.confirmMessage" = "Move %d files (%@) to Trash. These attachments may no longer open in WeChat. You can restore them to their original locations from Trash. Quit WeChat first for best results.";
+"wechat.choose" = "Choose WeChat Folder…";
+"wechat.chooseHint" = "Choose a WeChat data or attachment folder. Ordinary files inside this folder will be offered for cleanup.";
+"wechat.sources" = "Sources (%d detected, %d added)";
+"wechat.all" = "All Types";
+"wechat.minimumSize" = "Minimum Size";
+"wechat.anySize" = "Any Size";
+"wechat.age" = "Modified";
+"wechat.anyTime" = "Any Time";
+"wechat.days" = "Over %d Days Ago";
+"wechat.search" = "Filter by filename";
+"wechat.sort" = "Sort";
+"wechat.sort.size" = "Size: Largest First";
+"wechat.sort.date" = "Modified: Newest First";
+"wechat.access" = "Some locations could not be read. Results may be incomplete. Give WinFile Full Disk Access and rescan, or choose your WeChat folder.";
+"wechat.unreadable" = "Show Unreadable Locations";
+"wechat.location" = "Folder";
+"wechat.scanning" = "Scanning WeChat attachments…";
+"wechat.empty" = "No attachments found. Choose your WeChat data folder, or check permissions for unreadable locations.";
+"wechat.noMatch" = "No files match these filters.";
+"wechat.summary" = "%d files (%@), %d matching";
+"wechat.selectAll" = "Select All Matches";
+"wechat.trashSelection" = "Clean %d Selected (%@)";
+"wechat.changed" = "Skipped changed or inaccessible file: %@";
+"wechat.cleaned" = "Moved %d files to Trash; %d skipped or failed.";
+"wechat.kind.document" = "Documents";
+"wechat.kind.image" = "Images";
+"wechat.kind.video" = "Videos";
+"wechat.kind.audio" = "Audio";
+"wechat.kind.archive" = "Archives";
+"wechat.kind.other" = "Other Attachments";
+"error.notAccessible" = "This location is not accessible.";
+"settings.local.explain" = "This local app runs without a sandbox and can browse the disk, including other apps’ data folders.";
+"settings.folders.count" = "Favorite Folders";
+"settings.assoc.remove" = "Use System Default";
+"settings.assoc.clearAll" = "Reset All to System Defaults";
+"clipboard.copied" = "Copied";
+"clipboard.cut" = "Cut";
+"status.moved" = "Moved";
+"action.addFolder" = "Add Folder";
+"panel.addFolder.message" = "Choose folders to add to Favorites";
+"inspector.type" = "Kind";
+"archive.error.zipFailed" = "Archive failed (exit code %d)";
+"fileType.jpg" = "JPEG Image";
+"fileType.jpeg" = "JPEG Image";
+"fileType.png" = "PNG Image";
+"fileType.gif" = "GIF Image";
+"fileType.webp" = "WebP Image";
+"fileType.bmp" = "BMP Image";
+"fileType.tif" = "TIFF Image";
+"fileType.tiff" = "TIFF Image";
+"fileType.heic" = "HEIC Image";
+"fileType.heif" = "HEIF Image";
+"fileType.avif" = "AVIF Image";
+"fileType.svg" = "SVG Vector Image";
+"fileType.ico" = "Icon File";
+"fileType.icns" = "macOS Icon";
+"fileType.raw" = "RAW Photo";
+"fileType.cr2" = "Canon RAW";
+"fileType.nef" = "Nikon RAW";
+"fileType.arw" = "Sony RAW";
+"fileType.dng" = "DNG Photo";
+"fileType.psd" = "Photoshop Document";
+"fileType.ai" = "Illustrator Document";
+"fileType.sketch" = "Sketch Document";
+"fileType.fig" = "Figma Document";
+"fileType.xd" = "XD Document";
+"fileType.afdesign" = "Affinity Design";
+"fileType.afphoto" = "Affinity Photo";
+"fileType.mp4" = "MP4 Video";
+"fileType.m4v" = "M4V Video";
+"fileType.mov" = "QuickTime Movie";
+"fileType.avi" = "AVI Video";
+"fileType.mkv" = "Matroska Video";
+"fileType.wmv" = "WMV Video";
+"fileType.flv" = "FLV Video";
+"fileType.webm" = "WebM Video";
+"fileType.mpg" = "MPEG Video";
+"fileType.mpeg" = "MPEG Video";
+"fileType.mts" = "Transport Stream Video";
+"fileType.m2ts" = "Transport Stream Video";
+"fileType.rmvb" = "RealMedia Video";
+"fileType.mp3" = "MP3 Audio";
+"fileType.m4a" = "AAC Audio";
+"fileType.aac" = "AAC Audio";
+"fileType.wav" = "WAV Audio";
+"fileType.aiff" = "AIFF Audio";
+"fileType.aif" = "AIFF Audio";
+"fileType.flac" = "FLAC Lossless Audio";
+"fileType.ape" = "APE Lossless Audio";
+"fileType.ogg" = "OGG Audio";
+"fileType.opus" = "OPUS Audio";
+"fileType.wma" = "WMA Audio";
+"fileType.mid" = "MIDI Audio";
+"fileType.midi" = "MIDI Audio";
+"fileType.txt" = "Text Document";
+"fileType.md" = "Markdown Document";
+"fileType.markdown" = "Markdown Document";
+"fileType.rtf" = "RTF Document";
+"fileType.rtfd" = "RTFD Document";
+"fileType.doc" = "Word Document";
+"fileType.docx" = "Word Document";
+"fileType.dot" = "Word Template";
+"fileType.dotx" = "Word Template";
+"fileType.pages" = "Pages Document";
+"fileType.odt" = "OpenDocument Text";
+"fileType.tex" = "LaTeX Document";
+"fileType.log" = "Log File";
+"fileType.csv" = "CSV Spreadsheet";
+"fileType.tsv" = "TSV Spreadsheet";
+"fileType.xls" = "Excel Workbook";
+"fileType.xlsx" = "Excel Workbook";
+"fileType.xlsm" = "Excel Macro Workbook";
+"fileType.numbers" = "Numbers Spreadsheet";
+"fileType.ods" = "OpenDocument Spreadsheet";
+"fileType.ppt" = "PowerPoint Presentation";
+"fileType.pptx" = "PowerPoint Presentation";
+"fileType.key" = "Keynote Presentation";
+"fileType.odp" = "OpenDocument Presentation";
+"fileType.pdf" = "PDF Document";
+"fileType.epub" = "EPUB eBook";
+"fileType.mobi" = "Mobi eBook";
+"fileType.azw" = "Kindle eBook";
+"fileType.azw3" = "Kindle eBook";
+"fileType.djvu" = "DjVu Document";
+"fileType.zip" = "ZIP Archive";
+"fileType.rar" = "RAR Archive";
+"fileType.7z" = "7-Zip Archive";
+"fileType.tar" = "TAR Archive";
+"fileType.gz" = "GZip Archive";
+"fileType.tgz" = "TAR.GZ Archive";
+"fileType.bz2" = "BZip2 Archive";
+"fileType.xz" = "XZ Archive";
+"fileType.zst" = "Zstandard Archive";
+"fileType.xip" = "XIP Archive";
+"fileType.jar" = "Java Archive";
+"fileType.war" = "Java Web Archive";
+"fileType.dmg" = "Disk Image";
+"fileType.iso" = "Disc Image";
+"fileType.pkg" = "Installer";
+"fileType.mpkg" = "Installer";
+"fileType.py" = "Python Source";
+"fileType.pyw" = "Python Source";
+"fileType.ipynb" = "Jupyter Notebook";
+"fileType.js" = "JavaScript Source";
+"fileType.mjs" = "JavaScript Module";
+"fileType.cjs" = "JavaScript Module";
+"fileType.jsx" = "React Component";
+"fileType.ts" = "TypeScript Source";
+"fileType.tsx" = "React TS Component";
+"fileType.java" = "Java Source";
+"fileType.kt" = "Kotlin Source";
+"fileType.swift" = "Swift Source";
+"fileType.m" = "Objective-C Source";
+"fileType.mm" = "Objective-C++ Source";
+"fileType.c" = "C Source";
+"fileType.h" = "C Header";
+"fileType.cpp" = "C++ Source";
+"fileType.cc" = "C++ Source";
+"fileType.hpp" = "C++ Header";
+"fileType.cs" = "C# Source";
+"fileType.go" = "Go Source";
+"fileType.rs" = "Rust Source";
+"fileType.rb" = "Ruby Source";
+"fileType.php" = "PHP Source";
+"fileType.pl" = "Perl Source";
+"fileType.lua" = "Lua Source";
+"fileType.r" = "R Source";
+"fileType.scala" = "Scala Source";
+"fileType.sh" = "Shell Script";
+"fileType.bash" = "Bash Script";
+"fileType.zsh" = "Zsh Script";
+"fileType.fish" = "Fish Script";
+"fileType.ps1" = "PowerShell Script";
+"fileType.bat" = "Batch File";
+"fileType.cmd" = "Command Script";
+"fileType.html" = "HTML Page";
+"fileType.htm" = "HTML Page";
+"fileType.css" = "Stylesheet";
+"fileType.scss" = "SCSS Styles";
+"fileType.less" = "LESS Styles";
+"fileType.vue" = "Vue Component";
+"fileType.svelte" = "Svelte Component";
+"fileType.json" = "JSON Data";
+"fileType.yaml" = "YAML Configuration";
+"fileType.yml" = "YAML Configuration";
+"fileType.toml" = "TOML Configuration";
+"fileType.ini" = "INI Configuration";
+"fileType.cfg" = "Configuration File";
+"fileType.conf" = "Configuration File";
+"fileType.xml" = "XML Document";
+"fileType.plist" = "Property List";
+"fileType.sql" = "SQL Script";
+"fileType.graphql" = "GraphQL Query";
+"fileType.patch" = "Patch File";
+"fileType.diff" = "Diff File";
+"fileType.db" = "SQLite Database";
+"fileType.sqlite" = "SQLite Database";
+"fileType.sqlite3" = "SQLite Database";
+"fileType.mdb" = "Access Database";
+"fileType.accdb" = "Access Database";
+"fileType.realm" = "Realm Database";
+"fileType.ttf" = "TrueType Font";
+"fileType.otf" = "OpenType Font";
+"fileType.woff" = "Web Font";
+"fileType.woff2" = "Web Font";
+"fileType.ttc" = "Font Collection";
+"fileType.app" = "Application";
+"fileType.exe" = "Windows Program";
+"fileType.msi" = "Windows Installer";
+"fileType.bin" = "Binary File";
+"fileType.so" = "Shared Library";
+"fileType.dylib" = "Dynamic Library";
+"fileType.a" = "Static Library";
+"fileType.o" = "Object File";
+"fileType.command" = "Terminal Command";
+"fileType.apk" = "Android Installer";
+"fileType.deb" = "Debian Package";
+"fileType.rpm" = "RPM Package";
+"fileNameType.makefile" = "Makefile";
+"fileNameType.dockerfile" = "Dockerfile";
+"fileNameType.readme" = "Readme";
+"fileNameType.license" = "License";
+"fileNameType.licence" = "License";
+"fileNameType.changelog" = "Changelog";
+"fileNameType..gitignore" = "Git Ignore Rules";
+"fileNameType..zshrc" = "Zsh Configuration";
+"fileNameType..bashrc" = "Bash Configuration";
+"fileNameType..bash_profile" = "Bash Configuration";
+"fileNameType..profile" = "Shell Configuration";
+"fileNameType..env" = "Environment Variables";
+"default.newFileName" = "Untitled.txt";
+"appData.name.com.tencent.xinWeChat" = "WeChat";
+"appData.name.com.tencent.WeWorkMac" = "WeCom";
+"appData.name.com.apple.Safari" = "Safari";
+"appData.name.com.apple.mail" = "Mail";
+"appData.name.com.apple.iChat" = "Messages";
+"appData.name.com.apple.Photos" = "Photos";
+"appData.name.com.apple.Music" = "Music";
+"appData.name.com.apple.iCal" = "Calendar";
+"appData.name.com.apple.Notes" = "Notes";
+"appData.name.com.apple.reminders" = "Reminders";
+
+"wechat.archiveDestination" = "Choose where to save the archive";
+
+"android.deletePermanent" = "Delete Permanently…";
+
+"android.deleteTitle" = "Permanently delete %d items on the device?";
+
+"android.deleteMessage" = "These items will be permanently deleted from the Android device. They will not go to Trash and cannot be undone in WinFile.";
+
+"android.deleteConfirm" = "Delete Permanently";
+
+"android.crossDevicePaste" = "To transfer between devices, download to this Mac first, then upload to the destination device.";
+
+"scan.resultLimit" = "The current result limit has been reached. Load more to continue.";
+
+"scan.depthLimit" = "Deeper folders have not been scanned.";
+
+"scan.visitLimit" = "The current scan budget has been reached.";
+
+"scan.unreadable" = "%d locations could not be read.";
+
+"scan.continue" = "Load More / Scan Deeper";
+
+"inspector.partialSize" = "Partial total: the actual size is at least the value above. Some locations were unreadable or the scan limit was reached.";
+
+"wechat.scanProgress" = "Found %d files (%@); checked %d entries";
+
+"wechat.account" = "Account";
+
+"wechat.allAccounts" = "All Accounts";
+
+"wechat.customAccount" = "Other / Custom Location";
+
+"wechat.month" = "Month";
+
+"wechat.allMonths" = "All Months";
+
+"wechat.source" = "Source";
+
+"wechat.allSources" = "All Sources";
+
+"wechat.attachments" = "Chat Attachments";
+
+"wechat.caches" = "Caches / Thumbnails";
+
+"action.quickLook" = "Quick Look";
+
+"operation.undoNamed" = "Undo %@";
+
+"operation.undo" = "Undo File Operation";
+
+"operation.redoText" = "Redo Text Editing";
+
+"operation.progress" = "Completed %d / %d items: %@";
+
+"operation.cancelHint" = "Cancellation takes effect after the current native file copy or move finishes. Completed items are kept.";
+
+"operation.finished" = "Completed %d items; failed %d%@";
+
+"operation.cancelledSuffix" = " (cancelled)";
+
+"operation.sourceMissing" = "Source file is missing or unreadable: %@";
+
+"scan.badgeScope" = "Count within the initial scan scope. Open the category to scan deeper.";
+
+"wechat.usage.title" = "Attachment storage";
+
+"wechat.usage.total" = "All attachments";
+
+"wechat.usage.filtered" = "Filtered";
+
+"wechat.usage.selected" = "Selected";
+
+"wechat.usage.count" = "%d files";
+
+"wechat.usage.scanning" = "Counting attachment storage. Filtered and selected totals update after scanning.";
+
+"wechat.usage.scope" = "Includes scanned local attachments, excluding chat databases. Updates after cleanup.";
+
+"archive.error.engineMissing" = "The extraction engine is missing. Please reinstall WinFile.";
+
+"archive.error.passwordRequired" = "This archive requires a password.";
+
+"archive.error.wrongPassword" = "The password is incorrect or encrypted data is damaged. Please check and try again.";
+
+"archive.cancelled" = "Extraction cancelled";
+
+"archive.error.unsafePath" = "The archive contains unsafe paths or external links. Extraction was stopped.";
+
+"archive.error.space" = "There is not enough free space on the destination disk.";
+
+"archive.error.volume" = "A volume is missing or the archive is truncated. Put every part in the same folder and try again.%@";
+
+"archive.error.listingTooLarge" = "The archive directory is too large to validate.";
+
+"action.extract" = "Extract";
+
+"archive.chooseDestination" = "Choose where to save the extracted files";
+
+"archive.password.title" = "Enter archive password";
+
+"archive.password.placeholder" = "Password (only for this extraction)";
+
+"action.extractBeside" = "Extract Beside Archive";
+
+"action.extractFolder" = "Extract to Separate Folder";
+
+"action.extractTo" = "Extract To…";
+
+"type.archiveVolume" = "Archive volume";
+
+// Layout and cleanup filters
+"wechat.filters.advanced" = "Advanced Filters";
+"wechat.filters.advancedCount" = "Advanced (%d)";
+"wechat.filters.advancedHint" = "Filter by account, month, source, size and modification date";
+"wechat.filters.remove" = "Remove filter: %@";
+"wechat.filters.reset" = "Reset Filters";
+"wechat.filter.name" = "Name: %@";
+"wechat.filter.type" = "Type: %@";
+"wechat.filter.account" = "Account: %@";
+"wechat.filter.month" = "Month: %@";
+"wechat.filter.size" = "At least %@";
+"layout.resizeHint" = "Drag to resize; double-click to reset";
+"layout.width" = "%d points";
+"layout.sidebarWidth" = "Sidebar width";
+"layout.inspectorWidth" = "Inspector width";
+"layout.options" = "View and Sort";
+"sort.ascending" = "Ascending";
+
+"button.close" = "Close";
+"duplicates.chooseHint" = "Choose a local folder to inspect";
+"duplicates.explain" = "Compares complete file contents. Skips symbolic links, package contents and hard links to the same file. Preview results or open their folders to organize them.";
+"duplicates.partial" = "Results may be incomplete: cancelled %d; scan limit reached %d; unreadable %d; changed during scan %d.";
+"duplicates.progress" = "Checked %d entries; compared %d / %d candidate files";
+"duplicates.ready" = "Choose a folder, then start scanning";
+"duplicates.scan" = "Find Duplicates";
+"duplicates.summary" = "%d duplicate groups; %@ of redundant logical data";
+"duplicates.title" = "Find Duplicate Files";
+"operation.bytes" = "%@ / %@";
+"operation.calculating" = "Calculating file sizes…";
+"operation.cancelStreaming" = "Copies can be cancelled during transfer. Moves stop after the current item; completed items are kept.";
+"operation.openResult" = "Open Result Folder";
+"operation.retry" = "Retry Unfinished (%d)";
+"organize.tools" = "File Organization Tools";
+"rename.apply" = "Apply Rename";
+"rename.base" = "Shared name (leave blank to keep names)";
+"rename.batch" = "Batch Rename";
+"rename.check" = "Check";
+"rename.digits" = "%d digits";
+"rename.duplicate" = "Duplicate target name in this batch";
+"rename.exists" = "Target already exists";
+"rename.find" = "Find text";
+"rename.invalid" = "Invalid or overly long name";
+"rename.missing" = "Source file no longer exists";
+"rename.nested" = "Rename folders and their contents separately";
+"rename.numbered" = "Add numbering; preserve file extensions";
+"rename.original" = "Original Name";
+"rename.prefix" = "Add prefix";
+"rename.previewHint" = "Review the preview first. Existing files are never replaced. Use ⌘Z to undo.";
+"rename.proposed" = "New Name";
+"rename.replace" = "Replace with";
+"rename.review" = "Resolve the conflicts in the preview first";
+"rename.start" = "Start: %d";
+"rename.suffix" = "Add suffix (before extension)";
+"rename.unchanged" = "Unchanged";
+"rename.undoChanged" = "Files were moved or replaced; this batch cannot be undone";
+"search.advanced" = "Advanced Search";
+"search.after" = "Modified from";
+"search.before" = "Modified through";
+"search.criteriaHint" = "All conditions must match. The name is optional; dates include the entire selected day. Size filters apply to files.";
+"search.maximumMB" = "Maximum size (MB, optional)";
+"search.minimumMB" = "Minimum size (MB, optional)";
+"search.start" = "Search";
+"tab.all" = "All Tabs (%d)";
+"tab.pin" = "Pin Tab";
+"tab.restore" = "Reopen Closed Tab";
+"tab.unpin" = "Unpin Tab";
+"wechat.lastScan" = "Last scanned: %@";
+"wechat.usage.analysis" = "Storage Breakdown (Current Filters)";
+"wechat.usage.bucket" = "%@ · %d items";
+"wechat.usage.filter" = "Click to filter this group";
+"wechat.usage.group" = "Group by";
+
+"wechat.scanDetails" = "Scan Details and Storage Breakdown";
+
+"status.filteredSearch" = "Found %d items matching the selected conditions";

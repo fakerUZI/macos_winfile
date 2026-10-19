@@ -2,6 +2,33 @@
 import AppKit
 import Foundation
 
+/// Shared by detached scans and their owning UI task.
+final class ScanCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+    var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return stopped }
+    func cancel() { lock.lock(); stopped = true; lock.unlock() }
+}
+
+struct FileScanReport {
+    var items: [FileItem] = []
+    var limitReached = false
+    var depthLimited = false
+    var visitLimitReached = false
+    var inaccessibleCount = 0
+    var visited = 0
+    var cancelled = false
+    var isPartial: Bool { limitReached || depthLimited || visitLimitReached || inaccessibleCount > 0 || cancelled }
+}
+
+struct DirectorySizeResult {
+    var bytes: Int64 = 0
+    var files = 0
+    var folders = 0
+    var isComplete = true
+    var inaccessibleCount = 0
+}
+
 /// 不含任何可变状态，全部方法都是 static，便于在后台线程执行 I/O
 enum FileSystemService {
 
@@ -88,49 +115,105 @@ enum FileSystemService {
 
     // MARK: - 目录统计
 
-    static func directorySize(_ url: URL, limit: Int = 200_000) -> (bytes: Int64, files: Int, folders: Int) {
-        let fm = FileManager.default
-        var bytes: Int64 = 0
-        var files = 0
-        var folders = 0
-        guard let enumerator = fm.enumerator(
-            at: url, includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
-            options: [.skipsHiddenFiles], errorHandler: { _, _ in true }
-        ) else { return (0, 0, 0) }
+    static func directorySize(_ url: URL, limit: Int = 200_000,
+                              cancelled: () -> Bool = { false }) -> DirectorySizeResult {
+        var result = DirectorySizeResult()
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: url, includingPropertiesForKeys: Array(keys), options: [], errorHandler: { _, _ in
+                result.inaccessibleCount += 1; result.isComplete = false; return true
+            }) else { result.isComplete = false; return result }
         var visited = 0
         for case let child as URL in enumerator {
+            if cancelled() || visited >= limit { result.isComplete = false; break }
             visited += 1
-            if visited > limit { break }
-            guard let values = try? child.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey]) else { continue }
-            if values.isDirectory == true {
-                folders += 1
-            } else {
-                files += 1
-                bytes += Int64(values.fileSize ?? 0)
-            }
+            do {
+                let values = try child.resourceValues(forKeys: keys)
+                // Count logical file contents once per path; never follow aliases outside the folder.
+                if values.isSymbolicLink == true { continue }
+                if values.isDirectory == true { result.folders += 1 }
+                else if values.isRegularFile == true {
+                    result.files += 1
+                    result.bytes += Int64(values.fileSize ?? 0)
+                }
+            } catch { result.inaccessibleCount += 1; result.isComplete = false }
         }
-        return (bytes, files, folders)
+        return result
     }
 
-    // MARK: - 搜索
+    // MARK: - 有界、可取消且有完整性说明的扫描
 
     static func search(under root: URL, matching text: String, limit: Int = 400) -> [FileItem] {
-        let needle = text.lowercased()
-        guard !needle.isEmpty else { return [] }
+        searchReport(under: root, matching: text, limit: limit).items
+    }
+
+    static func searchReport(under root: URL, matching text: String, limit: Int = 400,
+                             entryLimit: Int = 100_000, showHidden: Bool = false,
+                             criteria: FileSearchCriteria = FileSearchCriteria(),
+                             cancelled: () -> Bool = { false }) -> FileScanReport {
+        guard (!text.isEmpty || criteria.isActive), criteria.isValid else { return FileScanReport() }
+        return scanFiles(under: [root], depth: Int.max, limit: limit, entryLimit: entryLimit,
+                         showHidden: showHidden, cancelled: cancelled) {
+            (text.isEmpty || $0.name.localizedCaseInsensitiveContains(text)) && criteria.matches($0)
+        }
+    }
+
+    static func categoryReport(_ category: FileCategory, under roots: [URL], depth: Int = 4,
+                               budget: Int = 800, entryLimit: Int = 100_000,
+                               cancelled: () -> Bool = { false }) -> FileScanReport {
+        scanFiles(under: roots, depth: depth, limit: budget, entryLimit: entryLimit,
+                  showHidden: false, cancelled: cancelled) { !$0.isDirectory && $0.category == category }
+    }
+
+    private static func scanFiles(under roots: [URL], depth: Int, limit: Int, entryLimit: Int,
+                                  showHidden: Bool, cancelled: () -> Bool,
+                                  matching: (FileItem) -> Bool) -> FileScanReport {
+        var result = FileScanReport()
+        var seenDirectories = Set<String>()
+        var seenFiles = Set<String>()
+        var inaccessible = Set<String>()
         let fm = FileManager.default
-        var results: [FileItem] = []
-        guard let enumerator = fm.enumerator(
-            at: root, includingPropertiesForKeys: resourceKeys,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, _ in true }
-        ) else { return [] }
-        for case let url as URL in enumerator {
-            if results.count >= limit { break }
-            guard url.lastPathComponent.lowercased().contains(needle) else { continue }
-            if let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: false) {
-                results.append(item)
+        func stopped() -> Bool {
+            if cancelled() { result.cancelled = true }
+            return result.cancelled || result.limitReached || result.visitLimitReached
+        }
+        func walk(_ directory: URL, level: Int) {
+            guard !stopped(), seenDirectories.insert(FileItem.canonicalID(for: directory)).inserted else { return }
+            let children: [URL]
+            do {
+                children = try fm.contentsOfDirectory(at: directory,
+                    includingPropertiesForKeys: resourceKeys + [.isPackageKey],
+                    options: showHidden ? [] : [.skipsHiddenFiles])
+            } catch { inaccessible.insert(directory.path); return }
+            for url in children {
+                if stopped() { return }
+                guard result.visited < entryLimit else { result.visitLimitReached = true; return }
+                result.visited += 1
+                guard let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: showHidden) else {
+                    inaccessible.insert(url.path); continue
+                }
+                guard !item.isSymlink else { continue }
+                if matching(item), seenFiles.insert(item.id).inserted {
+                    if result.items.count >= limit { result.limitReached = true; return }
+                    result.items.append(item)
+                }
+                if item.isDirectory && !item.isBundle {
+                    let isPackage = (try? url.resourceValues(forKeys: [.isPackageKey]))?.isPackage ?? false
+                    if isPackage { continue }
+                    if level < depth { walk(url, level: level + 1) }
+                    else { result.depthLimited = true }
+                }
             }
         }
-        return results
+        for root in roots {
+            if stopped() { break }
+            let values = try? root.resourceValues(forKeys: [.isSymbolicLinkKey])
+            guard values?.isSymbolicLink != true else { continue }
+            walk(root, level: 0)
+        }
+        result.inaccessibleCount = inaccessible.count
+        result.items = sort(result.items, field: .modified, ascending: false)
+        return result
     }
 
     /// 按分类在给定范围内收集文件（分类视图的数据源）
@@ -161,45 +244,7 @@ enum FileSystemService {
         depth: Int = 4,
         budget: Int = 800
     ) -> [FileItem] {
-        var results: [FileItem] = []
-        let fm = FileManager.default
-
-        func walk(_ directory: URL, level: Int) {
-            if results.count >= budget || level > depth { return }
-            guard let children = try? fm.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: resourceKeys,
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ), children.count <= 3000 else { return }
-            for url in children {
-                if results.count >= budget { return }
-                guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { continue }
-                if values.isDirectory == true {
-                    if level < depth { walk(url, level: level + 1) }
-                    continue
-                }
-                let info = FileTypeDB.info(name: url.lastPathComponent, isDirectory: false,
-                                           isSymlink: values.isSymbolicLink ?? false, isBundle: false)
-                guard info.category == category else { continue }
-                if let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: false) {
-                    results.append(item)
-                }
-            }
-        }
-
-        for root in roots {
-            guard fm.fileExists(atPath: root.path) else { continue }
-            walk(root, level: 0)
-            if results.count >= budget { break }
-        }
-        // 按路径去重。
-        //
-        // 必要性：可浏览范围是 ["<家目录>", "/"]，前者包含在后者内，
-        // 因此 / 的遍历会再次走到家目录下的文件。此前只拼接各范围结果而不查重，
-        // 导致同一条目出现两次（用户实测：分类计数 16 但只有 14 个不同文件，
-        // 图标视图只画出 14 个，且点一个会同时选中两个 —— 它们共享同一路径即同一 id）。
-        let unique = deduplicateByPath(results)
-        return sort(unique, field: .modified, ascending: false)
+        categoryReport(category, under: roots, depth: depth, budget: budget).items
     }
 
     /// 按文件路径去重，保持原有顺序
@@ -259,53 +304,13 @@ enum FileSystemService {
     /// 分类计数：与 categoryFiles 使用**相同的深度与上限**，
     /// 保证侧边栏徽标数字与点进去看到的条目数完全一致。
     ///
-    /// 与 categoryFiles 一样跳过条目数超过 3000 的目录；当所有可能出现的
+    /// 与 categoryFiles 一样处理大目录；当所有可能出现的
     /// 分类都达到上限后提前结束遍历（结果不会再变化，没必要走完整个磁盘）。
     static func categoryCounts(under roots: [URL], depth: Int = 4, budget: Int = 800) -> [FileCategory: Int] {
+        let report = scanFiles(under: roots, depth: depth, limit: Int.max, entryLimit: 100_000,
+                               showHidden: false, cancelled: { false }) { !$0.isDirectory }
         var counts: [FileCategory: Int] = [:]
-        var counted = Set<String>()   // 已计入的文件路径，避免重复计数
-        let fm = FileManager.default
-        // 文件可能出现的分类（.folder 只用于目录，不会被计数）
-        let countableCategories = Set(FileCategory.allCases.filter { $0 != .folder })
-        var allCapped = false
-
-        func walk(_ directory: URL, level: Int) {
-            if allCapped || level > depth { return }
-            guard let children = try? fm.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            ), children.count <= 3000 else { return }
-            for url in children {
-                if allCapped { return }
-                // 单个分类达到上限即封顶，与 categoryFiles 的截断行为保持一致
-                guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey]) else { continue }
-                if values.isDirectory == true {
-                    walk(url, level: level + 1)
-                    continue
-                }
-                guard let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: false) else { continue }
-                // 按路径去重后再计数：范围存在包含关系（家目录 ⊂ 根目录），
-                // 否则同一个文件会被计两次，徽标数字虚高
-                guard counted.insert(item.url.path).inserted else { continue }
-                let info = FileTypeDB.info(name: item.name, isDirectory: false,
-                                           isSymlink: values.isSymbolicLink ?? false, isBundle: false)
-                guard (counts[info.category] ?? 0) < budget else { continue }
-                let next = (counts[info.category] ?? 0) + 1
-                counts[info.category] = next
-                // 所有分类都封顶后无需再遍历（结果不会再变）
-                if counts.count == countableCategories.count,
-                   counts.values.allSatisfy({ $0 >= budget }) {
-                    allCapped = true
-                    return
-                }
-            }
-        }
-
-        for root in roots {
-            guard fm.fileExists(atPath: root.path) else { continue }
-            walk(root, level: 0)
-        }
+        for item in report.items { counts[item.category] = min(budget, (counts[item.category] ?? 0) + 1) }
         return counts
     }
 

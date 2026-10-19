@@ -64,7 +64,7 @@ struct AndroidEntry: Identifiable, Hashable {
 
             let fields = line.split(separator: " ", maxSplits: 7, omittingEmptySubsequences: true)
                 .map(String.init)
-            guard fields.count >= 6 else { continue }
+            guard fields.count >= 7 else { continue }
 
             let permissions = fields[0]
             guard permissions.count >= 10 else { continue }
@@ -76,7 +76,7 @@ struct AndroidEntry: Identifiable, Hashable {
             // 依据列数判断时间格式：
             //  7 列（… 大小 日期 时间 名称）  → 标准形式
             //  6 列（… 大小 日期 时间 名称，缺 owner/group 的情况）兜底
-            if fields.count >= 7 {
+            if fields.count >= 8 {
                 size = Int64(fields[4]) ?? 0
                 name = fields[7]
                 modified = parseDate(fields[5], fields[6])

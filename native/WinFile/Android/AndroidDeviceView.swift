@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 struct AndroidDeviceView: View {
+    @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     let serial: String
@@ -102,6 +103,7 @@ struct AndroidDeviceView: View {
 
 /// 存储位置卡片
 struct StorageCard: View {
+    @ObservedObject private var localization = Localization.shared
     let storage: AndroidDeviceRegistry.AndroidStorage
     let open: () -> Void
 
@@ -141,6 +143,7 @@ struct StorageCard: View {
 
 /// 传输进度条（上传/下载大文件时显示，避免界面看起来卡死）
 struct AndroidTransferBanner: View {
+    @ObservedObject private var localization = Localization.shared
     let progress: AndroidTransferProgress
 
     var body: some View {
