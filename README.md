@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#安装)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#技术栈)
-[![Tests](https://img.shields.io/badge/tests-776%20passing-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/tests-803%20passing-brightgreen.svg)](#测试)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 习惯 Windows 资源管理器的操作方式，也想在 Mac 上方便地整理文件？WinFile 将多页签、可编辑路径栏、类型分类和空间统计放在同一个原生界面里。
@@ -40,14 +40,13 @@ WinFile 面向这些日常整理需求：
 
 WinFile 不试图取代访达，而是补上这些空白。它**不开沙盒**，因此可以浏览整个磁盘——包括其它应用的数据目录，这是它和 App Store 应用最大的区别。
 
-## 本次更新：v1.2.0
+## 本次更新：v1.2.1
 
-- **个人收藏管理**：拖入文件夹或右键直接添加到侧边栏；添加弹窗改用 WinFile 自带选择器，支持路径、筛选、隐藏目录与多选。
-- **应用内自动更新**：启动检查新版本，可安装、跳过此版本或稍后提醒；更新源和安装包均验证签名。
-- **稳定性修复**：修复切换应用、双击打开外部应用时，异常鼠标坐标可能引发的崩溃。
-- 保留微信文件清理、安卓文件查看、RAR / 7Z 解压及现有文件整理功能。
+- **修复微信清理切换排序时的卡死**：附件较多时点击表头排序，界面可能进入无限刷新（CPU 100%、无响应）。现已改为分页显示（每页 200 行），排序一次提交、只刷新一次，表格行标识方式与其他文件列表统一。
+- **排序语义不变**：排序作用于全部筛选结果再分页；统计与「全选筛选结果」仍按全量；已选项翻页后保留；切换排序或筛选回到第 1 页。
+- 在 8,719 项真实附件上连续切换排序 260 次未再复现；自动化测试 803 项通过（双架构）。
 
-[完整更新记录](docs/releases/v1.2.0.md) · [v1.1.0 更新记录](docs/releases/v1.1.0.md) · [一键安装](#一键安装推荐)
+[完整更新记录](docs/releases/v1.2.1.md) · [v1.2.0 更新记录](docs/releases/v1.2.0.md) · [一键安装](#一键安装推荐)
 
 ## 功能
 
