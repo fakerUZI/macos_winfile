@@ -912,3 +912,9 @@
 "folderPicker.addCurrent" = "添加当前文件夹";
 "folderPicker.addSelected" = "添加 %d 个文件夹";
 "sidebar.dropHint" = "拖入文件夹以添加到个人收藏";
+
+/* 微信清理分页 */
+"wechat.page" = "第 %d / %d 页";
+"wechat.pagePrev" = "上一页";
+"wechat.pageNext" = "下一页";
+"wechat.pageRange" = "（第 %d–%d 项）";

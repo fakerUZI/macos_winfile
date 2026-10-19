@@ -271,11 +271,12 @@ struct WeChatCleanupView: View {
 
     private var sortOrder: Binding<[KeyPathComparator<WeChatFile>]> {
         Binding(
-            get: { [WeChatSortOrderBridge.comparator(for: store.sort, ascending: store.sortAscending)] },
+            get: { [WeChatSortOrderBridge.comparator(for: store.sortState.field,
+                                                    ascending: store.sortState.ascending)] },
             set: { value in
                 guard let first = value.first, let field = WeChatSortOrderBridge.field(for: first) else { return }
-                store.sort = field
-                store.sortAscending = first.order == .forward
+                // 一次写入：模型内部合并为单个状态，只重算一次
+                store.setSort(field: field, ascending: first.order == .forward)
             }
         )
     }
@@ -302,7 +303,9 @@ struct WeChatCleanupView: View {
     }
 
     private var files: some View {
-        Table(store.visibleFiles, selection: $store.selection, sortOrder: sortOrder) {
+        // 用与文件列表一致的 Table(of:) + TableRow 写法：行标识明确，差异计算更稳定。
+        // 数据源只给当前页（最多 200 行），避免整表重排时的超大规模 diff。
+        Table(of: WeChatFile.self, selection: $store.selection, sortOrder: sortOrder) {
             TableColumn(L("column.name", "名称"), value: \WeChatFile.name, comparator: .localizedStandard) { file in
                 HStack(spacing: 5) {
                     Image(systemName: "doc").foregroundStyle(.secondary)
@@ -319,6 +322,10 @@ struct WeChatCleanupView: View {
                 .buttonStyle(.link)
                 .help(L("action.openContainingFolder", "打开所在文件夹") + "\n" + file.url.deletingLastPathComponent().path)
             }.width(min: 150, ideal: 240)
+        } rows: {
+            ForEach(store.pagedFiles) { file in
+                TableRow(file)
+            }
         }
         .contextMenu(forSelectionType: String.self) { ids in
             if !ids.isEmpty {
@@ -356,9 +363,15 @@ struct WeChatCleanupView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L("wechat.summary", "共 %d 项（%@），筛选后 %d 项", store.result.files.count,
-                   FileItem.formatSize(store.totalSize), store.matchingCount))
-                .font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text(L("wechat.summary", "共 %d 项（%@），筛选后 %d 项", store.result.files.count,
+                       FileItem.formatSize(store.totalSize), store.matchingCount))
+                    .font(.caption).foregroundStyle(.secondary)
+                if store.matchingCount > WeChatCleanupModel.pageSize {
+                    Text(L("wechat.pageRange", "（第 %d–%d 项）", store.pageRange.first, store.pageRange.last))
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+            }
             HStack {
                 Button {
                     if let file = store.selectedFiles.first { model.openContainingFolder(of: file.url) }
@@ -367,6 +380,17 @@ struct WeChatCleanupView: View {
                 }
                 .disabled(store.selectedFiles.count != 1 || operationInProgress)
                 Spacer()
+                // 分页：仅超过一页时出现，避免小数据量增加噪音
+                if store.matchingCount > WeChatCleanupModel.pageSize {
+                    Button { store.previousPage() } label: { Image(systemName: "chevron.left") }
+                        .help(L("wechat.pagePrev", "上一页"))
+                        .disabled(!store.canGoPrevious || operationInProgress)
+                    Text(L("wechat.page", "第 %d / %d 页", store.page + 1, store.pageCount))
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Button { store.nextPage() } label: { Image(systemName: "chevron.right") }
+                        .help(L("wechat.pageNext", "下一页"))
+                        .disabled(!store.canGoNext || operationInProgress)
+                }
                 Button(L("wechat.selectAll", "全选筛选结果")) { store.selection = Set(store.visibleFiles.map(\.id)) }
                     .disabled(operationInProgress || store.visibleFiles.isEmpty)
                 Button(L("wechat.trashSelection", "清理所选 %d 项（%@）", store.selectedFiles.count, FileItem.formatSize(store.selectedSize)), role: .destructive) {

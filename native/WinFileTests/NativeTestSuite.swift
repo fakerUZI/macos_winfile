@@ -107,6 +107,7 @@ enum NativeTestSuite {
             try testLanguageSelection()
             try testWeChatCleanup(sandbox)
             try testWeChatFileActions(sandbox)
+            try testWeChatPagination(sandbox)
             try testFunctionalImprovements(sandbox)
             try testExperienceImprovements(sandbox)
             try testLayoutAndFilterExperience(sandbox)
@@ -491,6 +492,98 @@ enum NativeTestSuite {
         let tab = WinFileTab(engine: engine, startDirectory: nil)
         tab.model.navigate(to: .weChatCleanup)
         check("微信清理页签标题正确", tab.title == L("wechat.title", "微信文件清理"))
+    }
+
+    /// 微信清理分页：排序全局生效、翻页正确、筛选重置页码、选择跨页保留
+    @MainActor
+    private static func testWeChatPagination(_ sandbox: URL) throws {
+        print("\n\n[微信清理分页]")
+
+        let root = sandbox.appendingPathComponent("wechat-pagination")
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+
+        // 450 项：名称与大小都不同，便于验证排序是否全局生效
+        var files: [WeChatFile] = []
+        for i in 0..<450 {
+            let url = root.appendingPathComponent(String(format: "file-%03d.dat", i))
+            files.append(WeChatFile(url: url, root: root, kind: .document,
+                                    size: Int64(450 - i), modified: base.addingTimeInterval(Double(i))))
+        }
+        let scan = WeChatScanResult(files: files, roots: [root], inaccessible: [])
+        let store = WeChatCleanupModel(initialResult: scan, homeDirectory: sandbox, customRoots: [])
+
+        check("每页 200 行", WeChatCleanupModel.pageSize == 200, "\(WeChatCleanupModel.pageSize)")
+        check("全量筛选数 450", store.matchingCount == 450, "\(store.matchingCount)")
+        check("总页数 3", store.pageCount == 3, "\(store.pageCount)")
+        check("当前页 200 行", store.pagedFiles.count == 200, "\(store.pagedFiles.count)")
+        check("起始页区间 1–200", store.pageRange.first == 1 && store.pageRange.last == 200,
+              "\(store.pageRange)")
+
+        // 排序必须全局生效：第 1 页应是最小名称，最后一页应是最大名称
+        store.setSort(field: "name", ascending: true)
+        check("排序后回到第一页", store.page == 0)
+        check("第 1 页首项是全局最小", store.pagedFiles.first?.name == "file-000.dat",
+              store.pagedFiles.first?.name ?? "nil")
+        store.goToPage(2)
+        check("翻到最后一页", store.page == 2)
+        check("最后一页 50 行", store.pagedFiles.count == 50, "\(store.pagedFiles.count)")
+        check("最后一页区间 401–450", store.pageRange.first == 401 && store.pageRange.last == 450,
+              "\(store.pageRange)")
+        check("最后一页末项是全局最大", store.pagedFiles.last?.name == "file-449.dat",
+              store.pagedFiles.last?.name ?? "nil")
+
+        // 降序：第 1 页首项应是最大名称
+        store.setSort(field: "name", ascending: false)
+        check("降序后回到第一页且首项最大", store.page == 0 && store.pagedFiles.first?.name == "file-449.dat",
+              store.pagedFiles.first?.name ?? "nil")
+
+        // 按大小排序：第 1 页首项应是最大体积
+        store.setSort(field: "size", ascending: false)
+        check("按大小降序首项最大", store.pagedFiles.first?.size == 450,
+              "\(store.pagedFiles.first?.size ?? -1)")
+
+        // 翻页边界
+        store.goToPage(99)
+        check("超出范围被夹到最后一页", store.page == store.pageCount - 1, "\(store.page)")
+        check("不能继续下一页", !store.canGoNext)
+        store.goToPage(-5)
+        check("负数被夹到第一页", store.page == 0)
+        check("不能继续上一页", !store.canGoPrevious)
+
+        // 选择跨页保留
+        store.selection = [store.pagedFiles[0].id]
+        store.nextPage()
+        check("翻页后选择仍保留", store.selectedFiles.count == 1, "\(store.selectedFiles.count)")
+        check("选择统计不受当前页影响", store.selectedFiles.first?.size == 450,
+              "\(store.selectedFiles.first?.size ?? -1)")
+        store.selection = Set(store.visibleFiles.map(\.id))
+        check("全选筛选结果仍为 450 项", store.selectedFiles.count == 450, "\(store.selectedFiles.count)")
+
+        // 双击行号对应当前页
+        store.goToPage(2)
+        check("行号映射到当前页首项", store.itemForActivation(at: 0)?.name == store.pagedFiles[0].name,
+              store.itemForActivation(at: 0)?.name ?? "nil")
+        check("超出当前页的行号不打开", store.itemForActivation(at: 200) == nil)
+
+        // 筛选变化重置页码并清空选择
+        store.search = "file-00"
+        check("筛选后回到第一页", store.page == 0, "\(store.page)")
+        check("筛选后清空选择", store.selectedFiles.isEmpty)
+        check("筛选后统计按全量筛选结果", store.matchingCount == store.visibleFiles.count,
+              "\(store.matchingCount)")
+
+        // 排序状态只发布一次（避免一次点击触发多轮全表重算）
+        var notifications = 0
+        let token = store.objectWillChange.sink { notifications += 1 }
+        defer { token.cancel() }
+        store.setSort(field: "name", ascending: true)
+        check("切换排序只发布一次变更", notifications == 1, "\(notifications) 次")
+
+        // 条件相同则不产生多余通知
+        notifications = 0
+        store.setSort(field: "name", ascending: true)
+        check("排序未变化时不发布", notifications == 0, "\(notifications) 次")
     }
 
     @MainActor

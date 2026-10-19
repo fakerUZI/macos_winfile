@@ -894,3 +894,9 @@
 "folderPicker.addCurrent" = "Add Current Folder";
 "folderPicker.addSelected" = "Add %d Folders";
 "sidebar.dropHint" = "Drop folders here to add to Favorites";
+
+/* WeChat cleanup pagination */
+"wechat.page" = "Page %d of %d";
+"wechat.pagePrev" = "Previous Page";
+"wechat.pageNext" = "Next Page";
+"wechat.pageRange" = "(items %d–%d)";

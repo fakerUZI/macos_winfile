@@ -4,25 +4,69 @@ import Foundation
 
 @MainActor
 final class WeChatCleanupModel: ObservableObject {
-    private var cachedVisibleFiles: [WeChatFile]?
-    @Published private(set) var result = WeChatScanResult() { didSet { cachedVisibleFiles = nil } }
+    /// 排序状态：字段与方向合并为一个原子值。
+    ///
+    /// 之前分成 sort / sortAscending 两个 @Published，一次表头点击会连续发布
+    /// 三次变更（sort → didSet 改方向 → 绑定再写方向），等于让 SwiftUI 表格
+    /// 连续做三轮全量行差异计算，显著放大卡死风险。
+    struct SortState: Equatable {
+        var field: String = "size"
+        var ascending: Bool = false
+
+        /// 切换到新字段时的默认方向：大小/日期默认降序，其余升序
+        static func defaultAscending(for field: String) -> Bool {
+            !["size", "date"].contains(field)
+        }
+
+        init(field: String = "size", ascending: Bool? = nil) {
+            self.field = field
+            self.ascending = ascending ?? Self.defaultAscending(for: field)
+        }
+    }
+
+    /// 每页行数。
+    ///
+    /// SwiftUI 表格在“整表重排”时会把所有行做成一次 diff；8 千多行时
+    /// 这套 diff 偶发不收敛（实测 CPU 100% 永久卡死，栈在
+    /// AppKitOutlineTableCoordinator → remove(atOffsets:)）。
+    /// 分页把一次 diff 压到 200 行，从规模上规避该问题。
+    static let pageSize = 200
+
+    @Published private(set) var result = WeChatScanResult() { didSet { apply() } }
     @Published private(set) var isScanning = false
     @Published private(set) var isCleaning = false
     @Published private(set) var hasScanned = false
-    @Published var search = "" { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var kind = "all" { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var minimumMB = 0 { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var olderThanDays = 0 { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var sort = "size" {
-        didSet {
-            cachedVisibleFiles = nil
-            if sort != oldValue { sortAscending = !["size", "date"].contains(sort) }
-        }
+    @Published var search = "" { didSet { filtersChanged() } }
+    @Published var kind = "all" { didSet { filtersChanged() } }
+    @Published var minimumMB = 0 { didSet { filtersChanged() } }
+    @Published var olderThanDays = 0 { didSet { filtersChanged() } }
+    @Published var account = "all" { didSet { filtersChanged() } }
+    @Published var month = "all" { didSet { filtersChanged() } }
+    @Published var source = "all" { didSet { filtersChanged() } }
+
+    /// 一次排序交互产生的全部显示状态。
+    ///
+    /// 合并成一个快照赋值，是为了**每次排序只发布一次 objectWillChange**：
+    /// 之前排序状态、结果、页码、当前页各自是 @Published，一次点击会连续发布
+    /// 多次，让 SwiftUI 反复做全表 diff —— 正是卡死的放大因素。
+    struct Display: Equatable {
+        var sortState = SortState()
+        var visibleFiles: [WeChatFile] = []   // 全量筛选+排序（跨页）
+        var page = 0                          // 当前页（0 基）
+        var pagedFiles: [WeChatFile] = []     // 当前页的行（表格只渲染这些）
     }
-    @Published var sortAscending = false { didSet { cachedVisibleFiles = nil } }
-    @Published var account = "all" { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var month = "all" { didSet { cachedVisibleFiles = nil; selection = [] } }
-    @Published var source = "all" { didSet { cachedVisibleFiles = nil; selection = [] } }
+
+    @Published private(set) var display = Display()
+
+    var sortState: SortState { display.sortState }
+    var visibleFiles: [WeChatFile] { display.visibleFiles }
+    var page: Int { display.page }
+    var pagedFiles: [WeChatFile] { display.pagedFiles }
+
+    /// 筛选结果缓存（选中项统计复用，避免每帧全量过滤）
+    private var filteredCache: [WeChatFile] = []
+    /// 批量修改筛选条件时挂起重算，最后只重算一次
+    private var suspendRebuild = false
     @Published private(set) var scanProgress = WeChatScanProgress()
     var accounts: [String] { Array(Set(result.files.map(\.accountID))).sorted() }
     var months: [String] { Array(Set(result.files.map(\.month))).sorted(by: >) }
@@ -37,28 +81,78 @@ final class WeChatCleanupModel: ObservableObject {
     private static let rootsKey = "WeChatCleanupFolders"
     @Published private(set) var lastScanDate: Date?
 
-    var filterState: WeChatFilterState {
-        WeChatFilterState(search: search, kind: kind, account: account, month: month, source: source,
-                          minimumMB: minimumMB, olderThanDays: olderThanDays, sort: sort, ascending: sortAscending)
+    /// 兼容访问器：写入时走统一的 setSort，保证只发布一次
+    var sort: String {
+        get { sortState.field }
+        set { setSort(field: newValue, ascending: SortState.defaultAscending(for: newValue)) }
     }
-    func restoreFilters(_ state: WeChatFilterState?) {
-        guard let state else { return }
-        search = state.search; kind = state.kind; account = state.account; month = state.month; source = state.source
-        minimumMB = max(0, min(state.minimumMB, 1_000_000)); olderThanDays = max(0, min(state.olderThanDays, 36500))
-        sort = state.sort; sortAscending = state.ascending
+    var sortAscending: Bool {
+        get { sortState.ascending }
+        set { setSort(field: sortState.field, ascending: newValue) }
     }
 
     init(initialResult: WeChatScanResult = WeChatScanResult(),
          homeDirectory: URL = FileSystemService.realHomeDirectory(), customRoots: [URL]? = nil) {
         self.homeDirectory = homeDirectory
-        result = initialResult
+        self.result = initialResult
         hasScanned = !initialResult.roots.isEmpty
         self.customRoots = customRoots ?? (UserDefaults.standard.stringArray(forKey: Self.rootsKey) ?? []).map { URL(fileURLWithPath: $0) }
+        apply()
     }
 
     deinit { scanTask?.cancel() }
 
-    private var filteredFiles: [WeChatFile] {
+    /// 切换排序：计算完成后一次性提交，只发布一次
+    func setSort(field: String, ascending: Bool) {
+        let next = SortState(field: field, ascending: ascending)
+        guard next != display.sortState else { return }
+        apply(sortState: next, resetPage: true)
+    }
+
+    var filterState: WeChatFilterState {
+        WeChatFilterState(search: search, kind: kind, account: account, month: month, source: source,
+                          minimumMB: minimumMB, olderThanDays: olderThanDays,
+                          sort: display.sortState.field, ascending: display.sortState.ascending)
+    }
+    func restoreFilters(_ state: WeChatFilterState?) {
+        guard let state else { return }
+        suspendRebuild = true
+        defer {
+            suspendRebuild = false
+            // 排序字段/方向也属于会话状态，必须一起恢复
+            apply(sortState: SortState(field: state.sort, ascending: state.ascending), resetPage: true)
+        }
+        search = state.search; kind = state.kind; account = state.account; month = state.month; source = state.source
+        minimumMB = max(0, min(state.minimumMB, 1_000_000)); olderThanDays = max(0, min(state.olderThanDays, 36500))
+    }
+
+    // MARK: - 重算
+
+    /// 筛选条件变化：清空选择、回到第一页，再重算
+    private func filtersChanged() {
+        selection = []
+        guard !suspendRebuild else { return }
+        apply(resetPage: true)
+    }
+
+    /// 重算筛选、排序、分页并一次性提交。
+    private func apply(sortState: SortState? = nil, resetPage: Bool = false) {
+        var next = Display()
+        next.sortState = sortState ?? display.sortState
+        if !resetPage { next.page = display.page }
+
+        let filtered = applyFilters()
+        filteredCache = filtered
+        next.visibleFiles = sortedFiles(filtered, using: next.sortState)
+
+        let pages = max(1, (next.visibleFiles.count + Self.pageSize - 1) / Self.pageSize)
+        next.page = min(max(0, next.page), pages - 1)
+        next.pagedFiles = pageSlice(next.visibleFiles, page: next.page)
+
+        display = next        // 单次发布
+    }
+
+    private func applyFilters() -> [WeChatFile] {
         let cutoff = Calendar.current.date(byAdding: .day, value: -olderThanDays, to: Date()) ?? Date()
         return result.files.filter {
             (kind == "all" || $0.kind.rawValue == kind)
@@ -70,13 +164,14 @@ final class WeChatCleanupModel: ObservableObject {
                 && (search.isEmpty || $0.url.lastPathComponent.localizedCaseInsensitiveContains(search))
         }
     }
-    var matchingCount: Int { visibleFiles.count }
-    var matchingSize: Int64 { visibleFiles.reduce(0) { $0 + $1.size } }
-    var visibleFiles: [WeChatFile] {
-        if let cachedVisibleFiles { return cachedVisibleFiles }
-        let files = filteredFiles.sorted {
+
+    /// 排序：先全局排好再切页，保证翻页顺序正确
+    private func sortedFiles(_ files: [WeChatFile], using sortState: SortState) -> [WeChatFile] {
+        let field = sortState.field
+        let ascending = sortState.ascending
+        return files.sorted {
             let comparison: ComparisonResult
-            switch sort {
+            switch field {
             case "date": comparison = $0.modified.compare($1.modified)
             case "name": comparison = $0.name.localizedStandardCompare($1.name)
             case "type": comparison = $0.typeDescription.localizedStandardCompare($1.typeDescription)
@@ -84,14 +179,46 @@ final class WeChatCleanupModel: ObservableObject {
             default: comparison = $0.size == $1.size ? .orderedSame : ($0.size < $1.size ? .orderedAscending : .orderedDescending)
             }
             if comparison == .orderedSame { return $0.id < $1.id }
-            return comparison == (sortAscending ? .orderedAscending : .orderedDescending)
+            return comparison == (ascending ? .orderedAscending : .orderedDescending)
         }
-        cachedVisibleFiles = files
-        return files
     }
+
+    private func pageSlice(_ files: [WeChatFile], page: Int) -> [WeChatFile] {
+        let start = page * Self.pageSize
+        guard start < files.count else { return [] }
+        return Array(files[start..<min(start + Self.pageSize, files.count)])
+    }
+
+    // MARK: - 分页
+
+    var pageCount: Int { max(1, (visibleFiles.count + Self.pageSize - 1) / Self.pageSize) }
+    var canGoPrevious: Bool { page > 0 }
+    var canGoNext: Bool { page + 1 < pageCount }
+    /// 当前页展示的区间（1 基，用于状态栏文案）
+    var pageRange: (first: Int, last: Int) {
+        guard !pagedFiles.isEmpty else { return (0, 0) }
+        return (page * Self.pageSize + 1, page * Self.pageSize + pagedFiles.count)
+    }
+
+    func goToPage(_ target: Int) {
+        let clamped = min(max(0, target), pageCount - 1)
+        guard clamped != page else { return }
+        var next = display
+        next.page = clamped
+        next.pagedFiles = pageSlice(next.visibleFiles, page: clamped)
+        display = next      // 单次发布
+    }
+
+    func nextPage() { goToPage(page + 1) }
+    func previousPage() { goToPage(page - 1) }
+
+    // MARK: - 统计
+
+    var matchingCount: Int { visibleFiles.count }
+    var matchingSize: Int64 { visibleFiles.reduce(0) { $0 + $1.size } }
     var selectedFiles: [WeChatFile] {
         guard !selection.isEmpty else { return [] }
-        return filteredFiles.filter { selection.contains($0.id) }
+        return filteredCache.filter { selection.contains($0.id) }
     }
     var selectedSize: Int64 { selectedFiles.reduce(0) { $0 + $1.size } }
     var totalSize: Int64 { result.files.reduce(0) { $0 + $1.size } }
@@ -158,7 +285,8 @@ final class WeChatCleanupModel: ObservableObject {
 
     func itemForActivation(at row: Int) -> FileItem? {
         guard !isScanning, !isCleaning else { return nil }
-        let files = visibleFiles
+        // 表格渲染的是当前页，行号对应 pagedFiles
+        let files = pagedFiles
         guard files.indices.contains(row) else { return nil }
         let file = files[row]
         selection = [file.id]
@@ -167,7 +295,7 @@ final class WeChatCleanupModel: ObservableObject {
 
     func selectForContextMenu(_ ids: Set<String>) {
         // AppKit preserves an existing multi-selection when its row is right-clicked.
-        let valid = Set(filteredFiles.map(\.id)).intersection(ids)
+        let valid = Set(filteredCache.map(\.id)).intersection(ids)
         if !valid.isEmpty, !valid.isSubset(of: selection) { selection = valid }
     }
 
