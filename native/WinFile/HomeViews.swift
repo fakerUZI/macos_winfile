@@ -251,7 +251,7 @@ struct FolderTile: View {
         .onHover { hovering = $0 }
         .contextMenu {
             Button(L("action.open", "打开"), action: open)
-            Button(pinned ? L("home.unpin", "取消固定") : L("home.pin", "固定到收藏夹"), action: togglePin)
+            Button(pinned ? L("home.unpin", "从主页取消固定") : L("home.pin", "固定到主页收藏夹"), action: togglePin)
             Divider()
             Button(L("action.reveal", "在访达中显示")) {
                 NSWorkspace.shared.activateFileViewerSelecting([place.url])

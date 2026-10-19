@@ -13,6 +13,7 @@ struct SidebarManagerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isChoosingFolder = false
+    @State private var folderMessage: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,11 +31,11 @@ struct SidebarManagerSheet: View {
             footer
         }
         .frame(width: 460, height: 520)
-        .fileImporter(isPresented: $isChoosingFolder,
-                      allowedContentTypes: [.folder],
-                      allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result {
-                for url in urls { engine.addFolder(url) }
+        .sheet(isPresented: $isChoosingFolder) {
+            FolderPickerSheet { urls in
+                let result = engine.addFolders(urls)
+                folderMessage = result.statusMessage
+                return result
             }
         }
     }
@@ -151,6 +152,9 @@ struct SidebarManagerSheet: View {
                 Label(L("settings.folders.add", "添加文件夹…"), systemImage: "plus")
             }
             .padding(.top, 2)
+            if let folderMessage {
+                Text(folderMessage).font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 

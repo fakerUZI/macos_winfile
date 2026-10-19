@@ -76,11 +76,15 @@ enum NativeTestSuite {
             try testOperations(sandbox)
             try testCategoryView(sandbox)
             try testHomeAndThisPC(sandbox)
+            try testSidebarQuickAdd(sandbox)
+            try testFolderPickerAndDrop(sandbox)
+            try testUpdatePolicy(sandbox)
             testEmptyAreaClassification()
             try testTabManager(sandbox)
             try testSorting(sandbox)
             testAppData()
             testDoubleClickMechanism()
+            testMouseEventSafety()
             testTileMarkerLookup()
             try testNewTabUsable()
             testRowAreaRightClick()
@@ -120,6 +124,186 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testFolderPickerAndDrop(_ sandbox: URL) throws {
+        print("\n[应用内目录选择与收藏拖放]")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("Folder Picker")
+        let alpha = root.appendingPathComponent("Alpha 中文")
+        let beta = root.appendingPathComponent("Beta")
+        let hidden = root.appendingPathComponent(".hidden")
+        let app = root.appendingPathComponent("Example.APP")
+        for folder in [alpha, beta, hidden, app] { try fm.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try Data("file".utf8).write(to: root.appendingPathComponent("note.txt"))
+        let alias = root.appendingPathComponent("App Link")
+        try fm.createSymbolicLink(at: alias, withDestinationURL: app)
+        let visible = try FolderPickerModel.listFolders(root, showHidden: false)
+        check("选择器仅显示可浏览文件夹且按名称排序", visible.map(\.lastPathComponent) == [alpha.lastPathComponent, beta.lastPathComponent])
+        check("隐藏文件夹可按需显示", try FolderPickerModel.listFolders(root, showHidden: true).map(\.path).contains(hidden.path))
+        check("选择器解析相对路径及中文空格", FolderPickerModel.resolvePath("Alpha 中文", relativeTo: root)?.path == alpha.path)
+        check("选择器支持上级路径", FolderPickerModel.resolvePath("../", relativeTo: alpha)?.path == root.path)
+        check("选择器支持主目录缩写", FolderPickerModel.resolvePath("~", relativeTo: root)?.path == FileSystemService.realHomeDirectory().path)
+        check("选择器解析编码后的文件 URL", FolderPickerModel.resolvePath(alpha.absoluteString, relativeTo: root)?.path == alpha.path)
+        check("选择器拒绝空路径及网络协议", FolderPickerModel.resolvePath("", relativeTo: root) == nil && FolderPickerModel.resolvePath("https://example.test", relativeTo: root) == nil)
+        let picker = FolderPickerModel(initialDirectory: root)
+        func waitUntil(_ done: () -> Bool) {
+            let deadline = Date().addingTimeInterval(5)
+            while !done() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        picker.navigate(to: root)
+        waitUntil { !picker.isLoading }
+        check("选择器异步加载目录", !picker.isLoading && picker.folders == visible)
+        picker.selectedPaths = [alpha.path, beta.path]
+        check("选择器支持同级多选并保持显示顺序", picker.candidates.map(\.path) == [alpha.path, beta.path])
+        picker.selectedPaths = []
+        check("未选中子目录时添加当前目录", picker.candidates.map(\.path) == [root.path])
+        picker.navigate(to: app)
+        check("无效目标保留当前目录并显示错误", picker.directory.path == root.path && picker.errorMessage != nil)
+        picker.navigate(to: alpha)
+        picker.navigate(to: beta)
+        waitUntil { !picker.isLoading }
+        check("快速切换目录不会被旧加载结果覆盖", picker.directory.path == beta.path && picker.folders.isEmpty)
+        picker.pathText = root.path
+        picker.openPath()
+        waitUntil { !picker.isLoading }
+        check("输入路径可返回目录并清空旧选择", picker.directory.path == root.path && picker.selectedPaths.isEmpty)
+        let providers = [SidebarFolderDrop.provider(for: beta)!, SidebarFolderDrop.provider(for: alpha)!, NSItemProvider(object: "invalid" as NSString)]
+        var resolved: [URL] = []
+        var failed = 0
+        var finished = false
+        SidebarFolderDrop.load(providers) { urls, unresolved in resolved = urls; failed = unresolved; finished = true }
+        waitUntil { finished }
+        check("拖放异步解析保持原顺序", finished && resolved.map(\.path) == [beta.path, alpha.path])
+        check("拖放报告无法解析的条目", finished && failed == 1)
+        check("安卓 URL 不伪装成本地拖出文件", SidebarFolderDrop.provider(for: AndroidURL.make(serial: "test", path: "/sdcard")) == nil)
+        check("拖放不会移动或删除源文件夹", fm.fileExists(atPath: alpha.path) && fm.fileExists(atPath: beta.path))
+        picker.cancelLoading()
+    }
+
+    @MainActor
+    private static func testUpdatePolicy(_ sandbox: URL) throws {
+        print("\n[自动更新配置与重启保护]")
+        check("正常启动允许检查更新", AppUpdatePolicy.allowsStartupCheck(arguments: ["WinFile"]))
+        for flag in ["--run-tests", "--render-snapshot", "--snapshot-mode", "--dump-view-tree", "--probe-context-menu", "--selftest-tabs"] {
+            check("\(flag) 不自动联网更新", !AppUpdatePolicy.allowsStartupCheck(arguments: ["WinFile", flag]))
+        }
+        let infoURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Info.plist")
+        let info: [String: Any]
+        if let bundled = Bundle.main.infoDictionary, bundled["SUFeedURL"] != nil { info = bundled }
+        else { info = try PropertyListSerialization.propertyList(from: Data(contentsOf: infoURL), format: nil) as! [String: Any] }
+        check("更新源固定为本项目 GitHub Release", info["SUFeedURL"] as? String == AppUpdatePolicy.feedURL && URL(string: AppUpdatePolicy.feedURL)?.scheme == "https")
+        check("更新公钥已固定且为 Ed25519 公钥", info["SUPublicEDKey"] as? String == AppUpdatePolicy.publicKey && Data(base64Encoded: AppUpdatePolicy.publicKey)?.count == 32)
+        check("默认启动检查且不静默安装", info["SUEnableAutomaticChecks"] as? Bool == true && info["SUAutomaticallyUpdate"] as? Bool == false)
+        check("更新清单及压缩包均要求签名校验", info["SURequireSignedFeed"] as? Bool == true && info["SUVerifyUpdateBeforeExtraction"] as? Bool == true)
+        check("签名失败不会到期绕过", info["SUSignedFeedFailureExpirationInterval"] as? Int == 0)
+        let engine = FSEngine()
+        engine.scopeOverrideForTesting = [sandbox]
+        let first = BrowserModel(engine: engine, startDirectory: nil)
+        let second = BrowserModel(engine: engine, startDirectory: nil)
+        check("空闲窗口允许重启", !AppUpdatePolicy.hasActiveFileOperations(in: [first, second]))
+        second.archiveProgress = ArchiveProgress(name: "archive.7z", isCompressing: false)
+        check("非活动页签解压时延迟更新重启", AppUpdatePolicy.hasActiveFileOperations(in: [first, second]))
+        second.archiveProgress = nil
+        second.transferProgress = AndroidTransferProgress(name: "download", direction: .download)
+        check("安卓传输时延迟更新重启", AppUpdatePolicy.hasActiveFileOperations(in: [first, second]))
+        second.transferProgress = nil
+        first.isBusy = true
+        check("其他正在处理的文件任务也保护退出", AppUpdatePolicy.hasActiveFileOperations(in: [first, second]))
+        first.isBusy = false
+        check("任务结束后允许继续更新", !AppUpdatePolicy.hasActiveFileOperations(in: [first, second]))
+        let a = TabManager(engine: engine, startDirectory: nil)
+        let b = TabManager(engine: engine, startDirectory: nil)
+        check("重启保护覆盖多个窗口的模型", TabManager.allModels.contains { $0 === a.activeTab.model } && TabManager.allModels.contains { $0 === b.activeTab.model })
+    }
+
+    @MainActor
+    private static func testSidebarQuickAdd(_ sandbox: URL) throws {
+        print("\n[侧边栏快捷添加与目标解析]")
+        let defaults = UserDefaults.standard
+        let keys = ["AddedFolderPaths", "FavoritesSeeded", "PinnedFolders"]
+        let saved = keys.map { defaults.object(forKey: $0) }
+        defer {
+            for (key, value) in zip(keys, saved) {
+                if let value { defaults.set(value, forKey: key) }
+                else { defaults.removeObject(forKey: key) }
+            }
+        }
+        defaults.set([], forKey: "AddedFolderPaths")
+        defaults.set(true, forKey: "FavoritesSeeded")
+        defaults.set(["/Home-favorite-must-stay-unchanged"], forKey: "PinnedFolders")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("Sidebar Quick Add")
+        let alpha = root.appendingPathComponent("收藏 空格")
+        let beta = root.appendingPathComponent("Beta")
+        let app = root.appendingPathComponent("Example.APP")
+        let file = root.appendingPathComponent("readme.txt")
+        for directory in [alpha, beta, app] {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        try Data("keep this file".utf8).write(to: file)
+        let engine = FSEngine()
+        engine.scopeOverrideForTesting = [root]
+        let model = BrowserModel(engine: engine, startDirectory: root)
+        let peer = BrowserModel(engine: engine, startDirectory: root)
+        let deadline = Date().addingTimeInterval(10)
+        while (model.isBusy || peer.isBusy) && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        let a = item(alpha)
+        let b = item(beta)
+        let plainFile = item(file)
+        model.selectedIDs = [a.id]
+        check("图标右键未选中目录时只针对该目录", model.sidebarContextItems(item: b).map(\.id) == [b.id])
+        check("表格菜单使用显式目标而非旧选中项", model.sidebarContextItems(item: a, ids: [b.id]).map(\.id) == [b.id])
+        check("空菜单目标不回退到旧选中项", model.sidebarContextItems(item: a, ids: []).isEmpty)
+        model.selectedIDs = [a.id, b.id, plainFile.id]
+        let targets = model.sidebarContextItems(item: b)
+        check("右键多选中的目录时保留整组目标", Set(targets.map(\.id)) == model.selectedIDs)
+        let directoryBefore = model.currentDirectory
+        let selectionBefore = model.selectedIDs
+        let navigationBefore = model.selection
+        let canGoBackBefore = model.canGoBack
+        var publications = 0
+        let observation = engine.$authorizedRoots.dropFirst().sink { _ in publications += 1 }
+        let result = model.addFoldersToSidebar([alpha, alpha.appendingPathComponent("../收藏 空格"), file, beta])
+        check("批量添加按顺序保存且归一化路径去重", result.added.map(\.path) == [alpha.path, beta.path]
+              && result.duplicateCount == 1 && result.rejectedCount == 1)
+        check("批量添加只发布一次侧边栏变化", publications == 1)
+        check("普通文件不能混入侧边栏收藏", !engine.containsFolder(file))
+        check("添加后不改变目录、选择或导航历史", model.currentDirectory == directoryBefore
+              && model.selectedIDs == selectionBefore && model.selection == navigationBefore && model.canGoBack == canGoBackBefore)
+        check("添加结果通过状态栏反馈", model.statusMessage == result.statusMessage && !model.statusMessage.isEmpty)
+        check("共享引擎的其他页签同步看到收藏", peer.engine.authorizedRoots.map(\.path) == [alpha.path, beta.path])
+        check("添加侧边栏不覆盖主页收藏", defaults.stringArray(forKey: "PinnedFolders") == ["/Home-favorite-must-stay-unchanged"])
+        let duplicates = model.addFoldersToSidebar([alpha, beta])
+        check("全部重复时不写入或重复发布", duplicates.added.isEmpty && duplicates.duplicateCount == 2 && publications == 1)
+        check("当前本地目录可直接添加", model.currentSidebarFolder == root)
+        model.addFoldersToSidebar([root])
+        check("添加当前目录后仍停留原目录", engine.containsFolder(root) && model.currentDirectory == root)
+        let rejected = engine.addFolders([file, app, app.appendingPathComponent("."), root.appendingPathComponent("missing"),
+                                          URL(string: "https://example.test/folder")!,
+                                          AndroidURL.make(serial: "not-a-real-device", path: root.path)])
+        check("拒绝普通文件、应用包、失效目录及非本地 URL", rejected.added.isEmpty && rejected.rejectedCount == 6)
+        let unreadable = root.appendingPathComponent("Unreadable")
+        try fm.createDirectory(at: unreadable, withIntermediateDirectories: true)
+        try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: unreadable.path)
+        let unreadableResult = engine.addFolders([unreadable])
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: unreadable.path)
+        check("拒绝不可读取目录并报告失败", unreadableResult.rejectedCount == 1 && unreadableResult.added.isEmpty)
+        let restored = FSEngine()
+        check("重建引擎恢复收藏顺序", restored.authorizedRoots.map(\.path) == [alpha.path, beta.path, root.path])
+        check("旧的单目录 API 同样校验输入", !engine.addFolder(file) && !engine.addFolder(alpha))
+        engine.removeFolder(alpha)
+        check("移除收藏只删除快捷入口", !engine.containsFolder(alpha) && fm.fileExists(atPath: alpha.path))
+        let removed = root.appendingPathComponent("Deleted Before Action")
+        try fm.createDirectory(at: removed, withIntermediateDirectories: true)
+        try fm.removeItem(at: removed)
+        check("操作执行时重新检查目录存在性", engine.addFolders([removed]).rejectedCount == 1)
+        model.navigate(to: .category(.document))
+        check("分类页不把残留浏览目录当作当前收藏目标", model.currentSidebarFolder == nil)
+        observation.cancel()
     }
 
     @MainActor
@@ -2985,6 +3169,75 @@ enum NativeTestSuite {
     // MARK: - 双击打开机制
 
     @MainActor
+    static func testMouseEventSafety() {
+        print("\n[切换应用时的异常鼠标事件与监听器生命周期]")
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 240),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 240))
+        window.contentView = root
+        let installer = EmptyAreaContextMenu.InstallerView(frame: .zero)
+        root.addSubview(installer)
+        defer { installer.detachMonitors(); window.orderOut(nil) }
+        let marker = FileTileMarkerView(frame: NSRect(x: 40, y: 60, width: 100, height: 80))
+        marker.item = item(URL(fileURLWithPath: "/tmp"))
+        var activated = 0
+        marker.onActivate = { activated += 1 }
+        root.addSubview(marker)
+        var menuBuilds = 0
+        installer.buildMenu = { menuBuilds += 1; return NSMenu() }
+
+        func event(_ point: NSPoint, type: NSEvent.EventType = .leftMouseDown, clicks: Int = 2,
+                   windowNumber: Int? = nil) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                               windowNumber: windowNumber ?? window.windowNumber, context: nil,
+                               eventNumber: 1, clickCount: clicks, pressure: 1)!
+        }
+        let normal = NSPoint(x: 80, y: 90)
+        check("鼠标事件可解析到所属测试窗口", event(normal).window === window)
+        check("普通窗口内坐标仍被接受", EmptyAreaContextMenu.InstallerView.mouseLocation(event(normal), in: window) == normal)
+        check("挂入窗口时同时安装左右键监听器", installer.activeMonitorCount == 2)
+        installer.attachIfNeeded(); installer.attachIfNeeded()
+        check("重复更新视图不重复安装监听器", installer.activeMonitorCount == 2)
+        let single = event(normal, clicks: 1)
+        check("正常单击透传且不触发打开", installer.handleLeftMouseDown(single) === single && activated == 0)
+        check("正常图标双击仅触发一次并吞掉事件", installer.handleLeftMouseDown(event(normal)) == nil && activated == 1)
+
+        let invalid: [(String, NSPoint)] = [
+            ("NaN 横坐标", NSPoint(x: CGFloat.nan, y: 90)),
+            ("NaN 纵坐标", NSPoint(x: 80, y: CGFloat.nan)),
+            ("正无穷", NSPoint(x: CGFloat.infinity, y: 90)),
+            ("负无穷", NSPoint(x: 80, y: -CGFloat.infinity)),
+            ("超大有限坐标", NSPoint(x: CGFloat.greatestFiniteMagnitude, y: 90)),
+            ("Int 上界舍入溢出", NSPoint(x: CGFloat(Int.max), y: 90)),
+            ("窗口外坐标", NSPoint(x: -100, y: -100))
+        ]
+        for (name, point) in invalid {
+            let left = event(point)
+            check("\(name)：左键透传且不崩溃", installer.handleLeftMouseDown(left) === left && activated == 1)
+            check("\(name)：右键不弹菜单", !installer.handle(event(point, type: .rightMouseDown)))
+            check("\(name)：无效坐标不参与磁贴查找", EmptyAreaContextMenu.InstallerView.tileMarker(at: point, in: root) == nil)
+        }
+        check("无效事件不会构建菜单", menuBuilds == 0)
+        for value: CGFloat in [.nan, .infinity, -.infinity, .greatestFiniteMagnitude, CGFloat(Int.max), -42.75] {
+            check("诊断安全格式化 \(value)", !TabDiagnostics.coordinate(value).isEmpty)
+        }
+        check("缺少窗口的激活事件被透传", installer.handleLeftMouseDown(event(normal, windowNumber: 0)) != nil && activated == 1)
+        installer.removeFromSuperview()
+        check("视图移出窗口立即卸载两个监听器", installer.activeMonitorCount == 0)
+        check("已移出窗口的安装器不处理旧窗口事件", installer.handleLeftMouseDown(event(normal)) != nil && activated == 1)
+        let second = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 240),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        let secondRoot = NSView(frame: root.bounds)
+        second.contentView = secondRoot
+        secondRoot.addSubview(installer)
+        check("移入另一个窗口后只保留一组监听器", installer.activeMonitorCount == 2)
+        check("新窗口安装器不处理原窗口事件", installer.handleLeftMouseDown(event(normal)) != nil && activated == 1)
+        installer.detachMonitors(); installer.detachMonitors()
+        check("反复卸载监听器安全且完整", installer.activeMonitorCount == 0)
+        second.orderOut(nil)
+    }
+
+    @MainActor
     static func testDoubleClickMechanism() {
         print("\n[双击打开机制]")
 
@@ -3130,7 +3383,7 @@ enum NativeTestSuite {
 
         // 常见应用（若已安装）应被识别出中文名
         if let wechat = items.first(where: { $0.bundleID == "com.tencent.xinWeChat" }) {
-            check("微信被识别", wechat.name == "微信", wechat.name)
+            check("微信被识别", wechat.name == L("appData.name.com.tencent.xinWeChat", "微信"), wechat.name)
         } else {
             print("  （未安装微信，跳过）")
         }

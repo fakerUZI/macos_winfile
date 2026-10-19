@@ -241,8 +241,8 @@
 "home.quickAccess.subtitle" = "Frequently used folders";
 "home.favorites" = "Favorites";
 "home.favorites.subtitle" = "Pinned folders (%d)";
-"home.unpin" = "Unpin";
-"home.pin" = "Pin to Favorites";
+"home.unpin" = "Unpin from Home";
+"home.pin" = "Pin to Home Favorites";
 "home.recent" = "Recent";
 "home.recent.subtitle" = "Recently modified and opened files";
 "home.recent.empty" = "No recently modified or opened files.";
@@ -414,7 +414,18 @@
 "sidebar.addFolder" = "Add Folder…";
 "sidebar.manage" = "Manage Sidebar…";
 "sidebar.manageCategories" = "Manage Categories…";
-"sidebar.favorites.empty" = "Right-click to manage favorites";
+"sidebar.favorites.empty" = "Right-click a folder to add it to the sidebar";
+"sidebar.add.folder" = "Add to Sidebar";
+"update.check" = "Check for Updates…";
+"update.automatic" = "Check for updates on every launch";
+"update.hint" = "New versions offer Install Update, Skip This Version, or Remind Me Later.";
+"update.waiting" = "The update will install and restart after file operations finish.";
+"sidebar.add.folders" = "Add %d Folders to Sidebar";
+"sidebar.add.current" = "Add Current Folder to Sidebar";
+"sidebar.add.already" = "Already in Sidebar";
+"sidebar.add.success" = "Added %d folder(s) to the sidebar";
+"sidebar.add.duplicates" = "%d folder(s) already in the sidebar";
+"sidebar.add.result" = "Added %d folder(s); %d already in the sidebar; %d item(s) unavailable (readable local folders only)";
 "sidebarManager.title" = "Manage Sidebar";
 "sidebarManager.reset" = "Restore Defaults";
 "sidebarManager.categoryHint" = "Checked items appear in the sidebar";
@@ -872,3 +883,14 @@
 "wechat.scanDetails" = "Scan Details and Storage Breakdown";
 
 "status.filteredSearch" = "Found %d items matching the selected conditions";
+
+"folderPicker.title" = "Add to Favorites";
+"folderPicker.hint" = "Double-click to browse, hold ⌘ to select multiple folders, or add the current folder.";
+"folderPicker.invalid" = "Choose a readable local folder.";
+"folderPicker.path" = "Enter a folder path";
+"folderPicker.go" = "Go";
+"folderPicker.search" = "Filter folders in this directory";
+"folderPicker.empty" = "No matching subfolders. You can add the current folder.";
+"folderPicker.addCurrent" = "Add Current Folder";
+"folderPicker.addSelected" = "Add %d Folders";
+"sidebar.dropHint" = "Drop folders here to add to Favorites";

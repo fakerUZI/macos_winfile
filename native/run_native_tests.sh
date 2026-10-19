@@ -14,6 +14,9 @@ if [[ " ${*:-} " == *" --skip-device-tests "* ]]; then TEST_ARGS+=(--skip-device
 
 CORE=(
   "$SRC/Localization.swift"
+  "$SRC/AppUpdatePolicy.swift"
+  "$SRC/FolderPickerModel.swift"
+  "$SRC/SidebarFolderDrop.swift"
   "$SRC/Models.swift"
   "$SRC/FileSystemService.swift"
   "$SRC/PlacesService.swift"
@@ -62,15 +65,16 @@ if [[ " ${*:-} " == *" --cli-only "* ]]; then exit 0; fi
 echo
 echo "== 2) 构建应用并在真实 bundle 中测试 =="
 "$ROOT/native/build_native.sh" --in-place >/dev/null
-"$ROOT/WinFile.app/Contents/MacOS/WinFile" "${TEST_ARGS[@]}"
+APP="$(cat "$BUILD/last-built-app-path")"
+"$APP/Contents/MacOS/WinFile" "${TEST_ARGS[@]}"
 
 echo
 echo "== 3) 页签切换冒烟测试（真实界面像素比对）=="
 SMOKE_LOG="$(mktemp -t winfile-tabtest)"
 if [[ " ${*:-} " == *" --skip-device-tests "* ]]; then
-  "$ROOT/WinFile.app/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG" --skip-device-tests
+  "$APP/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG" --skip-device-tests
 else
-  "$ROOT/WinFile.app/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG"
+  "$APP/Contents/MacOS/WinFile" --selftest-tabs "$SMOKE_LOG"
 fi
 cat "$SMOKE_LOG"
 rm -f "$SMOKE_LOG"

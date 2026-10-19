@@ -205,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 沙盒行为探测：验证沙盒是否真正生效、授权书签是否可用
 
         NSApp.setActivationPolicy(.regular)
+        AppUpdater.shared.start()
     }
 }
 
@@ -213,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct WinFileCommands: Commands {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
+    @ObservedObject private var updater = AppUpdater.shared
     @FocusedValue(\.browserModel) private var model
     @FocusedValue(\.tabCount) private var tabCount
     @FocusedValue(\.canRestoreTab) private var canRestoreTab
@@ -225,6 +227,10 @@ struct WinFileCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button(L("update.check", "检查更新…")) { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
+        }
         CommandGroup(replacing: .pasteboard) {
             Button(L("action.cut", "剪切")) { clipboardAction("cut:") { model?.cutSelectionToClipboard() } }
                 .keyboardShortcut("x", modifiers: .command)

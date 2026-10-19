@@ -5,6 +5,11 @@ import Foundation
 final class TabDiagnostics {
     static let shared = TabDiagnostics()
 
+    /// 系统事件和过渡布局可能包含 NaN、无穷或超出 Int 范围的值；诊断不可改变程序行为。
+    static func coordinate(_ value: CGFloat) -> String {
+        String(describing: value)
+    }
+
     /// 实时落盘的诊断文件（便于"你点几下、我读文件"这种协作排查）
     static var liveURL: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser

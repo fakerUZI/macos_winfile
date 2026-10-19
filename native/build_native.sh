@@ -11,14 +11,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NAME="WinFile"
 SRC="$ROOT/native/WinFile"
 BUILD="$ROOT/native/native-build"
-APP="$ROOT/$NAME.app"
+OUTPUT_APP="$ROOT/$NAME.app"
+# Assemble/sign away from synced Documents folders, whose FinderInfo attributes
+# can reappear during signing and invalidate a release archive.
+APP_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/winfile-build.XXXXXX")"
+APP="$APP_STAGE/$NAME.app"
 INSTALL_DIR="/Applications"
+OPT=-O
 
 for arg in "$@"; do
   case "$arg" in
     --in-place) INSTALL_DIR="" ;;
+    --quick) OPT=-Onone ;;
   esac
 done
+SPARKLE_SDK="$("$ROOT/native/prepare_sparkle.sh")"
 
 echo "== 1/6 生成应用图标 =="
 python3 "$ROOT/tools/make_icon.py" >/dev/null
@@ -43,9 +50,11 @@ SRC_FILES+=(
 
 build_arch() {
   local arch="$1"
-  /usr/bin/swiftc -swift-version 5 -O \
+  /usr/bin/swiftc -swift-version 5 "$OPT" \
     -target "${arch}-apple-macos13.0" \
     -framework AppKit -framework SwiftUI -framework Security \
+    -F "$SPARKLE_SDK" -framework Sparkle \
+    -Xlinker -rpath -Xlinker '@executable_path/../Frameworks' \
     -o "$BUILD/$NAME-$arch" \
     "${SRC_FILES[@]}"
 }
@@ -63,6 +72,9 @@ echo "== 3/6 合并通用二进制 =="
 echo "== 4/6 组装应用包 =="
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/ThirdParty/Sparkle"
+/usr/bin/ditto --noextattr --norsrc "$SPARKLE_SDK/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
+cp "$ROOT/native/vendor/sparkle/LICENSE" "$APP/Contents/Resources/ThirdParty/Sparkle/"
 cp "$BUILD/$NAME-universal" "$APP/Contents/MacOS/$NAME"
 chmod +x "$APP/Contents/MacOS/$NAME"
 cp "$ROOT/native/Info.plist" "$APP/Contents/Info.plist"
@@ -109,6 +121,11 @@ IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
 if [ -n "$IDENTITY" ]; then
   echo "   使用身份：$IDENTITY"
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Helpers/7zz"
+  SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+  for nested in "$SPARKLE_FRAMEWORK"/XPCServices/*.xpc "$SPARKLE_FRAMEWORK/Updater.app" "$SPARKLE_FRAMEWORK/Autoupdate"; do
+    /usr/bin/codesign --force --options runtime --timestamp --preserve-metadata=entitlements --sign "$IDENTITY" "$nested"
+  done
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Frameworks/Sparkle.framework"
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 else
   echo "   未找到签名身份，使用 ad-hoc 签名（本机可正常运行）"
@@ -119,6 +136,10 @@ fi
 echo "== 6/6 校验 =="
 /usr/bin/codesign --verify --verbose=1 "$APP/Contents/Helpers/7zz"
 /usr/bin/codesign --verify --deep --strict --verbose=1 "$APP"
+# Keep a clean verified source for release packaging, plus the customary local copy.
+printf '%s\n' "$APP" > "$BUILD/last-built-app-path"
+rm -rf "$OUTPUT_APP"
+/usr/bin/ditto --noextattr --norsrc "$APP" "$OUTPUT_APP"
 echo
 echo "构建完成: $APP"
 du -sh "$APP"
@@ -133,7 +154,7 @@ if [ -n "$INSTALL_DIR" ]; then
   pkill -f "$INSTALL_DIR/$NAME.app/Contents/MacOS/$NAME" 2>/dev/null || true
   sleep 1
   rm -rf "$INSTALL_DIR/$NAME.app"
-  cp -R "$APP" "$INSTALL_DIR/$NAME.app"
+  /usr/bin/ditto --noextattr --norsrc "$APP" "$INSTALL_DIR/$NAME.app"
   # 让 LaunchServices 立即登记（启动台据此显示）
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
     -f "$INSTALL_DIR/$NAME.app" 2>/dev/null || true

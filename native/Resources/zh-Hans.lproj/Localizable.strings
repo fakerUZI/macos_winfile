@@ -258,8 +258,8 @@
 "home.quickAccess.subtitle" = "常用文件夹";
 "home.favorites" = "收藏夹";
 "home.favorites.subtitle" = "已固定的文件夹（%d）";
-"home.unpin" = "取消固定";
-"home.pin" = "固定到收藏夹";
+"home.unpin" = "从主页取消固定";
+"home.pin" = "固定到主页收藏夹";
 "home.recent" = "最近使用";
 "home.recent.subtitle" = "最近修改与打开过的文件";
 "home.recent.empty" = "最近没有修改或打开过文件。";
@@ -432,7 +432,18 @@
 "sidebar.addFolder" = "添加文件夹…";
 "sidebar.manage" = "管理侧边栏…";
 "sidebar.manageCategories" = "管理分类…";
-"sidebar.favorites.empty" = "右键可管理收藏";
+"sidebar.favorites.empty" = "右键文件夹可添加到侧边栏";
+"sidebar.add.folder" = "添加到侧边栏";
+"update.check" = "检查更新…";
+"update.automatic" = "每次启动时检查更新";
+"update.hint" = "发现新版本时提示安装；可以跳过此版本或下次再说。";
+"update.waiting" = "文件操作完成后将安装更新并重新启动。";
+"sidebar.add.folders" = "将 %d 个文件夹添加到侧边栏";
+"sidebar.add.current" = "将当前文件夹添加到侧边栏";
+"sidebar.add.already" = "已在侧边栏";
+"sidebar.add.success" = "已将 %d 个文件夹添加到侧边栏";
+"sidebar.add.duplicates" = "%d 个文件夹已在侧边栏";
+"sidebar.add.result" = "已添加 %d 个文件夹；%d 个已在侧边栏；%d 项无法添加（仅支持可读取的本地文件夹）";
 "sidebarManager.title" = "管理侧边栏";
 "sidebarManager.reset" = "恢复默认";
 "sidebarManager.categoryHint" = "勾选即在侧边栏显示";
@@ -890,3 +901,14 @@
 "wechat.scanDetails" = "扫描详情与占用分布";
 
 "status.filteredSearch" = "找到 %d 项符合条件的结果";
+
+"folderPicker.title" = "添加到个人收藏";
+"folderPicker.hint" = "双击进入文件夹，按住 ⌘ 可多选；也可直接添加当前文件夹。";
+"folderPicker.invalid" = "请选择可读取的本地文件夹。";
+"folderPicker.path" = "输入文件夹路径";
+"folderPicker.go" = "前往";
+"folderPicker.search" = "筛选当前目录中的文件夹";
+"folderPicker.empty" = "没有可选择的子文件夹，可添加当前文件夹。";
+"folderPicker.addCurrent" = "添加当前文件夹";
+"folderPicker.addSelected" = "添加 %d 个文件夹";
+"sidebar.dropHint" = "拖入文件夹以添加到个人收藏";

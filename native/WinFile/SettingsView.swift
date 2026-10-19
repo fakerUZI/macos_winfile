@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
+    @ObservedObject private var updater = AppUpdater.shared
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
     @AppStorage("ShowHiddenFiles") private var showHidden: Bool = false
     @AppStorage("ViewLayout") private var layoutRaw: String = ViewLayout.details.rawValue
@@ -35,6 +36,12 @@ struct SettingsView: View {
                     Text(WLocalizedString("layout.icons", comment: "大图标")).tag(ViewLayout.icons.rawValue)
                 }
                 Toggle(WLocalizedString("settings.showHidden", comment: "显示隐藏文件"), isOn: $showHidden)
+                Toggle(L("update.automatic", "每次启动时检查更新"), isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.setAutomaticallyChecksForUpdates($0) }
+                ))
+                Text(L("update.hint", "发现新版本时提示安装；可以跳过此版本或下次再说。"))
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
@@ -97,7 +104,7 @@ struct SettingsView: View {
                     panel.allowsMultipleSelection = true
                     panel.prompt = L("panel.open", "打开")
                     if panel.runModal() == .OK {
-                        for url in panel.urls { engine.addFolder(url) }
+                        engine.addFolders(panel.urls)
                     }
                 }
                 Button(role: .destructive) {
@@ -149,6 +156,12 @@ struct SettingsView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 30)
+            Button(L("update.check", "检查更新…")) { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
+            if updater.waitingForFileOperations {
+                Text(L("update.waiting", "文件操作完成后将安装更新并重新启动。"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
         }
         .padding(.top, 18)
@@ -271,12 +284,8 @@ struct SidebarManagementSection: View {
                    "从已有文件夹中选择；只是快捷入口，不影响可访问范围。"))
                 .font(.caption)
         }
-        .fileImporter(isPresented: $isChoosingFolder,
-                      allowedContentTypes: [.folder],
-                      allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result {
-                for url in urls { engine.addFolder(url) }
-            }
+        .sheet(isPresented: $isChoosingFolder) {
+            FolderPickerSheet { engine.addFolders($0) }
         }
     }
 

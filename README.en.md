@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-680%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-776%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -39,6 +39,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 - Manage files on an Android tablet from your Mac
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
+
+## What’s new in v1.2.0
+
+- Drag folders into sidebar favorites or add them from the context menu. Add Folder now opens WinFile’s own picker with path entry, filtering, hidden folders, and multiple selection.
+- Native in-app updates with Install Update, Skip This Version, and Remind Me Later, using signed feeds and packages.
+- Fix crashes when switching apps or opening files in external apps.
+
+See the [v1.2.0 release notes](docs/releases/v1.2.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -91,6 +99,7 @@ The app bundles the official universal macOS console [7-Zip 26.04](https://www.7
 
 - **Empty-area context menu** — mirrors Windows Explorer: new folder/file, paste, sort by, view mode, show hidden files, reveal in Finder, copy current path
 - **Manageable sidebar** — categories and favorites can be moved or removed from the context menu, or managed in a checkbox panel with up/down ordering
+- **Add sidebar favorites directly** — right-click folders in Details or Icons view and choose **Add to Sidebar**, including multiple folders. Right-click empty space to add the current folder. Duplicates are skipped and your browsing location stays unchanged, with no system picker required. Only readable local folders are accepted; regular files, `.app` bundles, and Android paths are excluded. Favorites persist across launches; removing a shortcut leaves the folder intact. Home favorites and sidebar favorites are managed separately.
 - **Status bar & inspector** — item count, total size of the selection, free disk space; the inspector shows details for a single file
 
 ### WeChat cleanup
@@ -179,6 +188,14 @@ cd macos_winfile
 
 The build script generates the icon, compiles for arm64 and x86_64, merges them into a universal binary, assembles the app bundle, copies localizations, signs it (ad-hoc when no identity is available), then installs and registers it.
 
+The first build downloads and verifies the pinned Sparkle SDK, then embeds the update framework. Release packaging uses the verified build in the system temporary directory; the project’s `WinFile.app` is a convenience copy.
+
+### In-app updates (from v1.2.0)
+
+WinFile checks GitHub’s latest stable release on each launch. The native update window offers Install Update, Skip This Version and Remind Me Later. After downloading and verifying the update, confirm installation and relaunch; active file operations finish before restarting. Disable launch checks in General settings or check manually from the app menu or Settings → About.
+
+Users on v1.1.0 or earlier must upgrade to v1.2.0 manually once. See the [update and release workflow](docs/automatic-updates.md) and [v1.2.0 release notes](docs/releases/v1.2.0.md) for signing and release assets.
+
 ### Android setup
 
 ![Android public storage browsing](docs/screenshots/android-files.png)
@@ -191,6 +208,12 @@ On the tablet, enable "Developer options → USB debugging", connect the cable, 
 
 > macOS has no system-level MTP support, so Android access goes through adb — device operations run in subprocesses. Archive operations use system commands and the bundled 7-Zip engine; other local file operations use native APIs.
 
+### Adding sidebar favorites
+
+Drag folders from WinFile’s detail list, icon view, or Finder into the sidebar. The highlighted area adds shortcuts without copying or moving the originals. Existing folders are deduplicated; regular files and application bundles are rejected.
+
+The Add Folder actions in the sidebar, its context menu, Manage Sidebar, and Settings now use WinFile’s own folder picker. Double-click to browse, enter a path (including `~`), go up, show hidden folders, filter the current directory, or select multiple sibling folders with ⌘. Cancelling leaves the browsing tab unchanged.
+
 ## Testing
 
 ```bash
@@ -201,7 +224,9 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
 
-Current status: **675 passing** in the command-line suite and **680 passing** in the app bundle (including runtime language switching).
+Current status: **771 passing** in the command-line suite and **776 passing** in the app bundle (including runtime language switching).
+
+Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 
 The app binary itself also exposes a test entry point:
 
@@ -256,7 +281,7 @@ macos_winfile/
 │   │   ├── WeChatCleanupView.swift     # WeChat cleanup page
 │   │   ├── BrowserModel.swift          #   browsing state (navigation / sort / selection / clipboard)
 │   │   └── Android/                    #   Android device support (adb wrapper)
-│   ├── WinFileTests/                   # test suite (675 CLI / 680 app-bundle tests)
+│   ├── WinFileTests/                   # test suite (771 CLI / 776 app-bundle tests)
 │   ├── Resources/                      # Chinese / English localizations
 │   ├── Info.plist                      # app metadata
 │   ├── build_native.sh                 # build script

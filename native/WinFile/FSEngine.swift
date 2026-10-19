@@ -20,6 +20,23 @@ struct SidebarPlace: Identifiable, Hashable {
 
 // MARK: - 引擎
 
+struct SidebarFolderAddition {
+    var added: [URL] = []
+    var duplicateCount = 0
+    var rejectedCount = 0
+
+    var statusMessage: String {
+        if duplicateCount == 0 && rejectedCount == 0 {
+            return L("sidebar.add.success", "已将 %d 个文件夹添加到侧边栏", added.count)
+        }
+        if added.isEmpty && rejectedCount == 0 {
+            return L("sidebar.add.duplicates", "%d 个文件夹已在侧边栏", duplicateCount)
+        }
+        return L("sidebar.add.result", "已添加 %d 个文件夹；%d 个已在侧边栏；%d 项无法添加（仅支持可读取的本地文件夹）",
+                 added.count, duplicateCount, rejectedCount)
+    }
+}
+
 @MainActor
 final class FSEngine: ObservableObject {
 
@@ -125,13 +142,48 @@ final class FSEngine: ObservableObject {
     /// 添加一个常用文件夹（本地版直接访问，无需授权）
     @discardableResult
     func addFolder(_ url: URL) -> Bool {
-        let path = url.standardizedFileURL.path
-        guard !addedFolderPaths.contains(path) else { return false }
-        addedFolderPaths.append(path)
-        saveAddedFolders()
-        refreshAuthorizedRoots()
-        scheduleCategoryCount()
-        return true
+        !addFolders([url]).added.isEmpty
+    }
+
+    /// 保留用户选择的符号链接路径；路径标准化后去重，与现有收藏的身份规则一致。
+    func containsFolder(_ url: URL) -> Bool {
+        url.isFileURL && addedFolderPaths.contains(url.standardizedFileURL.path)
+    }
+
+    static func isSidebarFolder(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        let normalized = url.standardizedFileURL
+        guard normalized.pathExtension.lowercased() != "app",
+              normalized.resolvingSymlinksInPath().pathExtension.lowercased() != "app" else { return false }
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: normalized.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue && FileManager.default.isReadableFile(atPath: normalized.path)
+    }
+
+    /// 所有入口共用校验；批量操作只保存、发布和安排统计一次。
+    @discardableResult
+    func addFolders(_ urls: [URL]) -> SidebarFolderAddition {
+        var result = SidebarFolderAddition()
+        var paths = Set(addedFolderPaths)
+        for url in urls {
+            guard Self.isSidebarFolder(url) else {
+                result.rejectedCount += 1
+                continue
+            }
+            let normalized = url.standardizedFileURL
+            guard paths.insert(normalized.path).inserted else {
+                result.duplicateCount += 1
+                continue
+            }
+            result.added.append(normalized)
+        }
+        if !result.added.isEmpty {
+            addedFolderPaths.append(contentsOf: result.added.map(\.path))
+            saveAddedFolders()
+            refreshAuthorizedRoots()
+            scheduleCategoryCount()
+        }
+        return result
     }
 
     /// 首次启动时为收藏列表填入标准文件夹。

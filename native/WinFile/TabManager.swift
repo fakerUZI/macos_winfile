@@ -48,6 +48,9 @@ final class WinFileTab: ObservableObject, Identifiable {
 @MainActor
 final class TabManager: ObservableObject {
 
+    private static let liveManagers = NSHashTable<TabManager>.weakObjects()
+    static var allModels: [BrowserModel] { liveManagers.allObjects.flatMap { $0.tabs.map(\.model) } }
+
     @Published private(set) var tabs: [WinFileTab] = []
     @Published private(set) var activeID: UUID?
 
@@ -82,6 +85,7 @@ final class TabManager: ObservableObject {
             tabs = tabs.filter(\.isPinned) + tabs.filter { !$0.isPinned }
         }
         forwardActiveModelChanges()
+        Self.liveManagers.add(self)
         // 切换页签时改订新模型
         $activeID
             .receive(on: RunLoop.main)

@@ -42,9 +42,27 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         view.attachIfNeeded()
     }
 
+    static func dismantleNSView(_ view: InstallerView, coordinator: ()) {
+        view.detachMonitors()
+    }
+
     final class InstallerView: NSView {
         /// 当前正在处理的右键事件（供行区域几何判断使用）
         static var currentEvent: NSEvent?
+
+        static func isFinite(_ point: NSPoint) -> Bool {
+            point.x.isFinite && point.y.isFinite
+        }
+
+        /// 激活/失活合成事件可能没有有效位置；在传给 AppKit 命中测试前验证。
+        static func mouseLocation(_ event: NSEvent, in window: NSWindow) -> NSPoint? {
+            guard event.window === window, let root = window.contentView else { return nil }
+            let point = event.locationInWindow
+            guard isFinite(point) else { return nil }
+            let contentPoint = root.convert(point, from: nil)
+            guard isFinite(contentPoint), root.bounds.contains(contentPoint) else { return nil }
+            return point
+        }
         /// 便于测试访问判定逻辑（保持带标签的签名）
         static func classify(_ hit: NSView, in scrollView: NSScrollView) -> Bool {
             isOnInteractiveContent(hit, scrollView: scrollView)
@@ -78,6 +96,7 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         /// 按坐标查找磁贴：收集所有标记的真实矩形，判断点是否落在其中。
         /// 取面积最小的命中者（最贴近用户点击的那个图标）。
         static func tileMarker(at pointInWindow: NSPoint, in root: NSView) -> FileTileMarkerView? {
+            guard isFinite(pointInWindow) else { return nil }
             var candidates: [FileTileMarkerView] = []
             func gather(_ view: NSView) {
                 if let marker = view as? FileTileMarkerView, marker.item != nil, !marker.isHidden {
@@ -126,6 +145,8 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
         private var monitor: Any?
         private var clickMonitor: Any?
 
+        var activeMonitorCount: Int { (monitor == nil ? 0 : 1) + (clickMonitor == nil ? 0 : 1) }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             attachIfNeeded()
@@ -136,15 +157,25 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         }
 
-        func attachIfNeeded() {
-            guard let window else { return }
-            guard installedWindow !== window || monitor == nil else { return }
+        func detachMonitors() {
             if let monitor { NSEvent.removeMonitor(monitor) }
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            monitor = nil
+            clickMonitor = nil
+            installedWindow = nil
+            ownedScrollView = nil
+        }
+
+        func attachIfNeeded() {
+            guard let window else { detachMonitors(); return }
+            guard installedWindow !== window || monitor == nil else { return }
+            detachMonitors()
             installedWindow = window
             // 标记解析为归属滚动视图（布局完成后执行一次）
             if ownedScrollView == nil, marker != nil {
                 DispatchQueue.main.async { [weak self] in
-                    guard let self, let marker = self.marker else { return }
+                    guard let self, let window = self.window, self.installedWindow === window,
+                          let marker = self.marker else { return }
                     self.ownedScrollView = Self.firstScrollView(in: marker)
                 }
             }
@@ -152,81 +183,91 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
                 guard let self else { return event }
                 return self.handle(event) ? nil : event
             }
-            // 左键诊断：记录点击次数与位置，用于定位"双击未生效"
-            // （只记录，不改变事件行为）
-            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
-                guard event.window === window else { return event }
-                let hit = window.contentView?.hitTest(event.locationInWindow)
-                TabDiagnostics.shared.record("leftClick",
-                                             detail: "次数=\(event.clickCount) 位置=(\(Int(event.locationInWindow.x)),\(Int(event.locationInWindow.y))) 命中=\(hit.map { String(describing: type(of: $0)) } ?? "无")")
-                // 双击时补充表格结构，用于定位"为何未命中行"
-                if event.clickCount == 2, let root = window.contentView {
-                    // 列出所有磁贴标记的实际位置：用于确认"点击是否落在磁贴上"
-                    var tileInfo: [String] = []
-                    func gatherTiles(_ view: NSView) {
-                        if let marker = view as? FileTileMarkerView, let item = marker.item {
-                            let frame = marker.convert(marker.bounds, to: nil)
-                            tileInfo.append("\(item.name)@(\(Int(frame.midX)),\(Int(frame.midY)))")
-                        }
-                        for child in view.subviews { gatherTiles(child) }
-                    }
-                    gatherTiles(root)
-                    TabDiagnostics.shared.record("tiles",
-                                                 detail: tileInfo.isEmpty ? "无磁贴标记" : "\(tileInfo.count) 个：\(tileInfo.prefix(8).joined(separator: ", "))")
-
-                    // 记录点击位置所在表格的规模，用于定位"未命中行"的原因
-                    var tableCount = 0
-                    var tableInfo: [String] = []
-                    func gatherTables(_ view: NSView) {
-                        if let table = view as? NSTableView {
-                            tableCount += 1
-                            let row = table.row(at: table.convert(event.locationInWindow, from: nil))
-                            tableInfo.append("表\(tableCount):宽\(Int(table.bounds.width)) 行\(table.numberOfRows) 点击处行\(row)")
-                        }
-                        for child in view.subviews { gatherTables(child) }
-                    }
-                    gatherTables(root)
-                    TabDiagnostics.shared.record("tables", detail: tableInfo.isEmpty ? "无表格" : tableInfo.joined(separator: " | "))
-                    // 图标视图（LazyVGrid）没有 NSTableView，双击在这里处理。
-                    //
-                    // 注意：不能用 hitTest 沿父链找标记 —— 标记是零尺寸视图，
-                    // 不参与命中测试。改为收集所有磁贴的真实矩形，用坐标判定。
-                    if let marker = Self.tileMarker(at: event.locationInWindow, in: root),
-                       let item = marker.item,
-                       let activate = marker.onActivate {
-                        TabDiagnostics.shared.record("iconDoubleClick",
-                                                     detail: "项目=\(item.name) 目录=\(item.isDirectory)")
-                        activate()
-                        return nil      // 双击已处理，吞掉事件避免重复触发
-                    }
-                    var tables: [NSTableView] = []
-                    func collect(_ view: NSView) {
-                        if let table = view as? NSTableView { tables.append(table) }
-                        for child in view.subviews { collect(child) }
-                    }
-                    collect(root)
-                    for (index, table) in tables.enumerated() {
-                        let pointInTable = table.convert(event.locationInWindow, from: nil)
-                        let row = table.row(at: pointInTable)
-                        let inWindow = table.convert(table.bounds, to: nil)
-                        let installed = table.doubleAction != nil
-                        TabDiagnostics.shared.record(
-                            "tableProbe",
-                            detail: "表格#\(index) 宽=\(Int(table.bounds.width)) 高=\(Int(table.bounds.height)) 行数=\(table.numberOfRows) 窗口Y=\(Int(inWindow.minY))…\(Int(inWindow.maxY)) 点击处行=\(row) 已装双击=\(installed)")
-                    }
-                }
-                return event
+            // 弱引用安装器，避免监听闭包持有窗口；两个监听器随视图同步卸载。
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+                guard let self else { return event }
+                return self.handleLeftMouseDown(event)
             }
+        }
+
+        func handleLeftMouseDown(_ event: NSEvent) -> NSEvent? {
+            guard event.type == .leftMouseDown, let window,
+                  let pointInWindow = Self.mouseLocation(event, in: window),
+                  let root = window.contentView else { return event }
+            guard !Self.isExcluded(pointInWindow, in: root) else { return event }
+            let hit = root.hitTest(root.convert(pointInWindow, from: nil))
+            TabDiagnostics.shared.record("leftClick",
+                                         detail: "次数=\(event.clickCount) 位置=(\(TabDiagnostics.coordinate(pointInWindow.x)),\(TabDiagnostics.coordinate(pointInWindow.y))) 命中=\(hit.map { String(describing: type(of: $0)) } ?? "无")")
+            // 双击时补充表格结构，用于定位"为何未命中行"
+            if event.clickCount == 2 {
+                // 列出所有磁贴标记的实际位置：用于确认"点击是否落在磁贴上"
+                var tileInfo: [String] = []
+                func gatherTiles(_ view: NSView) {
+                    if let marker = view as? FileTileMarkerView, let item = marker.item {
+                        let frame = marker.convert(marker.bounds, to: nil)
+                        tileInfo.append("\(item.name)@(\(TabDiagnostics.coordinate(frame.midX)),\(TabDiagnostics.coordinate(frame.midY)))")
+                    }
+                    for child in view.subviews { gatherTiles(child) }
+                }
+                gatherTiles(root)
+                TabDiagnostics.shared.record("tiles",
+                                             detail: tileInfo.isEmpty ? "无磁贴标记" : "\(tileInfo.count) 个：\(tileInfo.prefix(8).joined(separator: ", "))")
+
+                // 记录点击位置所在表格的规模，用于定位"未命中行"的原因
+                var tableCount = 0
+                var tableInfo: [String] = []
+                func gatherTables(_ view: NSView) {
+                    if let table = view as? NSTableView {
+                        tableCount += 1
+                        let tablePoint = table.convert(pointInWindow, from: nil)
+                        let row = Self.isFinite(tablePoint) ? table.row(at: tablePoint) : -1
+                        tableInfo.append("表\(tableCount):宽\(TabDiagnostics.coordinate(table.bounds.width)) 行\(table.numberOfRows) 点击处行\(row)")
+                    }
+                    for child in view.subviews { gatherTables(child) }
+                }
+                gatherTables(root)
+                TabDiagnostics.shared.record("tables", detail: tableInfo.isEmpty ? "无表格" : tableInfo.joined(separator: " | "))
+                // 图标视图（LazyVGrid）没有 NSTableView，双击在这里处理。
+                //
+                // 注意：不能用 hitTest 沿父链找标记 —— 标记是零尺寸视图，
+                // 不参与命中测试。改为收集所有磁贴的真实矩形，用坐标判定。
+                if let marker = Self.tileMarker(at: pointInWindow, in: root),
+                   let item = marker.item,
+                   let activate = marker.onActivate {
+                    TabDiagnostics.shared.record("iconDoubleClick",
+                                                 detail: "项目=\(item.name) 目录=\(item.isDirectory)")
+                    activate()
+                    return nil      // 双击已处理，吞掉事件避免重复触发
+                }
+                var tables: [NSTableView] = []
+                func collect(_ view: NSView) {
+                    if let table = view as? NSTableView { tables.append(table) }
+                    for child in view.subviews { collect(child) }
+                }
+                collect(root)
+                for (index, table) in tables.enumerated() {
+                    let pointInTable = table.convert(pointInWindow, from: nil)
+                    let row = Self.isFinite(pointInTable) ? table.row(at: pointInTable) : -1
+                    let inWindow = table.convert(table.bounds, to: nil)
+                    let installed = table.doubleAction != nil
+                    TabDiagnostics.shared.record(
+                        "tableProbe",
+                        detail: "表格#\(index) 宽=\(TabDiagnostics.coordinate(table.bounds.width)) 高=\(TabDiagnostics.coordinate(table.bounds.height)) 行数=\(table.numberOfRows) 窗口Y=\(TabDiagnostics.coordinate(inWindow.minY))…\(TabDiagnostics.coordinate(inWindow.maxY)) 点击处行=\(row) 已装双击=\(installed)")
+                }
+            }
+            return event
         }
 
         /// 判断事件是否落在「本视图所属列表的空白处」，是则弹菜单并吞掉事件。
         /// 关键：必须限定在本实例自己的滚动视图内，否则侧边栏等其它滚动区域也会被误判。
-        private func handle(_ event: NSEvent) -> Bool {
-            guard let window, event.window === window, let buildMenu else { return false }
+        func handle(_ event: NSEvent) -> Bool {
+            guard event.type == .rightMouseDown, let window,
+                  let pointInWindow = Self.mouseLocation(event, in: window),
+                  let buildMenu else { return false }
             guard let root = window.contentView else { return false }
-            guard !Self.isExcluded(event.locationInWindow, in: root) else { return false }
+            guard !Self.isExcluded(pointInWindow, in: root) else { return false }
 
-            let point = root.convert(event.locationInWindow, from: nil)
+            let point = root.convert(pointInWindow, from: nil)
             guard let hit = root.hitTest(point) else { return false }
 
             // 找到点击位置所属的滚动视图

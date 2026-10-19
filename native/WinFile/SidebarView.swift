@@ -5,6 +5,7 @@ struct SidebarView: View {
     @ObservedObject private var localization = Localization.shared
     @State private var showSidebarManager = false
     @State private var showAddFolder = false
+    @State private var isDropTargeted = false
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     /// 分类的显示与顺序（右键菜单与拖拽排序共用）
@@ -57,6 +58,7 @@ struct SidebarView: View {
                     Text(L("sidebar.favorites.empty", "右键可管理收藏"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .onDrop(of: [.fileURL], delegate: folderDropDelegate)
                 }
             }
 
@@ -121,19 +123,18 @@ struct SidebarView: View {
         .sheet(isPresented: $showSidebarManager) {
             SidebarManagerSheet(engine: engine)
         }
-        .fileImporter(isPresented: $showAddFolder,
-                      allowedContentTypes: [.folder],
-                      allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result {
-                for url in urls { engine.addFolder(url) }
-            }
+        .sheet(isPresented: $showAddFolder) {
+            FolderPickerSheet(initialDirectory: model.currentSidebarFolder) { model.addFoldersToSidebar($0) }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("sidebar.dropHint", "拖入文件夹以添加到个人收藏"))
+                    .font(.caption2).foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
+
                 HStack {
                     Button {
-                        addFolder()
+                        showAddFolder = true
                     } label: {
                         Label(L("action.addFolder", "添加文件夹"), systemImage: "plus")
                     }
@@ -144,27 +145,20 @@ struct SidebarView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.bar)
+            .onDrop(of: [.fileURL], delegate: folderDropDelegate)
+        }
+        .onDrop(of: [.fileURL], delegate: folderDropDelegate)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 8).stroke(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
-    /// 授权单个文件夹（沙盒下的唯一入口）
-    private func addFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = true
-        panel.prompt = L("panel.open", "打开")
-        panel.message = L("panel.addFolder.message", "选择要加入常用列表的文件夹")
-        panel.directoryURL = FileSystemService.realHomeDirectory()
-        if panel.runModal() == .OK {
-            for url in panel.urls {
-                engine.addFolder(url)
-            }
-            if let first = panel.urls.first {
-                model.selectFolder(first)
-            }
-        } else if let first = engine.authorizedRoots.first {
-            _ = first
+    private var folderDropDelegate: SidebarFolderDropDelegate {
+        SidebarFolderDropDelegate(isTargeted: $isDropTargeted) { urls, failed in
+            model.addFoldersToSidebar(urls, unresolvedCount: failed)
         }
     }
 
@@ -178,6 +172,7 @@ struct SidebarView: View {
                 .foregroundStyle(Color.accentColor)
         }
         .tag(SidebarSelection.folder(url))
+        .help(url.path)
         .contextMenu {
             Button(L("action.open", "打开")) { model.selectFolder(url) }
             Button(WLocalizedString("action.reveal", comment: "在访达中显示")) {
@@ -192,6 +187,7 @@ struct SidebarView: View {
             Button(L("sidebar.remove", "从侧边栏移除")) { engine.removeFolder(url) }
             Button(L("sidebar.addFolder", "添加文件夹…")) { showAddFolder = true }
         }
+        .onDrop(of: [.fileURL], delegate: folderDropDelegate)
     }
 }
 

@@ -153,7 +153,7 @@ struct FileTableView: View {
     }
 
     private var table: some View {
-        Table(model.displayedItems, selection: selection, sortOrder: sortOrder) {
+        Table(of: FileItem.self, selection: selection, sortOrder: sortOrder) {
             TableColumn(WLocalizedString("column.name", comment: "名称"), value: \FileItem.name, comparator: .localizedStandard) { item in
                 HStack(spacing: 6) {
                     FileIconView(engine: engine, item: item, size: 18)
@@ -192,6 +192,10 @@ struct FileTableView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .width(min: 70, ideal: 90)
+        } rows: {
+            ForEach(model.displayedItems) { item in
+                TableRow(item).itemProvider { SidebarFolderDrop.provider(for: item.url) }
+            }
         }
         .tableStyle(.inset(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: String.self) { ids in
@@ -230,40 +234,21 @@ struct FileTableView: View {
 
     @ViewBuilder
     private func contextMenu(for ids: Set<String>) -> some View {
-        // 注意：右键「未被选中」的行时，系统可能给出空的 ids。
-        // 此时若直接显示空白处菜单，用户就看不到「重命名」等项目 ——
-        // 所以这里先补选被右键的那一行，再按常规文件菜单展示。
+        // 使用 Table 提供的菜单目标，避免添加到侧边栏时误用此前选中的行。
         let _ = TabDiagnostics.shared.record(
             "itemMenu",
             detail: "系统给出选中=\(ids.count) 项 → \(ids.isEmpty ? "空白菜单" : "文件菜单")")
         if ids.isEmpty {
             emptyAreaMenu
         } else {
-            itemMenu
+            FileItemContextMenu(engine: engine, model: model, dialog: $dialog,
+                                item: model.displayedItems.first { ids.contains($0.id) }, contextIDs: ids)
         }
-    }
-
-    @ViewBuilder
-    private var itemMenu: some View {
-        FileItemContextMenu(engine: engine, model: model,
-                            dialog: $dialog, item: model.selectedItems.first)
     }
 
     @ViewBuilder
     private var emptyAreaMenu: some View {
-        Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
-        Button(WLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
-        if model.clipboardHasText {
-            Button(WLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
-                _ = model.saveClipboardTextAsFile()
-            }
-        }
-        Divider()
-        Button(WLocalizedString("action.paste", comment: "粘贴")) { model.paste() }
-            .disabled(!model.canPaste)
-        Divider()
-        Button(WLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) { model.toggleHiddenFiles() }
-        Button(WLocalizedString("action.reload", comment: "重新载入")) { model.reload() }
+        FileBackgroundContextMenu(engine: engine, model: model, dialog: $dialog)
     }
 
     // MARK: - 空白处右键菜单（原生 NSMenu）
@@ -279,6 +264,15 @@ struct FileTableView: View {
             if !key.isEmpty { item.keyEquivalent = key }
             if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
             menu.addItem(item)
+        }
+
+        if let directory = model.currentSidebarFolder {
+            let alreadyAdded = model.engine.containsFolder(directory)
+            add(alreadyAdded ? L("sidebar.add.already", "已在侧边栏")
+                            : L("sidebar.add.current", "将当前文件夹添加到侧边栏"), {
+                model.addFoldersToSidebar([directory])
+            }, enabled: !alreadyAdded, symbol: "sidebar.left")
+            menu.addItem(.separator())
         }
 
         // 新建
@@ -487,6 +481,11 @@ struct FileIconGridView: View {
             return true
         }
         // 空白处右键菜单（与详细信息视图一致）
+        // GeometryReader 的空白区可能不命中底层 NSScrollView，使用 SwiftUI 菜单兜底。
+        // 磁贴自己的菜单优先，仍由 FileItemContextMenu 处理。
+        .contextMenu {
+            FileBackgroundContextMenu(engine: engine, model: model, dialog: $dialog)
+        }
         .background(
             EmptyAreaContextMenu(
                 buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) },
@@ -508,6 +507,7 @@ struct FileIconGridView: View {
     @ViewBuilder
     private func tile(for item: FileItem) -> some View {
         FileTile(engine: engine, item: item, selected: model.selectedIDs.contains(item.id))
+            .modifier(LocalFileDrag(url: item.url))
             // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
             .background(
                 FileTileMarker(item: item) {
@@ -527,6 +527,42 @@ struct FileIconGridView: View {
     }
 }
 
+/// Table 的空目标菜单与网格空白区域共用，覆盖未命中 NSScrollView 的区域。
+struct FileBackgroundContextMenu: View {
+    @ObservedObject private var localization = Localization.shared
+    @ObservedObject var engine: FSEngine
+    @ObservedObject var model: BrowserModel
+    @Binding var dialog: DialogKind?
+
+    var body: some View {
+        if let directory = model.currentSidebarFolder {
+            Button(engine.containsFolder(directory)
+                   ? L("sidebar.add.already", "已在侧边栏")
+                   : L("sidebar.add.current", "将当前文件夹添加到侧边栏")) {
+                model.addFoldersToSidebar([directory])
+            }
+            .disabled(engine.containsFolder(directory))
+            Divider()
+        }
+        Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
+            .disabled(!model.supportsDirectoryCreation)
+        Button(WLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
+            .disabled(!model.supportsDirectoryCreation)
+        if model.clipboardHasText {
+            Button(WLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
+                _ = model.saveClipboardTextAsFile()
+            }
+            .disabled(!model.supportsDirectoryCreation)
+        }
+        Divider()
+        Button(WLocalizedString("action.paste", comment: "粘贴")) { model.paste() }
+            .disabled(!model.canPaste)
+        Divider()
+        Button(WLocalizedString("action.toggleHidden", comment: "显示/隐藏隐藏文件")) { model.toggleHiddenFiles() }
+        Button(WLocalizedString("action.reload", comment: "重新载入")) { model.reload() }
+    }
+}
+
 
 /// 文件右键菜单（列表视图与图标视图**共用同一份**，保证功能一致）
 struct FileItemContextMenu: View {
@@ -536,11 +572,29 @@ struct FileItemContextMenu: View {
     @Binding var dialog: DialogKind?
     /// 被右键的那一项（单选时用于「打开方式」「重命名」）
     let item: FileItem?
+    var contextIDs: Set<String>? = nil
     /// 当前选中项（多选时部分操作作用于全部选中项）
     var selectedCount: Int { model.selectedCount }
 
+    private var sidebarTargets: [FileItem] {
+        model.sidebarContextItems(item: item, ids: contextIDs)
+    }
+
+    private var sidebarFolders: [FileItem] {
+        sidebarTargets.filter { $0.isBrowsableFolder && $0.url.isFileURL && $0.url.pathExtension.lowercased() != "app" }
+    }
+
     var body: some View {
         Button(WLocalizedString("action.open", comment: "打开")) { model.openSelection() }
+        if !sidebarFolders.isEmpty {
+            let alreadyAdded = sidebarFolders.allSatisfy { engine.containsFolder($0.url) }
+            Button(alreadyAdded ? L("sidebar.add.already", "已在侧边栏")
+                   : sidebarFolders.count == 1 ? L("sidebar.add.folder", "添加到侧边栏")
+                   : L("sidebar.add.folders", "将 %d 个文件夹添加到侧边栏", sidebarFolders.count)) {
+                model.addFoldersToSidebar(sidebarTargets.map(\.url))
+            }
+            .disabled(alreadyAdded)
+        }
         if !model.isAndroidPath {
             Button(L("action.quickLook", "快速预览")) { model.previewSelection() }
         }

@@ -610,6 +610,28 @@ final class BrowserModel: ObservableObject {
         pinnedFolders.contains { $0.path == url.standardizedFileURL.path }
     }
 
+    /// Table 提供的菜单目标优先于旧选中项；图标右键未选中的项目只操作该项目。
+    func sidebarContextItems(item: FileItem?, ids: Set<String>? = nil) -> [FileItem] {
+        if let ids { return displayedItems.filter { ids.contains($0.id) } }
+        guard let item else { return [] }
+        return selectedIDs.contains(item.id) ? selectedItems : [item]
+    }
+
+    var currentSidebarFolder: URL? {
+        guard showsFileList, !isAggregatedView, let directory = currentDirectory,
+              FSEngine.isSidebarFolder(directory) else { return nil }
+        return directory
+    }
+
+    /// 添加快捷入口不触发导航，也不改变当前选中项或主页收藏。
+    @discardableResult
+    func addFoldersToSidebar(_ urls: [URL], unresolvedCount: Int = 0) -> SidebarFolderAddition {
+        var result = engine.addFolders(urls)
+        result.rejectedCount += unresolvedCount
+        statusMessage = result.statusMessage
+        return result
+    }
+
     /// 打开主页里的条目（会记录到「最近打开」）
     func openRecent(_ entry: RecentEntry) {
         activate(entry.item)
