@@ -1,6 +1,76 @@
 import AppKit
 import SwiftUI
 
+struct CleanupHubView: View {
+    @ObservedObject private var localization = Localization.shared
+    @ObservedObject var model: BrowserModel
+    @Binding var dialog: DialogKind?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 16) {
+                Label(L("cleanup.title", "空间清理"), systemImage: "externaldrive.badge.minus").font(.title3.bold())
+                Picker(L("cleanup.section", "清理范围"), selection: Binding(
+                    get: { model.cleanupSection }, set: { model.selectCleanupSection($0) }
+                )) {
+                    Text(L("cleanup.general", "通用清理")).tag(CleanupSection.general)
+                    Text(L("software.title", "软件清理")).tag(CleanupSection.software)
+                }.pickerStyle(.segmented).frame(maxWidth: 320).disabled(model.isCleaningStorage)
+                Spacer()
+            }.padding(.horizontal, 16).padding(.vertical, 10)
+            Divider()
+            if model.cleanupSection == .software {
+                SoftwareCleanupView(model: model, dialog: $dialog)
+            } else {
+                StorageCleanupView(store: model.storageCleanup, model: model, nestedInHub: true)
+            }
+        }.background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+struct SoftwareCleanupView: View {
+    @ObservedObject private var localization = Localization.shared
+    @ObservedObject var model: BrowserModel
+    @ObservedObject var store: StorageCleanupModel
+    @Binding var dialog: DialogKind?
+
+    init(model: BrowserModel, dialog: Binding<DialogKind?>) {
+        self.model = model; self.store = model.softwareCleanup; self._dialog = dialog
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(L("software.title", "软件清理"), systemImage: "square.stack.3d.up.fill").font(.headline)
+                    Spacer()
+                    Button(L("software.refresh", "刷新软件列表")) { store.refreshSoftwareChoices() }
+                        .disabled(store.busy)
+                }
+                HStack {
+                    Picker(L("software.select", "选择软件"), selection: Binding(
+                        get: { store.selectedSoftwareID }, set: { model.selectCleanupSoftware($0) }
+                    )) {
+                        ForEach(store.softwareChoices) { Text($0.title).tag($0.id) }
+                    }.frame(maxWidth: 340)
+                    Spacer()
+                }
+            }
+            .disabled(model.weChatCleanup.isCleaning || store.isCleaning)
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            Text(L("software.scope", "微信支持聊天附件清理；其他软件仅扫描已识别的缓存和日志。列表按本机可读取的清理目录生成，不会卸载软件或删除账号资料。"))
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.bottom, 8)
+            Divider()
+            if store.selectedSoftwareID == "wechat" {
+                WeChatCleanupView(model: model, dialog: $dialog)
+            } else {
+                StorageCleanupView(store: store, model: model).id(store.selectedSoftwareID)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
 struct WeChatCleanupView: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var store: WeChatCleanupModel

@@ -15,10 +15,10 @@ struct SidebarView: View {
         // 选中态完全由当前页签的模型驱动：
         // 绑定必须显式读 model.selection，切换页签时才能跟着换行
         List(selection: Binding<SidebarSelection?>(
-            get: { model.selection },
+            get: { model.sidebarSelection },
             set: { newValue in
                 guard let newValue else { return }
-                model.navigate(to: newValue)
+                model.selectSidebarDestination(newValue)
             }
         )) {
             // 管理入口：放在最上方，便于随时调整侧边栏内容与顺序
@@ -47,6 +47,7 @@ struct SidebarView: View {
                     Image(systemName: "pc").foregroundStyle(Color(nsColor: .systemBlue))
                 }
                 .tag(SidebarSelection.thisPC)
+
             }
 
             Section(WLocalizedString("sidebar.favorites", comment: "个人收藏")) {
@@ -113,11 +114,12 @@ struct SidebarView: View {
                 Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
                     .tag(SidebarSelection.appData)
 
-                Label(L("wechat.title", "微信文件清理"), systemImage: "bubble.left.and.bubble.right.fill")
-                    .foregroundStyle(.green)
-                    .tag(SidebarSelection.weChatCleanup)
-
                 AndroidSidebarSection()
+            }
+
+            Section {
+                Label(L("cleanup.title", "空间清理"), systemImage: "externaldrive.badge.minus")
+                    .tag(SidebarSelection.storageCleanup)
             }
         }
         .sheet(isPresented: $showSidebarManager) {

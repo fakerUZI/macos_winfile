@@ -918,3 +918,80 @@
 "wechat.pagePrev" = "上一页";
 "wechat.pageNext" = "下一页";
 "wechat.pageRange" = "（第 %d–%d 项）";
+
+/* General storage cleanup */
+"cleanup.age" = "缓存 / 日志 / 安装包保留";
+"cleanup.age0" = "不限时间";
+"cleanup.age30" = "最近 30 天不清理";
+"cleanup.age7" = "最近 7 天不清理";
+"cleanup.allOwners" = "全部应用 / 来源";
+"cleanup.allocated" = "磁盘占用";
+"cleanup.cache" = "应用缓存";
+"cleanup.cancelled" = "已取消，结果不完整。";
+"cleanup.candidates" = "全部候选";
+"cleanup.changed" = "已变化、被忽略或不再符合规则：%@";
+"cleanup.chooseFolder" = "选择大文件扫描目录…";
+"cleanup.cleaning" = "正在复查并清理第 %d 项…";
+"cleanup.confirm" = "将所选文件移到废纸篓？";
+"cleanup.confirmDetail" = "共 %d 项（%@）。安装包和大文件可能是你需要保留的资料，请先核对。执行前会复查文件身份、应用运行及占用状态。";
+"cleanup.defaultFolders" = "恢复默认大文件扫描范围";
+"cleanup.defaultScope" = "大文件范围：下载、桌面、文稿、影片、图片和音乐；自选目录需位于个人文件夹内，且不能是 Library。";
+"cleanup.details" = "扫描详情 / 忽略 / 历史";
+"cleanup.distribution" = "已扫描的大文件目录范围占用";
+"cleanup.empty" = "当前范围内没有符合条件的文件，可调整筛选或扫描设置。";
+"cleanup.filtered" = "筛选结果";
+"cleanup.history" = "最近清理记录（仅本机）";
+"cleanup.ignoreFile" = "忽略此文件";
+"cleanup.ignoreFolder" = "忽略所在文件夹";
+"cleanup.ignored" = "忽略列表";
+"cleanup.installer" = "安装包";
+"cleanup.invalidFolder" = "请选择个人文件夹内的普通子目录；不支持个人文件夹根目录、Library、隐藏目录或应用包。";
+"cleanup.large" = "大文件";
+"cleanup.log" = "应用日志";
+"cleanup.oldest" = "最早修改优先";
+"cleanup.open" = "文件被占用或无法确认占用状态，已跳过：%@";
+"cleanup.outcome" = "已移到废纸篓 %d 项（%@），跳过或失败 %d 项。";
+"cleanup.owner" = "应用 / 来源";
+"cleanup.partial" = "扫描有上限或部分目录无法读取，结果不完整。";
+"cleanup.progress" = "已检查 %d 项，发现 %d 个候选";
+"cleanup.protection" = "跳过运行中的应用、数据库、凭据、受保护缓存、符号链接及硬链接；删除前无法确认安全状态的项目会保留。安装包和大文件需自行核对用途。";
+"cleanup.ready" = "点击“开始扫描”查看空间占用和清理候选。";
+"cleanup.running" = "应用正在运行，已跳过：%@";
+"cleanup.scan" = "开始扫描";
+"cleanup.scanned" = "已扫描文件占用（估算）";
+"cleanup.scope" = "扫描多种应用的可重建缓存、日志、安装包与个人文件夹中的大文件；扫描不会删除文件。";
+"cleanup.search" = "按文件名或路径筛选";
+"cleanup.selected" = "已选文件";
+"cleanup.skipped" = "项跳过 / 失败";
+"cleanup.skippedOwners" = "已跳过 %d 个运行中应用的扫描位置";
+"cleanup.threshold" = "大文件至少";
+"cleanup.title" = "空间清理";
+"cleanup.trashNote" = "移到废纸篓不会立即释放磁盘空间；可用 ⌘Z 撤销成功的移动。占用受 APFS 共享块影响，仅作估算。";
+"cleanup.unignore" = "取消忽略";
+"wechat.clearSelection" = "清除选择";
+
+/* General storage cleanup */
+"cleanup.scanScope" = "本次扫描";
+
+/* General storage cleanup */
+"cleanup.choose" = "选择此文件夹";
+"cleanup.chooseOne" = "请选择一个文件夹。";
+"cleanup.folderHint" = "双击进入目录，选择一个文件夹或使用当前文件夹。";
+
+/* General storage cleanup */
+"cleanup.settings" = "扫描设置";
+"cleanup.settingsHint" = "修改扫描设置后，点击重新扫描生效；名称、类别与来源筛选会立即生效。";
+
+// Per-app cleanup
+"software.title" = "软件清理";
+"software.wechat" = "微信";
+"software.select" = "选择软件";
+"software.refresh" = "刷新软件列表";
+"software.scope" = "微信支持聊天附件清理；其他软件仅扫描已识别的缓存和日志。列表按本机可读取的清理目录生成，不会卸载软件或删除账号资料。";
+"software.cacheScope" = "仅扫描当前软件的可重建缓存和日志；运行中的软件会跳过。扫描不会删除文件。";
+"software.age" = "缓存 / 日志保留";
+"software.confirm" = "共 %d 项（%@），仅限当前软件的缓存和日志。执行前会复查文件身份、应用运行及占用状态。";
+"software.protection" = "仅处理当前软件的缓存和日志。跳过运行中的应用、数据库、凭据、持久数据、受保护缓存、符号链接及硬链接；无法确认安全状态的项目会保留。";
+
+"cleanup.section" = "清理范围";
+"cleanup.general" = "通用清理";

@@ -11,6 +11,8 @@ struct SavedBrowserTab: Codable {
     var hidden: Bool?
     var pinned: Bool?
     var wechat: WeChatFilterState?
+    var software: String?
+    var cleanupSection: CleanupSection?
     var criteria: FileSearchCriteria?
 
     @MainActor init(model: BrowserModel) {
@@ -20,6 +22,8 @@ struct SavedBrowserTab: Codable {
         query = model.isSearching ? model.searchQuery : ""
         hidden = model.showHidden
         wechat = model.isWeChatCleanupView ? model.weChatCleanup.filterState : nil
+        software = model.isWeChatCleanupView ? model.softwareCleanup.selectedSoftwareID : nil
+        cleanupSection = model.isCleanupView ? model.cleanupSection : nil
         criteria = model.isSearching ? model.searchCriteria : nil
         switch model.selection {
         case .folder(let url) where url.isFileURL: kind = "folder"; path = url.path
@@ -27,7 +31,7 @@ struct SavedBrowserTab: Codable {
         case .thisPC: kind = "thisPC"
         case .applications: kind = "applications"
         case .appData: kind = "appData"
-        case .weChatCleanup: kind = "wechat"
+        case .weChatCleanup, .storageCleanup: kind = "storageCleanup"
         default: kind = "home"
         }
     }
@@ -37,6 +41,8 @@ struct SavedBrowserTab: Codable {
         model.sortField = SortField(rawValue: sort) ?? .name
         model.sortAscendingFlag = ascending
         model.layout = ViewLayout(rawValue: layout) ?? .details
+        let softwareID = software ?? "wechat"
+        model.selectCleanupSoftware(model.softwareCleanup.softwareChoices.contains { $0.id == softwareID } ? softwareID : "wechat")
         model.weChatCleanup.restoreFilters(wechat)
         model.searchCriteria = criteria ?? FileSearchCriteria()
         model.navigate(to: destination)
@@ -56,6 +62,7 @@ struct SavedBrowserTab: Codable {
         case "applications": return .applications
         case "appData": return .appData
         case "wechat": return .weChatCleanup
+        case "storageCleanup": return cleanupSection == .software ? .weChatCleanup : .storageCleanup
         default: return .home
         }
     }

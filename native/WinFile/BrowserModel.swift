@@ -11,9 +11,14 @@ enum SidebarSelection: Hashable {
     case applications
     case appData
     case weChatCleanup
+    case storageCleanup
     /// 安卓设备页（显示该设备的存储位置）
     case androidDevice(serial: String)
     case category(FileCategory)
+}
+
+enum CleanupSection: String, Codable {
+    case general, software
 }
 
 enum ViewLayout: String {
@@ -56,9 +61,13 @@ final class BrowserModel: ObservableObject {
     @Published private(set) var items: [FileItem] = []
     @Published private var fileSelectedIDs: Set<String> = []
     var selectedIDs: Set<String> {
-        get { isWeChatCleanupView ? weChatCleanup.selection : fileSelectedIDs }
+        get {
+            if let store = activeStorageCleanup { return store.selection }
+            return isWeChatCleanupView ? weChatCleanup.selection : fileSelectedIDs
+        }
         set {
-            if isWeChatCleanupView { weChatCleanup.selection = newValue }
+            if let store = activeStorageCleanup { store.selection = newValue }
+            else if isWeChatCleanupView { weChatCleanup.selection = newValue }
             else { fileSelectedIDs = newValue }
         }
     }
@@ -125,7 +134,8 @@ final class BrowserModel: ObservableObject {
     var canPaste: Bool { !isCategoryView && !isBusy && archiveProgress == nil && fileTransferProgress == nil && currentDirectory != nil && (clipboard != nil || (isAndroidPath && androidClipboard != nil)) }
     var canMutateFiles: Bool {
         !isBusy && !FileOperationHistory.shared.isBusy && fileTransferProgress == nil && archiveProgress == nil
-            && (!isWeChatCleanupView || (!weChatCleanup.isScanning && !weChatCleanup.isCleaning))
+            && (!isWeChatAttachmentsView || (!weChatCleanup.isScanning && !weChatCleanup.isCleaning))
+            && (activeStorageCleanup?.busy != true)
     }
     var deleteActionTitle: String { isAndroidPath ? L("android.deletePermanent", "永久删除…") : L("action.moveToTrash", "移到废纸篓") }
     var confirmAndroidDeletion: (([AndroidEntry]) -> Bool)?
@@ -136,6 +146,10 @@ final class BrowserModel: ObservableObject {
 
     let engine: FSEngine
     let weChatCleanup: WeChatCleanupModel
+    let storageCleanup: StorageCleanupModel
+    let softwareCleanup: StorageCleanupModel
+    private var softwareCleanupSubscription: AnyCancellable?
+    private var storageCleanupSubscription: AnyCancellable?
     private var backStack: [SidebarSelection] = []
     private var forwardStack: [SidebarSelection] = []
     private var listingTask: Task<Void, Never>?
@@ -147,16 +161,20 @@ final class BrowserModel: ObservableObject {
     private var cleanupSubscription: AnyCancellable?
     private var clipboardSubscription: AnyCancellable?
 
-    init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, clipboardStore: FileClipboard? = nil) {
+    init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, storageCleanupModel: StorageCleanupModel? = nil, softwareCleanupModel: StorageCleanupModel? = nil, clipboardStore: FileClipboard? = nil) {
         self.engine = engine
         self.clipboardStore = clipboardStore ?? .shared
         self.weChatCleanup = cleanupModel ?? WeChatCleanupModel()
+        self.storageCleanup = storageCleanupModel ?? StorageCleanupModel()
+        self.softwareCleanup = softwareCleanupModel ?? StorageCleanupModel(softwareMode: true)
         filesChangedSubscription = NotificationCenter.default.publisher(for: .winFileFilesChanged)
             .receive(on: RunLoop.main).sink { [weak self] _ in
-                guard let self, !self.isBusy, self.showsFileList || self.isWeChatCleanupView else { return }
+                guard let self, !self.isBusy, self.showsFileList || self.isCleanupView else { return }
                 self.reload()
             }
         clipboardSubscription = self.clipboardStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        softwareCleanupSubscription = softwareCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        storageCleanupSubscription = storageCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         cleanupSubscription = weChatCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         languageSubscription = Localization.shared.objectWillChange
             .receive(on: RunLoop.main)
@@ -229,7 +247,37 @@ final class BrowserModel: ObservableObject {
         return false
     }
 
+    var isStorageCleanupView: Bool { selection == .storageCleanup }
+
+    // Keep the destination case for existing saved sessions and navigation history.
     var isWeChatCleanupView: Bool { selection == .weChatCleanup }
+    var isCleanupView: Bool { isStorageCleanupView || isWeChatCleanupView }
+    var cleanupSection: CleanupSection { isWeChatCleanupView ? .software : .general }
+    var sidebarSelection: SidebarSelection? { isCleanupView ? .storageCleanup : selection }
+    var isCleaningStorage: Bool { storageCleanup.isCleaning || softwareCleanup.isCleaning || weChatCleanup.isCleaning }
+    func selectSidebarDestination(_ destination: SidebarSelection) {
+        if destination == .storageCleanup && isCleanupView { return }
+        navigate(to: destination)
+    }
+    @discardableResult
+    func selectCleanupSection(_ section: CleanupSection) -> Bool {
+        guard !isCleaningStorage else { return false }
+        guard !isCleanupView || section != cleanupSection else { return true }
+        storageCleanup.cancel(); softwareCleanup.cancel(); weChatCleanup.cancelScan()
+        storageCleanup.discardPendingTrash(); softwareCleanup.discardPendingTrash(); weChatCleanup.discardPendingTrash()
+        navigate(to: section == .general ? .storageCleanup : .weChatCleanup)
+        return true
+    }
+    var isWeChatAttachmentsView: Bool { isWeChatCleanupView && softwareCleanup.selectedSoftwareID == "wechat" }
+    var activeStorageCleanup: StorageCleanupModel? {
+        isStorageCleanupView ? storageCleanup : (isWeChatCleanupView && !isWeChatAttachmentsView ? softwareCleanup : nil)
+    }
+    func selectCleanupSoftware(_ id: String) {
+        guard !weChatCleanup.isCleaning, !softwareCleanup.isCleaning else { return }
+        guard id != softwareCleanup.selectedSoftwareID else { return }
+        guard softwareCleanup.selectSoftware(id) else { return }
+        weChatCleanup.cancelScan(); weChatCleanup.discardPendingTrash()
+    }
 
     /// 是否处于「安卓设备」视图
     var isAndroidDeviceView: Bool {
@@ -249,7 +297,7 @@ final class BrowserModel: ObservableObject {
     /// `displayedItems` 对它们恒为空 —— 若不排除，空状态提示会叠在页面上。
     var showsFileList: Bool {
         !isHomeView && !isThisPCView && !isAppDataView
-            && !isAndroidDeviceView && !isApplicationsView && !isWeChatCleanupView
+            && !isAndroidDeviceView && !isApplicationsView && !isWeChatCleanupView && !isStorageCleanupView
     }
 
     var supportsDirectorySearch: Bool {
@@ -290,6 +338,7 @@ final class BrowserModel: ObservableObject {
     }
 
     var selectedItems: [FileItem] {
+        if let store = activeStorageCleanup { return store.selectedFiles.compactMap { FileItem(url: $0.url, resourceKeys: FileSystemService.resourceKeys, showHidden: true) } }
         if isWeChatCleanupView { return weChatCleanup.selectedFiles.map { FileItem(weChatFile: $0) } }
         return displayedItems.filter { selectedIDs.contains($0.id) }
     }
@@ -315,8 +364,9 @@ final class BrowserModel: ObservableObject {
             return L("view.applications", "应用程序")
         case .appData:
             return L("view.appData", "应用数据")
+        case .storageCleanup: return L("cleanup.title", "空间清理")
         case .weChatCleanup:
-            return L("wechat.title", "微信文件清理")
+            return L("cleanup.title", "空间清理")
         case .androidDevice(let serial):
             return AndroidDeviceRegistry.shared.device(serial: serial)?.displayName
                 ?? L("view.androidDevice", "安卓设备")
@@ -373,8 +423,8 @@ final class BrowserModel: ObservableObject {
             loadApplications()
         case .appData:
             loadAppData()
-        case .weChatCleanup:
-            loadWeChatCleanup()
+        case .weChatCleanup, .storageCleanup:
+            loadCleanupPage()
         case .androidDevice(let serial):
             loadAndroidDevice(serial: serial)
         case .category(let category):
@@ -397,7 +447,8 @@ final class BrowserModel: ObservableObject {
         case .thisPC: return "此电脑"
         case .applications: return "应用程序"
         case .appData: return "应用数据"
-        case .weChatCleanup: return "微信文件清理"
+        case .weChatCleanup: return "软件清理"
+        case .storageCleanup: return "空间清理"
         case .androidDevice(let serial): return "安卓设备:\(serial)"
         case .category(let c): return "分类:\(c.rawValue)"
         case .folder(let url): return "文件夹:\(url.lastPathComponent)"
@@ -427,6 +478,7 @@ final class BrowserModel: ObservableObject {
     // MARK: - 加载
 
     func reload() {
+        if let store = activeStorageCleanup { store.scan(); return }
         if isWeChatCleanupView { weChatCleanup.scan(); return }
         if let category = categoryFilter { loadCategory(category, expanding: true); return }
         if isSearching { search(searchQuery, expanding: true); return }
@@ -644,7 +696,7 @@ final class BrowserModel: ObservableObject {
 
     // MARK: - 此电脑（This PC）
 
-    private func loadWeChatCleanup() {
+    private func loadCleanupPage() {
         listingTask?.cancel()
         searchTask?.cancel()
         categoryTask?.cancel()
@@ -1363,6 +1415,7 @@ final class BrowserModel: ObservableObject {
     }
 
     func selectAll() {
+        if let store = activeStorageCleanup { store.selectAll(); return }
         selectedIDs = isWeChatCleanupView ? Set(weChatCleanup.visibleFiles.map(\.id)) : Set(displayedItems.map(\.id))
     }
 
@@ -1588,6 +1641,7 @@ final class BrowserModel: ObservableObject {
 
     func deleteSelection(permanently: Bool = false) {
         guard canMutateFiles else { return }
+        if let store = activeStorageCleanup { store.requestTrash(); return }
         if isWeChatCleanupView {
             guard !isBusy, archiveProgress == nil else { return }
             weChatCleanup.requestTrash()
@@ -1741,6 +1795,7 @@ final class BrowserModel: ObservableObject {
     // MARK: - 搜索
 
     func search(_ text: String, expanding: Bool = false) {
+        if let store = activeStorageCleanup { store.search = text; return }
         if isWeChatCleanupView { weChatCleanup.search = text; return }
         let needle = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty || searchCriteria.isActive else { clearSearch(); return }

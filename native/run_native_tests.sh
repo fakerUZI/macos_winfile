@@ -36,6 +36,8 @@ CORE=(
   "$SRC/TabManager.swift"
   "$SRC/TabDiagnostics.swift"
   "$SRC/AppDataService.swift"
+  "$SRC/StorageCleanupService.swift"
+  "$SRC/StorageCleanupModel.swift"
   "$SRC/WeChatCleanupService.swift"
   "$SRC/WeChatCleanupModel.swift"
   "$SRC/ArchiveService.swift"

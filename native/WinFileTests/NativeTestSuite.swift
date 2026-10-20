@@ -105,6 +105,7 @@ enum NativeTestSuite {
             try testDefaultAppBadge()
             testSidebarCategories()
             try testLanguageSelection()
+            try testStorageCleanup(sandbox)
             try testWeChatCleanup(sandbox)
             try testWeChatFileActions(sandbox)
             try testWeChatPagination(sandbox)
@@ -125,6 +126,315 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testStorageCleanup(_ sandbox: URL) throws {
+        print("\n[通用空间清理：规则、预览、保护与回归]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("StorageHome")
+        let old = Date().addingTimeInterval(-40 * 86400)
+        func write(_ relative: String, size: Int = 64, recent: Bool = false) throws -> URL {
+            let url = home.appendingPathComponent(relative)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 65, count: size).write(to: url)
+            try fm.setAttributes([.modificationDate: recent ? Date() : old], ofItemAtPath: url.path)
+            return url
+        }
+        let cache = try write("Library/Caches/com.example.Editor/old.cache")
+        let recent = try write("Library/Caches/com.example.Editor/recent.cache", recent: true)
+        let database = try write("Library/Caches/com.example.Editor/state.sqlite")
+        _ = try write("Library/Caches/com.example.Editor/state.sqlite-wal")
+        _ = try write("Library/Caches/com.example.Editor/Cookies")
+        _ = try write("Library/Caches/com.spotify.client/offline-music")
+        _ = try write("Library/Caches/com.apple.test/system-cache")
+        _ = try write("Library/Application Support/Code/Cache/editor.cache")
+        _ = try write("Library/Application Support/Code/User/settings.json")
+        _ = try write("Library/Application Support/Slack/Cache/slack.cache")
+        _ = try write("Library/Application Support/Google/Chrome/Default/Cache/browser.cache")
+        _ = try write("Library/Application Support/Google/Chrome/Default/Bookmarks")
+        _ = try write("Library/Logs/com.example.Editor/session.log")
+        _ = try write("Library/Containers/com.example.Sandbox/Data/Library/Caches/container.cache")
+        let installer = try write("Downloads/App.dmg")
+        let large = try write("Documents/Project/video.mov", size: 256)
+        let hidden = try write("Documents/.secrets/password.bin", size: 256)
+        _ = try write("Documents/.env", size: 256)
+        let kept = try write("Downloads/keep/file.bin")
+        let keeper = try write("Downloads/keeper/file.bin")
+        let hard = try write("Documents/hard.bin")
+        try fm.linkItem(at: hard, to: home.appendingPathComponent("Documents/hard-copy.bin"))
+        let outside = try write("Outside/secret.bin")
+        try fm.createSymbolicLink(at: home.appendingPathComponent("Documents/link.bin"), withDestinationURL: outside)
+        try fm.createSymbolicLink(at: home.appendingPathComponent("Library/Caches/com.example.Redirect"), withDestinationURL: outside.deletingLastPathComponent())
+        var config = StorageCleanupConfiguration(home: home, minimumLargeBytes: 32)
+        let scan = StorageCleanupService.scan(config, running: [])
+        func has(_ url: URL, _ kind: StorageCleanupKind? = nil) -> Bool {
+            scan.files.contains { $0.url == url && (kind == nil || $0.rule.kind == kind) }
+        }
+        check("清理扫描不修改文件", fm.fileExists(atPath: cache.path) && fm.fileExists(atPath: installer.path))
+        check("识别普通应用缓存", has(cache, .cache))
+        check("缓存默认保留最近七天", !has(recent))
+        check("数据库及 WAL 不列入候选", !has(database) && !scan.files.contains { $0.name.hasSuffix("-wal") })
+        check("持久浏览器状态不列入缓存", !scan.files.contains { ["Cookies", "Bookmarks", "settings.json"].contains($0.name) })
+        check("保留含个人数据的特殊缓存", !scan.files.contains { $0.rule.owner.contains("spotify") || $0.rule.owner.hasPrefix("com.apple.") })
+        check("识别 VS Code 可重建缓存", scan.files.contains { $0.name == "editor.cache" && $0.rule.kind == .cache })
+        check("识别 Chrome 配置内缓存", scan.files.contains { $0.name == "browser.cache" && $0.rule.kind == .cache })
+        check("识别沙盒应用缓存", scan.files.contains { $0.name == "container.cache" })
+        check("识别应用日志", scan.files.contains { $0.rule.kind == .log })
+        check("识别安装包并优先分类", has(installer, .installer) && scan.files.filter { $0.url == installer }.count == 1)
+        check("大文件支持通用个人目录", has(large, .largeFile))
+        check("不跟随符号链接", !scan.files.contains { $0.name == "link.bin" || $0.rule.owner.contains("Redirect") })
+        check("硬链接不计作可清理候选", !scan.files.contains { $0.name.hasPrefix("hard") })
+        check("隐藏目录和环境凭据受保护", !has(hidden) && !scan.files.contains { $0.name == ".env" })
+        check("大文件目录分布包含项目目录", scan.folders.contains { $0.url.lastPathComponent == "Project" && $0.bytes >= 256 })
+        check("安装包重叠目录仍有空间分布", scan.folders.contains { $0.url.lastPathComponent == "Downloads" && $0.files > 0 })
+        var reduced = scan
+        let keeperFile = scan.files.first { $0.url == keeper }!
+        let downloadsUsage = scan.folders.first { $0.url == installer.deletingLastPathComponent() }
+        reduced.removeTrashedFiles([keeperFile.id])
+        check("子目录清理不会重复扣减父级直接文件分布", reduced.folders.first { $0.url == installer.deletingLastPathComponent() }?.bytes == downloadsUsage?.bytes && !reduced.folders.contains { $0.url == keeper.deletingLastPathComponent() })
+        check("占用更新按分配空间扣减且重复处理不再扣减", reduced.scannedBytes == scan.scannedBytes - keeperFile.allocated)
+        let reducedBytes = reduced.scannedBytes
+        reduced.removeTrashedFiles([keeperFile.id])
+        check("重复移除结果不会重复扣减占用", reduced.scannedBytes == reducedBytes)
+        check("候选按稳定大小顺序排列", zip(scan.files, scan.files.dropFirst()).allSatisfy { $0.size >= $1.size })
+        var appScope = config; appScope.kinds = [.cache, .log]; appScope.bundleIDs = ["COM.EXAMPLE.EDITOR"]
+        let appScan = StorageCleanupService.scan(appScope, running: [])
+        check("软件扫描按标识隔离缓存和日志", appScan.files.count == 2 && appScan.files.allSatisfy { $0.rule.bundleID == "com.example.Editor" })
+        appScope.bundleIDs = []
+        check("空软件范围不会退回全盘扫描", StorageCleanupService.scan(appScope, running: []).files.isEmpty)
+        appScope.bundleIDs = ["com.example.Edit"]
+        check("软件标识不按前缀误匹配", StorageCleanupService.scan(appScope, running: []).files.isEmpty)
+        let active = StorageCleanupService.scan(config, running: ["com.example.editor.helper"])
+        check("运行中的应用缓存及日志跳过", !active.files.contains { $0.rule.bundleID == "com.example.Editor" } && active.skippedRunning >= 2)
+        config.ignored = [kept.deletingLastPathComponent()]
+        let ignored = StorageCleanupService.scan(config, running: [])
+        check("忽略文件夹包含其后代", !ignored.files.contains { $0.url == kept })
+        check("忽略匹配使用目录边界", ignored.files.contains { $0.url == keeper })
+        config.ignored = []
+        var limited = config; limited.entryLimit = 3
+        check("扫描条目上限明确标记不完整", StorageCleanupService.scan(limited, running: []).limited)
+        limited = config; limited.candidateLimit = 1
+        let one = StorageCleanupService.scan(limited, running: [])
+        check("候选数量上限生效", one.limited && one.files.count == 1)
+        check("取消扫描返回取消状态", StorageCleanupService.scan(config, running: [], cancelled: { true }).cancelled)
+        check("拒绝个人目录根目录和 Library", !StorageCleanupService.allowedLargeFolder(home, home: home) && !StorageCleanupService.allowedLargeFolder(home.appendingPathComponent("Library/Caches"), home: home))
+        check("拒绝隐藏自选目录和目录外范围", !StorageCleanupService.allowedLargeFolder(hidden.deletingLastPathComponent(), home: home) && !StorageCleanupService.allowedLargeFolder(sandbox, home: home))
+        var scoped = config; scoped.kinds = [.largeFile]
+        check("支持只扫描大文件", StorageCleanupService.scan(scoped, running: []).files.allSatisfy { $0.rule.kind == .largeFile })
+        scoped.largeFolder = large.deletingLastPathComponent()
+        check("支持指定个人子目录扫描", StorageCleanupService.scan(scoped, running: []).files.contains { $0.url == large })
+        var noAge = config; noAge.minimumAgeDays = 0; noAge.kinds = [.cache]
+        check("年龄设置在重新扫描时生效", StorageCleanupService.scan(noAge, running: []).files.contains { $0.url == recent })
+        check("只读探测支持超时退出", StorageCleanupService.probe("/bin/sleep", ["1"], timeout: 0.03) == nil)
+        check("探测缺失不视为空闲", StorageCleanupService.probe("/nonexistent/winfile-tool", [], timeout: 0.03) == nil)
+        // ZIP recognition reads only the listing; ordinary archives remain files.
+        let payload = home.appendingPathComponent("ZipPayload")
+        _ = try write("ZipPayload/Demo.app/Contents/Info.plist")
+        _ = try write("ZipDocs/notes.txt")
+        func zipFolder(_ source: URL, _ destination: URL) throws {
+            let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+            process.arguments = ["-qr", destination.path, "."]; process.currentDirectoryURL = source
+            try process.run(); process.waitUntilExit()
+            check("ZIP 测试素材构建成功", process.terminationStatus == 0)
+            try fm.setAttributes([.modificationDate: old], ofItemAtPath: destination.path)
+        }
+        let appZIP = home.appendingPathComponent("Downloads/Application.zip")
+        let docsZIP = home.appendingPathComponent("Downloads/Documents.zip")
+        try zipFolder(payload, appZIP); try zipFolder(home.appendingPathComponent("ZipDocs"), docsZIP)
+        let zipped = StorageCleanupService.scan(config, running: [])
+        check("ZIP 内含应用才识别为安装包", zipped.files.contains { $0.url == appZIP && $0.rule.kind == .installer })
+        check("资料 ZIP 不被识别为安装包", !zipped.files.contains { $0.url == docsZIP && $0.rule.kind == .installer })
+        // Direct execution checks inject sandbox moves. The model integration
+        // below moves one generated installer to Trash and restores it.
+        let candidate = scan.files.first { $0.url == cache }!
+        var moved = 0
+        let deniedApp = StorageCleanupService.trash([candidate], config: appScope, running: { [] }, isOpen: { _ in false }, move: { _ in moved += 1; return nil })
+        check("软件执行复查拒绝其它软件候选", moved == 0 && deniedApp.removed.isEmpty && deniedApp.failures.count == 1)
+        let runningDelete = StorageCleanupService.trash([candidate], config: config, running: { ["com.example.editor"] }, isOpen: { _ in false }, move: { _ in moved += 1; return nil })
+        check("执行前再次检查应用运行状态", moved == 0 && runningDelete.failures.count == 1)
+        let openDelete = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in true }, move: { _ in moved += 1; return nil })
+        check("打开文件受到保护", moved == 0 && openDelete.failures.count == 1)
+        let unknownDelete = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in nil }, move: { _ in moved += 1; return nil })
+        check("未知占用状态按保留处理", moved == 0 && unknownDelete.failures.count == 1)
+        let handle = try FileHandle(forReadingFrom: large)
+        check("真实 lsof 能识别打开的文件", StorageCleanupService.fileIsOpen(large) == true)
+        try handle.close()
+        check("真实 lsof 能确认关闭的文件", StorageCleanupService.fileIsOpen(large) == false)
+        var lateConfig = config; lateConfig.ignored = [cache]
+        check("扫描后新加忽略仍阻止执行", StorageCleanupService.trash([candidate], config: lateConfig, running: { [] }, isOpen: { _ in false }).removed.isEmpty)
+        var cancelled = false
+        let cancelledDelete = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in cancelled = true; return false }, cancelled: { cancelled }, move: { _ in moved += 1; return nil })
+        check("执行复查期间取消不再移动", moved == 0 && cancelledDelete.cancelled)
+        let backup = cache.appendingPathExtension("saved")
+        try fm.moveItem(at: cache, to: backup)
+        _ = try write("Library/Caches/com.example.Editor/old.cache")
+        let replaced = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in false }, move: { _ in moved += 1; return nil })
+        check("同路径同内容替换仍被拒绝", moved == 0 && replaced.failures.count == 1)
+        let fresh = StorageCleanupService.scan(config, running: []).files.first { $0.url == cache }!
+        let changedDuringProbe = StorageCleanupService.trash([fresh], config: config, running: { [] }, isOpen: { _ in try? Data([1,2,3]).write(to: cache); return false }, move: { _ in moved += 1; return nil })
+        check("占用探测后再次校验文件", moved == 0 && changedDuringProbe.failures.count == 1)
+        let big = scan.files.first { $0.url == large }!
+        let fakeTrash = home.appendingPathComponent("FakeTrash")
+        try fm.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
+        let outcome = StorageCleanupService.trash([big,big], config: config, running: { [] }, isOpen: { _ in false }, move: { original in
+            let destination = fakeTrash.appendingPathComponent(original.lastPathComponent)
+            try fm.moveItem(at: original, to: destination); return destination
+        })
+        check("重复选择只移动一次", outcome.removed.count == 1 && outcome.moves.count == 1 && outcome.bytes == big.size)
+        let undo = FileOperationHistory.restore(outcome.moves)
+        check("清理结果支持已有撤销机制", undo.errors.isEmpty && fm.fileExists(atPath: large.path))
+        let restoredBig = StorageCleanupService.scan(config, running: []).files.first { $0.url == large }!
+        var attemptedMove = false
+        let failure = StorageCleanupService.trash([restoredBig], config: config, running: { [] }, isOpen: { _ in false }, move: { _ in attemptedMove = true; throw CocoaError(.fileWriteNoPermission) })
+        check("失败不误记为已清理", attemptedMove && failure.removed.isEmpty && failure.failures.count == 1)
+        // Force file-count and sorting regressions beyond one page.
+        for index in 0..<410 { _ = try write("Documents/Pagination/file-\(index).bin", size: 40 + index) }
+        let many = StorageCleanupService.scan(config, running: [])
+        let domain = "WinFile.StorageCleanupTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let store = StorageCleanupModel(home: home, defaults: defaults)
+        store.accept(many)
+        check("清理列表最多展示 200 行", store.display.rows.count == 200 && store.display.pages >= 3)
+        check("默认没有勾选任何候选", store.selection.isEmpty)
+        store.selectAll(); let selected = store.selection
+        store.rebuild(page: 1)
+        check("全选作用于全部筛选结果且翻页保留", selected.count == many.files.count && store.selection == selected)
+        for _ in 0..<100 { store.sort = "name"; store.sort = "date"; store.sort = "size" }
+        check("连续切换排序快照稳定且回到首屏", store.display.page == 0 && store.display.rows.count == 200 && store.selection == selected)
+        store.search = "Pagination"
+        check("更改搜索条件清除旧选择", store.selection.isEmpty)
+        store.selectAll()
+        check("路径筛选和全选数量一致", store.display.filtered.count == 410 && store.selection.count == 410)
+        store.category = StorageCleanupKind.cache.rawValue
+        check("分类可与名称过滤组合", store.display.filtered.isEmpty)
+        check("空筛选结果不会保留隐藏文件选择", store.selection.isEmpty)
+        store.search = ""; store.category = "all"
+        store.selectAll(); store.requestTrash()
+        store.owner = "missing.example.App"
+        check("更改来源清除选择及待确认删除", store.selection.isEmpty && store.pendingFiles.isEmpty && !store.confirmsTrash)
+        store.owner = "all"
+        store.ignore(kept.deletingLastPathComponent())
+        let restored = StorageCleanupModel(home: home, defaults: defaults)
+        check("忽略列表只在指定本机配置中持久化", restored.ignored.contains(kept.deletingLastPathComponent()))
+        store.chooseFolder(home.appendingPathComponent("Library"))
+        check("无效扫描目录给出反馈", store.largeFolder == nil && store.message != nil)
+        let engine = FSEngine(); let manager = TabManager(engine: engine, startDirectory: nil)
+        let model = manager.activeModel
+        model.navigate(to: .storageCleanup)
+        check("空间清理独立页面不误报空文件夹", model.isStorageCleanupView && !model.showsFileList && model.currentDirectory == nil)
+        check("页签恢复保留清理页类型", SavedBrowserTab(model: model).destination == .storageCleanup)
+        check("清理页使用独立图标", manager.activeTab.symbol == "externaldrive.badge.minus")
+        let count = manager.count
+        model.openContainingFolder(of: large)
+        check("清理文件定位在新页签打开", manager.count == count + 1 && manager.activeModel.currentDirectory == large.deletingLastPathComponent())
+        check("原清理页保持原位置", model.isStorageCleanupView)
+        model.storageCleanup.accept(many); model.selectAll(); model.deleteSelection(permanently: true)
+        check("全局删除在空间清理页仍需确认且只走废纸篓", model.storageCleanup.confirmsTrash && model.storageCleanup.pendingFiles.count == many.files.count)
+        check("选择与搜索路由到当前清理模型", model.selectedIDs == model.storageCleanup.selection)
+        model.search("Pagination")
+        check("工具栏搜索路由到清理筛选", model.storageCleanup.search == "Pagination")
+        store.owner = "missing.example.App"
+        check("已清空来源仍保留可取消的筛选项", store.owners.contains("missing.example.App") && store.display.filtered.isEmpty)
+        let integration = StorageCleanupModel(home: home, defaults: defaults)
+        integration.scan(); waitFor { integration.hasScanned && !integration.isScanning }
+        check("后台扫描发布完整结果", integration.hasScanned && integration.result.files.contains { $0.url == installer })
+        integration.selection = [installer.path]; integration.requestTrash()
+        let beforeBytes = integration.result.scannedBytes
+        let installerAllocated = integration.selectedFiles.reduce(Int64(0)) { $0 + $1.allocated }
+        let beforeDownloads = integration.result.folders.first { $0.url == installer.deletingLastPathComponent() }
+        let integrationModel = BrowserModel(engine: FSEngine(), startDirectory: nil, storageCleanupModel: integration)
+        integrationModel.navigate(to: .storageCleanup)
+        waitFor { integration.hasScanned && !integration.isScanning }
+        integration.selection = [installer.path]; integration.requestTrash()
+        integration.clean()
+        check("清理期间阻止应用更新重启", AppUpdatePolicy.hasActiveFileOperations(in: [integrationModel]))
+        check("清理执行期间拒绝切换清理子范围", !integrationModel.selectCleanupSection(.software) && integrationModel.selection == .storageCleanup)
+        waitFor({ !integration.isCleaning }, timeout: 12)
+        check("模型执行仅移动已确认的测试文件", !fm.fileExists(atPath: installer.path) && fm.fileExists(atPath: kept.path))
+        check("清理后占用统计扣除实际分配空间", integration.result.scannedBytes == beforeBytes - installerAllocated)
+        let afterDownloads = integration.result.folders.first { $0.url == installer.deletingLastPathComponent() }
+        check("清理后目录占用与文件数同步更新", beforeDownloads != nil && afterDownloads?.bytes == (beforeDownloads?.bytes ?? 0) - installerAllocated && afterDownloads?.files == (beforeDownloads?.files ?? 0) - 1)
+        check("清理摘要持久化且记录实际成功数量", StorageCleanupModel(home: home, defaults: defaults).history.first?.count == 1)
+        if FileOperationHistory.shared.steps.last?.moves.first?.original.path == installer.path {
+            FileOperationHistory.shared.undo()
+            waitFor { !FileOperationHistory.shared.isBusy }
+        }
+        check("真实废纸篓移动可由全局撤销还原", fm.fileExists(atPath: installer.path))
+        waitFor { !integration.isScanning && integration.result.files.contains { $0.url == installer } }
+        check("全局撤销后空间清理列表自动刷新", integration.result.files.contains { $0.url == installer })
+
+        let software = StorageCleanupModel(home: home, defaults: defaults, softwareMode: true)
+        let softwareIDs = software.softwareChoices.map(\.id)
+        check("软件列表保留微信并发现本机缓存来源", softwareIDs.first == "wechat" && softwareIDs.contains("com.tinyspeck.slackmacgap") && softwareIDs.contains("com.google.chrome") && softwareIDs.contains("com.microsoft.vscode"))
+        check("软件列表去重且排除系统及受保护来源", Set(softwareIDs).count == softwareIDs.count && !softwareIDs.contains { $0.hasPrefix("com.apple.") || $0.contains("spotify") })
+        check("未解析的 bundle 标识不作为软件展示", !softwareIDs.contains("com.example.editor") && !softwareIDs.contains("com.example.sandbox"))
+        check("真实软件使用名称展示而不隐藏其 bundle ID", SoftwareCleanupApp.isVisible(id: "com.google.Chrome", name: "Google Chrome"))
+        check("原始 com 与其它命名空间标识均隐藏", !SoftwareCleanupApp.isVisible(id: "com.example.raw", name: "com.example.raw") && !SoftwareCleanupApp.isVisible(id: "net.example.raw", name: "net.example.raw"))
+        check("已解析名称的辅助子程序仍隐藏", !SoftwareCleanupApp.isVisible(id: "com.example.app.LoginHelper", name: "登录助手") && !SoftwareCleanupApp.isVisible(id: "com.example.app.Updater", name: "Example Update"))
+        check("更新与设置辅助程序名称不展示", !SoftwareCleanupApp.isVisible(id: "com.example.tools", name: "Example更新程序") && !SoftwareCleanupApp.isVisible(id: "com.example.tools", name: "DoubaoImeSettings"))
+        check("微信附件不借用通用清理范围", software.configuration.bundleIDs == [] && StorageCleanupService.rules(software.configuration).isEmpty)
+        let attachment = WeChatFile(url: large, root: home, kind: .video, size: 256, modified: old)
+        let wechat = WeChatCleanupModel(initialResult: WeChatScanResult(files: [attachment], roots: [home]), customRoots: [])
+        let softwareBrowser = BrowserModel(engine: engine, startDirectory: nil, cleanupModel: wechat, softwareCleanupModel: software)
+        softwareBrowser.navigate(to: .weChatCleanup)
+        check("旧微信目的地呈现软件清理并默认保留附件", softwareBrowser.isWeChatAttachmentsView && softwareBrowser.windowSubtitle == L("cleanup.title", "空间清理"))
+        wechat.selection = [attachment.id]; wechat.requestTrash()
+        softwareBrowser.selectCleanupSoftware("wechat")
+        check("重复选择当前软件不清空选择或确认", wechat.confirmsTrash && wechat.selection == [attachment.id])
+        softwareBrowser.selectCleanupSoftware("com.microsoft.vscode")
+        check("离开微信清空附件选择及待确认快照", !wechat.confirmsTrash && wechat.pendingTrashFiles.isEmpty && wechat.selection.isEmpty)
+        check("选择软件切换全局操作模型", softwareBrowser.activeStorageCleanup === software && !softwareBrowser.isWeChatAttachmentsView)
+        software.scan(); waitFor { software.hasScanned && !software.isScanning }
+        check("软件后台扫描只返回所选来源", !software.result.files.isEmpty && software.result.files.allSatisfy { $0.rule.bundleID == "com.microsoft.VSCode" && [.cache, .log].contains($0.rule.kind) })
+        softwareBrowser.selectAll(); softwareBrowser.deleteSelection(permanently: true)
+        check("软件全选及删除仍需确认且不跨来源", software.confirmsTrash && !software.pendingFiles.isEmpty && softwareBrowser.selectedIDs == software.selection)
+        softwareBrowser.search("session")
+        check("软件页面搜索路由到当前软件", software.search == "session" && softwareBrowser.weChatCleanup.search.isEmpty)
+        let savedSoftware = try JSONDecoder().decode(SavedBrowserTab.self, from: JSONEncoder().encode(SavedBrowserTab(model: softwareBrowser)))
+        let sessionSoftware = StorageCleanupModel(home: home, defaults: defaults, softwareMode: true)
+        let sessionBrowser = BrowserModel(engine: engine, startDirectory: nil, softwareCleanupModel: sessionSoftware)
+        savedSoftware.apply(to: sessionBrowser)
+        check("软件页签会话恢复所选软件", sessionBrowser.isWeChatCleanupView && sessionSoftware.selectedSoftwareID == "com.microsoft.vscode")
+        check("软件子页按统一空间清理格式保存", savedSoftware.kind == "storageCleanup" && savedSoftware.cleanupSection == .software)
+        check("软件子页共享侧边栏高亮与窗口标题", softwareBrowser.sidebarSelection == .storageCleanup && softwareBrowser.windowSubtitle == L("cleanup.title", "空间清理"))
+        softwareBrowser.selectCleanupSoftware("com.google.chrome")
+        check("切换软件清除旧结果选择及确认快照", software.result.files.isEmpty && software.selection.isEmpty && software.pendingFiles.isEmpty && !software.confirmsTrash && software.search.isEmpty && !software.hasScanned)
+        software.scanScope = "installer"
+        check("软件范围设置不能扩大到安装包或个人大文件", software.configuration.kinds.isEmpty && software.availableKinds == [.cache, .log])
+        check("未知软件选择不改变当前来源", !software.selectSoftware("unknown.invalid") && software.selectedSoftwareID == "com.google.chrome")
+        software.scanScope = "all"; software.scan()
+        softwareBrowser.selectCleanupSoftware("com.tinyspeck.slackmacgap")
+        check("扫描途中切换软件取消旧任务", !software.isScanning && software.result.files.isEmpty && software.selectedSoftwareID == "com.tinyspeck.slackmacgap")
+        software.scan(); waitFor { software.hasScanned && !software.isScanning }
+        check("旧扫描不会覆盖新软件结果", !software.result.files.isEmpty && software.result.files.allSatisfy { $0.rule.bundleID == "com.tinyspeck.slackmacgap" })
+        softwareBrowser.selectCleanupSoftware("wechat")
+        check("切回微信恢复附件页面路由", softwareBrowser.isWeChatAttachmentsView && softwareBrowser.activeStorageCleanup == nil)
+        var legacy = savedSoftware; legacy.software = nil
+        legacy.apply(to: sessionBrowser)
+        check("旧版微信会话兼容默认微信附件", sessionBrowser.isWeChatAttachmentsView)
+        sessionBrowser.selectCleanupSoftware("com.microsoft.vscode"); legacy.software = "no.longer.available"
+        legacy.apply(to: sessionBrowser)
+        check("已失效的软件会话回退到微信附件", sessionBrowser.isWeChatAttachmentsView)
+
+        var oldSoftware = savedSoftware; oldSoftware.kind = "wechat"; oldSoftware.cleanupSection = nil
+        oldSoftware.apply(to: sessionBrowser)
+        check("旧软件页签迁移到空间清理的软件子页", sessionBrowser.isCleanupView && sessionBrowser.cleanupSection == .software && sessionBrowser.sidebarSelection == .storageCleanup)
+        wechat.selection = [attachment.id]; wechat.requestTrash()
+        softwareBrowser.selectCleanupSection(.general)
+        check("切换到通用清理使用正确模型", softwareBrowser.isStorageCleanupView && softwareBrowser.activeStorageCleanup === softwareBrowser.storageCleanup)
+        check("离开软件范围清空微信待确认清单", !wechat.confirmsTrash && wechat.pendingTrashFiles.isEmpty && wechat.selection.isEmpty)
+        softwareBrowser.storageCleanup.accept(many); softwareBrowser.selectAll(); softwareBrowser.deleteSelection()
+        check("通用子范围保存为统一入口及通用范围", SavedBrowserTab(model: softwareBrowser).kind == "storageCleanup" && SavedBrowserTab(model: softwareBrowser).cleanupSection == .general)
+        softwareBrowser.selectCleanupSection(.software)
+        check("离开通用范围清空待确认清单", !softwareBrowser.storageCleanup.confirmsTrash && softwareBrowser.storageCleanup.pendingFiles.isEmpty && softwareBrowser.storageCleanup.selection.isEmpty)
+        check("切回软件范围保留当前软件", softwareBrowser.isWeChatAttachmentsView && softwareBrowser.sidebarSelection == .storageCleanup)
+        softwareBrowser.selectSidebarDestination(.storageCleanup)
+        check("点击当前侧边栏入口不重置软件子范围", softwareBrowser.cleanupSection == .software)
+        softwareBrowser.selectSidebarDestination(.home); softwareBrowser.selectSidebarDestination(.storageCleanup)
+        check("从其它页面进入统一入口默认通用清理", softwareBrowser.isStorageCleanupView && softwareBrowser.cleanupSection == .general)
+
     }
 
     @MainActor
@@ -491,7 +801,7 @@ enum NativeTestSuite {
         check("返回清理页保留原筛选条件", model.weChatCleanup.kind == "document" && model.weChatCleanup.search == "report")
         let tab = WinFileTab(engine: engine, startDirectory: nil)
         tab.model.navigate(to: .weChatCleanup)
-        check("微信清理页签标题正确", tab.title == L("wechat.title", "微信文件清理"))
+        check("微信清理页签标题正确", tab.title == L("cleanup.title", "空间清理"))
     }
 
     /// 微信清理分页：排序全局生效、翻页正确、筛选重置页码、选择跨页保留
@@ -1141,6 +1451,14 @@ enum NativeTestSuite {
         let cancelled = ScanCancellation(); cancelled.cancel()
         check("重复查找预先取消立即停止", DuplicateFileService.scan(root, token: cancelled).cancelled)
         check("重复查找达到遍历上限明确标注", DuplicateFileService.scan(root, limit: 1, token: ScanCancellation()).limited)
+
+        let nestedRoot = root.appendingPathComponent("DuplicateSymlinkSiblings")
+        for index in 0..<12 {
+            let original = try file("DuplicateSymlinkSiblings/folder-\(index)/copy.bin", Data("sibling duplicate".utf8))
+            try fm.createSymbolicLink(at: nestedRoot.appendingPathComponent("alias-\(index)"), withDestinationURL: original)
+        }
+        let siblingDuplicates = DuplicateFileService.scan(nestedRoot, token: ScanCancellation())
+        check("符号链接不会导致相邻真实目录漏扫", siblingDuplicates.groups.count == 1 && siblingDuplicates.groups.first?.files.count == 12)
 
         let boundaryRoot = NSView(frame: NSRect(x: 0, y: 0, width: 600, height: 500))
         let boundary = BrowserInteractionBoundary.BoundaryView(frame: NSRect(x: 200, y: 400, width: 400, height: 34))

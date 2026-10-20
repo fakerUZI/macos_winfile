@@ -29,7 +29,7 @@ struct PathBarHost: View {
 
     /// 当前地址栏应表达的位置（路径或页面名）：用作视图身份，路径变化即强制重建
     var addressIdentity: String {
-        if model.isWeChatCleanupView { return "page:wechatCleanup" }
+        if model.isCleanupView { return "page:storageCleanup" }
         if model.isHomeView { return "page:home" }
         if model.isThisPCView { return "page:thispc" }
         if model.isCategoryView { return "page:category:\(model.categoryFilter?.rawValue ?? "")" }
@@ -81,7 +81,7 @@ struct PathBarHost: View {
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 3)
                             }
-                            .disabled(model.isWeChatCleanupView)
+                            .disabled(model.isWeChatCleanupView || model.isStorageCleanupView)
                             .buttonStyle(.borderless)
                             .background(
                                 RoundedRectangle(cornerRadius: 4)

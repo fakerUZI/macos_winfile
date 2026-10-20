@@ -22,6 +22,7 @@ struct TabContentHost: View {
 
     /// 当前渲染的视图类型（供自动化验证内容区是否真的切换）
     private var renderedKind: String {
+        if model.isStorageCleanupView { return "storageCleanup" }
         if model.isWeChatCleanupView { return "wechatCleanup" }
         if model.isHomeView { return "home" }
         if model.isThisPCView { return "thisPC" }
@@ -46,8 +47,8 @@ struct TabContentHost: View {
                 HomeView(engine: engine, manager: reader.manager)
             } else if model.isThisPCView {
                 ThisPCView(engine: engine, manager: reader.manager)
-            } else if model.isWeChatCleanupView {
-                WeChatCleanupView(model: model, dialog: $dialog)
+            } else if model.isCleanupView {
+                CleanupHubView(model: model, dialog: $dialog)
             } else if model.isAppDataView {
                 AppDataView(engine: engine, model: model)
             } else if case .androidDevice(let serial) = model.selection {
@@ -105,7 +106,7 @@ struct TabContentHost: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if !model.isWeChatCleanupView { StatusBarView(engine: engine, model: model) }
+            if !model.isCleanupView { StatusBarView(engine: engine, model: model) }
         }
     }
 }

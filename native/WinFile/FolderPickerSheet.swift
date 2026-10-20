@@ -4,17 +4,34 @@ struct FolderPickerSheet: View {
     @ObservedObject private var localization = Localization.shared
     @StateObject private var browser: FolderPickerModel
     @Environment(\.dismiss) private var dismiss
-    let onChoose: ([URL]) -> SidebarFolderAddition
+    private let onChoose: ([URL]) -> String?
+    private let pickerTitle: String
+    private let singleFolder: Bool
 
     init(initialDirectory: URL? = nil, onChoose: @escaping ([URL]) -> SidebarFolderAddition) {
         _browser = StateObject(wrappedValue: FolderPickerModel(initialDirectory: initialDirectory))
-        self.onChoose = onChoose
+        pickerTitle = L("folderPicker.title", "添加到个人收藏")
+        singleFolder = false
+        self.onChoose = { urls in
+            let result = onChoose(urls)
+            return result.rejectedCount > 0 ? result.statusMessage : nil
+        }
+    }
+
+    init(initialDirectory: URL? = nil, title: String, onSelect: @escaping (URL) -> String?) {
+        _browser = StateObject(wrappedValue: FolderPickerModel(initialDirectory: initialDirectory))
+        pickerTitle = title
+        singleFolder = true
+        self.onChoose = { urls in
+            guard urls.count == 1, let url = urls.first else { return L("cleanup.chooseOne", "请选择一个文件夹。") }
+            return onSelect(url)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L("folderPicker.title", "添加到个人收藏")).font(.headline)
-            Text(L("folderPicker.hint", "双击进入文件夹，按住 ⌘ 可多选；也可直接添加当前文件夹。"))
+            Text(pickerTitle).font(.headline)
+            Text(singleFolder ? L("cleanup.folderHint", "双击进入目录，选择一个文件夹或使用当前文件夹。") : L("folderPicker.hint", "双击进入文件夹，按住 ⌘ 可多选；也可直接添加当前文件夹。"))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button { browser.navigate(to: browser.directory.deletingLastPathComponent()) } label: {
@@ -71,10 +88,9 @@ struct FolderPickerSheet: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button(L("button.cancel", "取消")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(browser.selectedPaths.isEmpty ? L("folderPicker.addCurrent", "添加当前文件夹")
+                Button(singleFolder ? L("cleanup.choose", "选择此文件夹") : browser.selectedPaths.isEmpty ? L("folderPicker.addCurrent", "添加当前文件夹")
                        : L("folderPicker.addSelected", "添加 %d 个文件夹", browser.candidates.count)) {
-                    let result = onChoose(browser.candidates)
-                    if result.rejectedCount > 0 { browser.errorMessage = result.statusMessage }
+                    if let error = onChoose(browser.candidates) { browser.errorMessage = error }
                     else { dismiss() }
                 }
                 .disabled(browser.isLoading || browser.candidates.isEmpty)

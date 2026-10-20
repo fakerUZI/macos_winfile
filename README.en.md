@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-803%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-921%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,13 +42,15 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.2.1
+## What’s new in v1.3.0
 
-- **Fixed a freeze in WeChat cleanup when changing sort order.** With many attachments, clicking a column header could enter an infinite refresh loop (100% CPU, unresponsive UI). Rows are now paginated at 200 per page, sort state is committed once per interaction, and the table uses the same row-identity approach as the other file lists.
-- **Sorting semantics are unchanged:** sorting still covers the whole filtered set before pagination; totals and “Select All Filtered” still apply to everything; selections survive page changes; changing sort or filters returns to page 1.
-- Verified with 260 consecutive sort changes on 8,719 real attachments, plus 803 automated tests passing on both architectures.
+- **Storage cleanup:** one sidebar entry with General Cleanup and Software Cleanup for caches, logs, installers and large personal files, with usage estimates, filtering, exclusions and confirmation.
+- **Per-app cleanup:** WeChat appears alongside other apps and retains its attachment filters. Other apps are limited to identified caches and logs; raw bundle identifiers and helper components are hidden.
+- **File protection and recovery:** files are rechecked before moving to Trash; running apps and protected data are skipped. General cleanup and other apps’ cache cleanup support `⌘Z` undo.
+- **Fixes:** changing cleanup filters clears old selections and pending confirmations; usage updates after cleanup and lists refresh after undo; duplicate-file scans no longer skip real sibling directories after symlinks.
+- 921 automated tests pass in each Apple Silicon and Intel app bundle. Physical Android device read/write tests are excluded from this run.
 
-See the [v1.2.1 release notes](docs/releases/v1.2.1.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.3.0 release notes](docs/releases/v1.3.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -81,7 +83,7 @@ See the [v1.2.1 release notes](docs/releases/v1.2.1.md). Users on v1.1.0 or earl
 | **Home** | Quick-access tiles, favorites, and recent files (recently modified plus files opened inside WinFile, with a marker and a way to clear the history) |
 | **This PC** | Drive cards with capacity bars (orange above 75%, red above 90%), used / free / total space, filesystem type; removable volumes can be ejected |
 | **Applications** | Aggregates `/Applications` and `/System/Applications` with real system icons |
-| **WeChat Cleanup** | Dedicated sidebar page; detects common data folders and accepts custom attachment folders. Filter by filename, type, size and modification date, review the selected size, then confirm moving files to Trash. Chat databases and symbolic links are excluded |
+| **Storage cleanup** | One entry with General cleanup and Software cleanup for caches, logs, installers, large files and WeChat chat attachments; general cleanup and other apps’ caches support undo, while WeChat attachments can be recovered from Trash |
 | **App Data** | Scans app data containers so you can jump straight into another app's files (e.g. WeChat). Empty shell containers are filtered out and UUID-only entries get their real app name |
 | **Android device** | Browse an Android device over adb: list, upload, download, create, rename, copy / move, delete; multiple devices are distinguished by serial number |
 
@@ -104,11 +106,19 @@ The app bundles the official universal macOS console [7-Zip 26.04](https://www.7
 - **Add sidebar favorites directly** — right-click folders in Details or Icons view and choose **Add to Sidebar**, including multiple folders. Right-click empty space to add the current folder. Duplicates are skipped and your browsing location stays unchanged, with no system picker required. Only readable local folders are accepted; regular files, `.app` bundles, and Android paths are excluded. Favorites persist across launches; removing a shortcut leaves the folder intact. Home favorites and sidebar favorites are managed separately.
 - **Status bar & inspector** — item count, total size of the selection, free disk space; the inspector shows details for a single file
 
-### WeChat cleanup
+### Software cleanup (new in v1.3.0)
+
+The sidebar has one **Storage cleanup** entry with the standard text color. Inside it, choose **Software cleanup**; its unified app picker lists WeChat alongside other apps. Unresolved bundle identifiers and helper, updater and extension processes are hidden. Choose WeChat or another detected app. Supported locations include Chrome, Edge, Brave, VS Code, Slack, Discord and Teams caches, plus recognized per-app cache and log folders. Only apps with readable cleanup folders appear; refresh the list to detect new folders.
+
+WeChat keeps its existing attachment scanner and account/month filters. Other apps scan only the selected app’s identified caches and logs, keep the last seven days by default, and skip running apps. Databases, accounts, configuration, offline data and other apps’ chat attachments are preserved. Switching apps cancels the old scan and clears its results, selection and pending confirmation. Filtering, exclusions, context menus, confirmation, Trash and undo remain available. Saved tabs retain the selected app.
+
+**Storage cleanup** is the last sidebar item. It contains General cleanup for cross-app scans, installers and large personal files, and Software cleanup for individual apps.
+
+### WeChat chat attachments
 
 Storage cards show the size and file count of all scanned attachments, the current filter, and the selection. Chat databases are excluded. Scanning reports the space discovered so far; totals update after cleanup.
 
-Open Locations → WeChat Cleanup in the sidebar. Combine filename and file-type filters with size thresholds (10 MB / 100 MB / 1 GB) and modification age (30 / 90 / 180 days). Dates refer to filesystem modification times, not message timestamps.
+Open Storage cleanup at the bottom of the sidebar, select Software cleanup, and choose WeChat. Combine filename and file-type filters with size thresholds (10 MB / 100 MB / 1 GB) and modification age (30 / 90 / 180 days). Dates refer to filesystem modification times, not message timestamps.
 
 Select one item and click Open Containing Folder, use its context menu, or click its Folder cell to open and activate a new WinFile tab at the real directory with the file selected. The original cleanup tab retains its filters, selection and scan results. Show in Finder remains available in the context menu.
 
@@ -144,6 +154,14 @@ Drag the sidebar and inspector dividers to resize them; double-click to reset. P
 - With no fixed startup folder, the app restores the last window's tabs, active folder, ordering, and layout (up to 30 tabs). A configured startup folder takes precedence; missing paths fall back to Home.
 - Folder sizes count logical bytes of ordinary files, including hidden contents, without following symlinks. Totals are marked partial if the initial 200,000-entry budget is reached, cancelled, or locations cannot be read. The budget can be expanded.
 - Android deletion is permanent and requires an explicit confirmation at every entry point.
+
+## Storage cleanup (new in v1.3.0)
+
+Choose **Storage cleanup** at the bottom of the sidebar, select **General cleanup**, then start a scan. Review supported app caches and logs, installers in Downloads/Desktop, and large files in personal folders. Each category can be scanned separately. Browser rules target explicit cache locations and preserve profiles, databases and offline state. ZIP contents are inspected to distinguish installers from ordinary archives.
+
+Caches, logs and installers from the last 7 days are kept by default; the large-file threshold is 100 MB. Nothing is preselected. Filter by source, category or path, sort results, and review 200 rows per page with selection preserved across pages. Double-click to open; the context menu includes preview, copying paths, opening the containing folder in a new tab, and exclusions.
+
+Before each move, WinFile rechecks file and parent identities, metadata, running applications and open-file state. Inconclusive checks keep the file. Confirmed files go to Trash, with session undo using `⌘Z`; cleanup never elevates privileges or empties Trash. Exclusions and the last 30 cleanup summaries stay on this Mac. Moving to Trash does not immediately free space, and APFS sharing makes disk usage an estimate. Cancellation, limits and inaccessible paths are reported as incomplete scans.
 
 ## Installation
 
@@ -226,7 +244,7 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
 
-Current status: **798 passing** in the command-line suite and **803 passing** in the app bundle (including runtime language switching).
+v1.3.0 release validation: **921 passing, 0 failures** in both the arm64 and x86_64 app bundles. This run uses `--skip-device-tests`; physical Android device read/write tests are excluded. New regressions cover app isolation, app switching, classification, open-file protection, replacement detection, pagination, selection resets after filtering, cleanup usage updates, background cleanup, history, refresh after real Trash undo, and symlink boundaries in duplicate-file scans.
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 
@@ -283,7 +301,7 @@ macos_winfile/
 │   │   ├── WeChatCleanupView.swift     # WeChat cleanup page
 │   │   ├── BrowserModel.swift          #   browsing state (navigation / sort / selection / clipboard)
 │   │   └── Android/                    #   Android device support (adb wrapper)
-│   ├── WinFileTests/                   # test suite (798 CLI / 803 app-bundle tests)
+│   ├── WinFileTests/                   # logic tests, UI snapshots and smoke tests
 │   ├── Resources/                      # Chinese / English localizations
 │   ├── Info.plist                      # app metadata
 │   ├── build_native.sh                 # build script

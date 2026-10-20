@@ -305,6 +305,11 @@ final class WeChatCleanupModel: ObservableObject {
         confirmsTrash = true
     }
 
+    func discardPendingTrash() {
+        guard !isCleaning else { return }
+        selection = []; pendingTrashFiles = []; confirmsTrash = false
+    }
+
     func addFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true

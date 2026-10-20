@@ -900,3 +900,80 @@
 "wechat.pagePrev" = "Previous Page";
 "wechat.pageNext" = "Next Page";
 "wechat.pageRange" = "(items %d–%d)";
+
+/* General storage cleanup */
+"cleanup.age" = "Keep recent caches / logs / installers";
+"cleanup.age0" = "Any age";
+"cleanup.age30" = "Keep the last 30 days";
+"cleanup.age7" = "Keep the last 7 days";
+"cleanup.allOwners" = "All apps / sources";
+"cleanup.allocated" = "On disk";
+"cleanup.cache" = "App caches";
+"cleanup.cancelled" = "Cancelled; results are incomplete.";
+"cleanup.candidates" = "All candidates";
+"cleanup.changed" = "Changed, ignored or no longer eligible: %@";
+"cleanup.chooseFolder" = "Choose large-file folder…";
+"cleanup.cleaning" = "Checking and moving item %d…";
+"cleanup.confirm" = "Move selected files to Trash?";
+"cleanup.confirmDetail" = "%d items (%@). Installers and large files may be valuable; review them first. File identity, running apps and open files will be checked again before each move.";
+"cleanup.defaultFolders" = "Restore default large-file folders";
+"cleanup.defaultScope" = "Large files: Downloads, Desktop, Documents, Movies, Pictures and Music. Custom folders must be inside your home folder, outside Library.";
+"cleanup.details" = "Scan details / exclusions / history";
+"cleanup.distribution" = "Disk usage in scanned large-file folders";
+"cleanup.empty" = "No matching files in this scope. Adjust filters or scan settings.";
+"cleanup.filtered" = "Filtered results";
+"cleanup.history" = "Recent cleanup history (on this Mac)";
+"cleanup.ignoreFile" = "Ignore this file";
+"cleanup.ignoreFolder" = "Ignore containing folder";
+"cleanup.ignored" = "Exclusions";
+"cleanup.installer" = "Installers";
+"cleanup.invalidFolder" = "Choose a regular subfolder inside your home folder. The home root, Library, hidden folders and app bundles are excluded.";
+"cleanup.large" = "Large files";
+"cleanup.log" = "App logs";
+"cleanup.oldest" = "Oldest modified first";
+"cleanup.open" = "In use or open-file status unavailable; kept: %@";
+"cleanup.outcome" = "Moved %d items (%@) to Trash; %d skipped or failed.";
+"cleanup.owner" = "App / source";
+"cleanup.partial" = "Scan limits or inaccessible folders: results are incomplete.";
+"cleanup.progress" = "Checked %d entries; found %d candidates";
+"cleanup.protection" = "Running apps, databases, credentials, protected caches, symlinks and hard links are skipped. Files are kept when safety checks are inconclusive. Review installers and large files before selecting them.";
+"cleanup.ready" = "Click Start scan to review disk usage and cleanup candidates.";
+"cleanup.running" = "App is running; skipped: %@";
+"cleanup.scan" = "Start scan";
+"cleanup.scanned" = "Scanned usage (estimate)";
+"cleanup.scope" = "Review rebuildable app caches, logs, installers and large personal files. Scanning does not delete anything.";
+"cleanup.search" = "Filter by name or path";
+"cleanup.selected" = "Selected files";
+"cleanup.skipped" = "skipped / failed";
+"cleanup.skippedOwners" = "Skipped %d locations belonging to running apps";
+"cleanup.threshold" = "Large files at least";
+"cleanup.title" = "Storage cleanup";
+"cleanup.trashNote" = "Moving to Trash does not free disk space immediately. Press ⌘Z to undo successful moves. Disk usage is estimated because APFS may share blocks.";
+"cleanup.unignore" = "Remove exclusion";
+"wechat.clearSelection" = "Clear selection";
+
+/* General storage cleanup */
+"cleanup.scanScope" = "Scan scope";
+
+/* General storage cleanup */
+"cleanup.choose" = "Choose this folder";
+"cleanup.chooseOne" = "Choose one folder.";
+"cleanup.folderHint" = "Double-click to browse, then select one folder or use the current folder.";
+
+/* General storage cleanup */
+"cleanup.settings" = "Scan settings";
+"cleanup.settingsHint" = "Changes to scan settings apply on the next scan. Name, category and source filters apply immediately.";
+
+// Per-app cleanup
+"software.title" = "Software cleanup";
+"software.wechat" = "WeChat";
+"software.select" = "Choose app";
+"software.refresh" = "Refresh app list";
+"software.scope" = "WeChat supports chat attachments; other apps scan identified caches and logs. Apps appear when readable cleanup folders are found. Apps and account data are preserved.";
+"software.cacheScope" = "Scan only this app’s rebuildable caches and logs. Running apps are skipped. Scanning does not delete files.";
+"software.age" = "Keep recent caches / logs";
+"software.confirm" = "%d items (%@), limited to this app’s caches and logs. File identity, running apps and open files will be checked again before moving.";
+"software.protection" = "Only this app’s caches and logs are eligible. Running apps, databases, credentials, persistent data, protected caches, symbolic links and hard links are skipped. Uncertain items are kept.";
+
+"cleanup.section" = "Cleanup scope";
+"cleanup.general" = "General cleanup";

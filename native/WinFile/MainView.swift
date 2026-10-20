@@ -56,7 +56,7 @@ struct MainView: View {
     /// 三栏布局：侧边栏 / 内容（含页签栏）/ 详细信息
     private var splitLayout: some View {
         GeometryReader { geometry in
-            let inspectorVisible = showInspector && !model.isWeChatCleanupView
+            let inspectorVisible = showInspector && !model.isWeChatCleanupView && !model.isStorageCleanupView
             let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
                                            inspector: inspectorWidth, showsInspector: inspectorVisible)
             HStack(spacing: 0) {
@@ -259,7 +259,8 @@ struct MainView: View {
 
     /// 搜索框跟随当前页签的模型状态
     private func syncSearchFieldFromModel() {
-        searchText = model.isWeChatCleanupView ? model.weChatCleanup.search : model.searchQuery
+        if let store = model.activeStorageCleanup { searchText = store.search }
+        else { searchText = model.isWeChatCleanupView ? model.weChatCleanup.search : model.searchQuery }
     }
     private func closeCurrentTab() { tabManager.closeActive() }
     var tabCount: Int { tabManager.count }
@@ -624,7 +625,7 @@ struct MainView: View {
     }
 
     private func confirmDelete() {
-        if model.isWeChatCleanupView || model.isAndroidPath { model.deleteSelection(); return }
+        if model.isWeChatCleanupView || model.isStorageCleanupView || model.isAndroidPath { model.deleteSelection(); return }
         let count = model.selectedCount
         guard count > 0 else { return }
         let alert = NSAlert()

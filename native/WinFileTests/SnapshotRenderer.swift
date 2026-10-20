@@ -44,10 +44,12 @@ enum SnapshotRenderer {
 
     /// 视图模式：详情 / 大图标 / 主页 / 此电脑
     /// （分类与搜索依赖 Table 异步回填，不适合离屏截图，见文件头说明）
-    enum Mode: String { case details, icons, home, thisPC, category, wechat }
+    enum Mode: String { case details, icons, home, thisPC, category, wechat, storage, software }
 
     @MainActor
     static func render(path: String, mode: Mode = .details) {
+        if mode == .storage { renderStoragePreview(path: path); return }
+        if mode == .software { renderStoragePreview(path: path, softwareMode: true); return }
         if mode == .wechat { renderWeChatPreview(path: path); return }
         let defaults = UserDefaults.standard
         let originalPreferences = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "WinFile")
@@ -82,7 +84,7 @@ enum SnapshotRenderer {
             if let first = model.items.first(where: { !$0.isContainer }) {
                 model.selectedIDs = [first.id]
             }
-        case .home, .thisPC, .wechat:
+        case .home, .thisPC, .wechat, .storage, .software:
             engine.restrictScopeForTesting([demo])
         case .category:
             // 分类视图：用于验证网格是否完整渲染所有条目
@@ -235,6 +237,72 @@ enum SnapshotRenderer {
         do { try png.write(to: URL(fileURLWithPath: path)) } catch { print(error); exit(1) }
         window.orderOut(nil)
         print("WeChat fixture preview: \(path)")
+    }
+
+    private static func renderStoragePreview(path: String, softwareMode: Bool = false) {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("WinFile-Storage-Preview-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        var samples = [("Library/Caches/com.example.Editor/编辑器缓存.bin", 128 * 1024),
+                       ("Library/Logs/com.example.Editor/应用日志.log", 16 * 1024),
+                       ("Downloads/软件安装包.dmg", 1024 * 1024), ("Documents/演示项目/演示视频.mov", 0),
+                       ("WeChat Files/wxid_demo/FileStorage/File/2026-10/演示附件.pdf", 32 * 1024)]
+        if softwareMode {
+            samples += [("Library/Application Support/Google/Chrome/Default/Cache/浏览器缓存.bin", 256 * 1024),
+                        ("Library/Application Support/Code/Cache/代码编辑器缓存.bin", 64 * 1024)]
+        }
+        for (name, size) in samples {
+            let url = root.appendingPathComponent(name)
+            try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data(repeating: 0, count: size).write(to: url)
+            if size == 0, let handle = try? FileHandle(forWritingTo: url) {
+                try? handle.truncate(atOffset: 512 * 1024 * 1024)
+                try? handle.seek(toOffset: 0); try? handle.write(contentsOf: Data(repeating: 0, count: 4096)); try? handle.close()
+            }
+            try? fm.setAttributes([.modificationDate: Date().addingTimeInterval(-40 * 86400)], ofItemAtPath: url.path)
+        }
+        let domain = "WinFile.StoragePreview." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let store = StorageCleanupModel(home: root, defaults: defaults, softwareMode: softwareMode)
+        if softwareMode { store.selectSoftware("com.microsoft.vscode") }
+        store.accept(StorageCleanupService.scan(store.configuration, running: []))
+        let chatRoot = root.appendingPathComponent("WeChat Files")
+        let chatStore = WeChatCleanupModel(initialResult: WeChatCleanupService.scan(roots: [chatRoot]),
+                                          homeDirectory: root, customRoots: [chatRoot])
+        let generalStore = softwareMode ? StorageCleanupModel(home: root, defaults: defaults) : store
+        let softwareStore = softwareMode ? store : StorageCleanupModel(home: root, defaults: defaults, softwareMode: true)
+        let model = BrowserModel(engine: FSEngine(), startDirectory: nil, cleanupModel: chatStore,
+                                 storageCleanupModel: generalStore, softwareCleanupModel: softwareStore)
+        model.navigate(to: softwareMode ? .weChatCleanup : .storageCleanup)
+        let width: CGFloat = CommandLine.arguments.contains("--compact-preview") ? 760 : 1080
+        let height: CGFloat = CommandLine.arguments.contains("--short-preview") ? 480 : 700
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.title = softwareMode ? "WinFile — 软件清理测试" : "WinFile — 空间清理测试"
+        let content = AnyView(CleanupHubView(model: model, dialog: .constant(nil)))
+        let hosting = NSHostingView(rootView: content
+            .environment(\.locale, Localization.shared.locale))
+        hosting.sizingOptions = []; hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
+        window.contentView = hosting; window.setContentSize(NSSize(width: width, height: height))
+        window.makeKeyAndOrderFront(nil)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)); hosting.layoutSubtreeIfNeeded() }
+        window.displayIfNeeded()
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { exit(1) }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
+        do { try png.write(to: URL(fileURLWithPath: path)) } catch { print(error); exit(1) }
+        print("Storage cleanup fixture preview: \(path)")
+        if CommandLine.arguments.contains("--interactive-preview") {
+            while window.isVisible {
+                if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) {
+                    NSApp.sendEvent(event)
+                }
+                NSApp.updateWindows()
+            }
+        }
+        window.orderOut(nil)
     }
 
     /// 在示例目录里造出 16 个 PDF（含重名与长短名，用于复现网格问题）

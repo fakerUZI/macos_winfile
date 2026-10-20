@@ -43,7 +43,9 @@ enum DuplicateFileService {
             status.visited += 1
             do {
                 let values = try url.resourceValues(forKeys: Set(keys))
-                guard values.isSymbolicLink != true else { enumerator.skipDescendants(); continue }
+                // The enumerator does not follow symlinks. Pruning a file
+                // here can skip the next real sibling directory on macOS.
+                guard values.isSymbolicLink != true else { continue }
                 guard values.isRegularFile == true else { continue }
                 let attributes = try fm.attributesOfItem(atPath: url.path)
                 guard let inode = attributes[.systemFileNumber] as? NSNumber,
