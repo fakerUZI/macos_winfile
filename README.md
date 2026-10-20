@@ -4,7 +4,7 @@
 
 [English](README.en.md) | **简体中文**
 
-[产品官网](https://fakeruzi.github.io/macos_winfile/) · [下载最新版](https://github.com/fakerUZI/macos_winfile/releases/latest) · [网页维护说明](https://github.com/fakerUZI/macos_winfile/blob/codex/website/README.md)
+[产品官网](https://fakeruzi.github.io/macos_winfile/) · [下载最新版](https://github.com/fakerUZI/macos_winfile/releases/latest)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#安装)
