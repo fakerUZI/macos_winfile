@@ -468,9 +468,75 @@ h2 {
   font-size: 13px;
   padding-bottom: 5px;
 }
+.release-section {
+  padding-bottom: 0;
+}
+.release-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 20px;
+}
+.release-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 28px;
+  background: #edf2e6;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+}
+.release-card-software {
+  background: #e3edda;
+}
+.release-number {
+  color: #687e5c;
+  font-size: 11px;
+  letter-spacing: .6px;
+}
+.release-card h3 {
+  font-family: var(--serif);
+  font-size: 25px;
+  font-weight: 600;
+  line-height: 1.55;
+  margin-block: 18px 14px;
+}
+.release-card>p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.release-card>.text-link {
+  margin-top: auto;
+  padding-top: 26px;
+  font-size: 12px;
+}
+.release-card .release-note {
+  margin-top: auto;
+  padding-top: 24px;
+  font-size: 11px;
+}
+.release-card .release-preview {
+  width: 100%;
+  margin-top: 22px;
+  border: 1px solid #cad7c1;
+  border-radius: 7px;
+  background: #fff;
+  text-align: left;
+}
+.release-preview img {
+  width: 100%;
+  aspect-ratio: 2.7;
+  object-fit: cover;
+  object-position: top;
+}
+.release-preview>span {
+  display: block;
+  padding: 9px 11px;
+  font-size: 10px;
+}
 .feature-tabs {
   display: grid;
-  grid-template-columns: repeat(3,1fr);
+  grid-template-columns: repeat(4,minmax(0,1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -1170,6 +1236,9 @@ details a {
   }
 }
 @media(max-width:800px) {
+  .release-grid {
+    grid-template-columns: minmax(0,1fr);
+  }
   .site-header {
     height: 88px;
   }
@@ -1258,6 +1327,7 @@ details a {
   }
   .feature-tabs {
     gap: 7px;
+    grid-template-columns: repeat(2,minmax(0,1fr));
   }
   .feature-tabs button {
     padding: 15px 13px;
@@ -1574,8 +1644,9 @@ details a {
   .feature-tabs button {
     padding: 13px 9px;
     gap: 6px;
-    font-size: 10px;
+    font-size: 12px;
     justify-content: center;
+    min-height: 44px;
   }
   .feature-tabs button>span {
     font-size: 8px;
@@ -1846,6 +1917,20 @@ details a {
     flex-basis: calc(100% - 54px);
     margin-left: 54px;
   }
+  .release-grid {
+    grid-template-columns: minmax(0,1fr);
+    gap: 14px;
+  }
+  .release-card {
+    padding: 24px;
+  }
+  .release-card h3 {
+    font-size: 23px;
+    margin-top: 12px;
+  }
+  .release-preview img {
+    aspect-ratio: 2.1;
+  }
 }
 @media(max-width:380px) {
   h2 {
@@ -1895,7 +1980,7 @@ details a {
   .feature-tabs button {
     gap: 4px;
     padding-inline: 5px;
-    font-size: 9px;
+    font-size: 12px;
   }
   .feature-tabs button>span {
     font-size: 7px;

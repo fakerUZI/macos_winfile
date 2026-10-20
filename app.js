@@ -1,6 +1,6 @@
 "use strict";
 
-// Keep the three feature sections visible when JavaScript is unavailable.
+// Keep all feature sections visible when JavaScript is unavailable.
 const tabList = document.querySelector(".feature-tabs");
 const tabs = [...tabList.querySelectorAll('[role="tab"]')];
 const panels = tabs.map(tab => document.getElementById(tab.getAttribute("aria-controls")));
