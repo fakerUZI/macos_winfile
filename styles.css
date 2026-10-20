@@ -147,6 +147,36 @@ button:focus-visible,a:focus-visible,summary:focus-visible,[tabindex]:focus-visi
 .main-nav a:hover {
   color: #132f22;
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.language-switch {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px;
+  gap: 2px;
+}
+.language-switch a {
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  min-height: 34px;
+  padding-inline: 8px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+.language-switch a[aria-current="page"] {
+  background: var(--green);
+  color: white;
+}
+.language-switch a:not([aria-current]):hover {
+  background: var(--mint);
+}
 .header-download {
   display: flex;
   align-items: center;
@@ -1494,6 +1524,13 @@ details a {
   }
 }
 @media(max-width:540px) {
+  .header-actions .header-download {
+    display: none;
+  }
+  .language-switch a {
+    min-width: 44px;
+    min-height: 44px;
+  }
   .wrap {
     width: calc(100% - 40px);
   }

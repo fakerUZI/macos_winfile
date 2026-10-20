@@ -8,6 +8,7 @@ on:
       - 'styles.css'
       - 'app.js'
       - 'site.json'
+      - 'locales/**'
       - 'assets/**'
       - 'tools/build_website.py'
       - '.github/workflows/pages.yml'

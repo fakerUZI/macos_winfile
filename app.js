@@ -1,5 +1,23 @@
 "use strict";
 
+const english = document.documentElement.lang === "en";
+const messages = english ? {
+  copied: "Copied — paste it into Terminal.", copyButton: "Copied ✓",
+  selected: "Command selected. Press ⌘C (or Ctrl+C) to copy."
+} : {
+  copied: "已复制，可粘贴到终端运行。", copyButton: "已复制 ✓",
+  selected: "命令已选中，请按 ⌘C 复制。"
+};
+
+// Locale links work without JavaScript; keep the current section when it is available.
+document.querySelectorAll("[data-language]").forEach(link => {
+  link.addEventListener("click", () => {
+    const destination = new URL(link.href);
+    destination.hash = window.location.hash;
+    link.href = destination.href;
+  });
+});
+
 // Keep all feature sections visible when JavaScript is unavailable.
 const tabList = document.querySelector(".feature-tabs");
 const tabs = [...tabList.querySelectorAll('[role="tab"]')];
@@ -63,14 +81,14 @@ copyButton.addEventListener("click", async () => {
   const status = document.getElementById("copy-status");
   try {
     await navigator.clipboard.writeText(command.textContent.trim());
-    status.textContent = "已复制，可粘贴到终端运行。";
-    copyButton.textContent = "已复制 ✓";
+    status.textContent = messages.copied;
+    copyButton.textContent = messages.copyButton;
   } catch {
     const range = document.createRange();
     range.selectNodeContents(command);
     const selection = window.getSelection();
     selection.removeAllRanges();
     selection.addRange(range);
-    status.textContent = "命令已选中，请按 ⌘C 复制。";
+    status.textContent = messages.selected;
   }
 });
