@@ -1,0 +1,40 @@
+name: Deploy product website
+
+on:
+  push:
+    branches: [codex/website]
+    paths:
+      - 'index.html'
+      - 'styles.css'
+      - 'app.js'
+      - 'site.json'
+      - 'assets/**'
+      - 'tools/build_website.py'
+      - '.github/workflows/pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Build and validate static website
+        run: python3 tools/build_website.py
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .site-build
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
