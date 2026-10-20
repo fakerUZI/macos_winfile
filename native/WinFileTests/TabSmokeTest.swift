@@ -10,8 +10,17 @@ enum TabSmokeTest {
 
     /// 在真实窗口里跑：返回 (是否全部通过, 报告文本)
     static func run(to path: String) async -> Bool {
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
+                                                            reason: "WinFile tab interaction regression")
+        defer { ProcessInfo.processInfo.endActivity(activity) }
         var lines: [String] = ["=== 页签切换冒烟测试 ===", ""]
         var failures: [String] = []
+        let domain = Bundle.main.bundleIdentifier ?? "local.winfile.mac"
+        let originalPreferences = UserDefaults.standard.persistentDomain(forName: domain)
+        defer {
+            if let originalPreferences { UserDefaults.standard.setPersistentDomain(originalPreferences, forName: domain) }
+            else { UserDefaults.standard.removePersistentDomain(forName: domain) }
+        }
 
         func check(_ name: String, _ ok: Bool, _ detail: String = "") {
             lines.append("  \(ok ? "✔" : "✘") \(name)\(detail.isEmpty ? "" : " — \(detail)")")
@@ -48,6 +57,9 @@ enum TabSmokeTest {
             write(lines, path)
             return false
         }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        await pump(0.3)
 
         /// 抓取内容区像素样本（用于逐点比对界面是否真的变了）
         func capturePixels() -> [Int] {
@@ -633,12 +645,71 @@ enum TabSmokeTest {
             check("关闭页签后仍保留至少一个页签", managerStill.count >= 1, "\(managerStill.count)")
         }
 
+        // Warm switches must reuse actual native tables, not just preserve model
+        // values while destroying and rebuilding their views.
+        let warmA = base.appendingPathComponent("切换性能甲")
+        let warmB = base.appendingPathComponent("切换性能乙")
+        for folder in [warmA, warmB] {
+            try? fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            for index in 0..<300 { try? Data("sample".utf8).write(to: folder.appendingPathComponent("file-\(index).txt")) }
+        }
+        func container(in view: NSView) -> TabContentContainerView? {
+            if let found = view as? TabContentContainerView { return found }
+            return view.subviews.lazy.compactMap { container(in: $0) }.first
+        }
+        func table(in view: NSView) -> NSTableView? {
+            if let found = view as? NSTableView { return found }
+            return view.subviews.lazy.compactMap { table(in: $0) }.first
+        }
+        let warmTabA = manager.newTab(startDirectory: warmA, activate: false)
+        warmTabA.model.layout = .details
+        manager.select(warmTabA)
+        await pump(0.8)
+        root.layoutSubtreeIfNeeded()
+        let warmTableA = container(in: root).flatMap { table(in: $0) }
+        if let warmTableA, warmTableA.numberOfRows > 150 { warmTableA.scrollRowToVisible(150) }
+        let scrollBefore = warmTableA?.enclosingScrollView?.contentView.bounds.origin.y
+        let warmTabB = manager.newTab(startDirectory: warmB, activate: false)
+        warmTabB.model.layout = .details
+        manager.select(warmTabB)
+        await pump(0.8)
+        root.layoutSubtreeIfNeeded()
+        let warmTableB = container(in: root).flatMap { table(in: $0) }
+        var switchTimes: [Double] = []
+        var reused = warmTableA != nil && warmTableB != nil && warmTableA !== warmTableB
+        for index in 0..<12 {
+            let target = index.isMultiple(of: 2) ? warmTabA : warmTabB
+            let expected = index.isMultiple(of: 2) ? warmTableA : warmTableB
+            let started = ProcessInfo.processInfo.systemUptime
+            manager.select(target)
+            let kind = TabContentHost.renderedKind(for: target.model)
+            repeat { await pump(0.005) }
+            while WindowBridge.shared.lastContentKind != kind && ProcessInfo.processInfo.systemUptime - started < 2
+            root.layoutSubtreeIfNeeded()
+            switchTimes.append((ProcessInfo.processInfo.systemUptime - started) * 1000)
+            reused = reused && container(in: root).flatMap { table(in: $0) } === expected
+        }
+        check("连续十二次切换复用原生表格", reused)
+        manager.select(warmTabA); await pump(0.1)
+        check("切回页签保留列表滚动位置", scrollBefore != nil && warmTableA?.enclosingScrollView?.contentView.bounds.origin.y == scrollBefore)
+        check("活动内容层只挂载一个页签", container(in: root)?.subviews.count == 1)
+        check("菜单命令绑定当前窗口的活动页签", BrowserWindowCommands.shared.manager(for: window)?.activeModel === warmTabA.model)
+        let ordered = switchTimes.sorted()
+        lines.append(String(format: "暖切换耗时：中位 %.1f ms，最大 %.1f ms（含主线程调度和布局）", ordered[ordered.count / 2], ordered.last ?? 0))
+        _ = manager.newTab(startDirectory: dirA); await pump(0.3)
+        _ = manager.newTab(startDirectory: dirB); await pump(0.3)
+        check("页签视图缓存最多保留三个", (container(in: root)?.retainedHostCount ?? Int.max) <= 3)
+        manager.closeOthers(keeping: warmTabA); await pump(0.3)
+        check("关闭页签释放多余视图缓存", container(in: root)?.retainedHostCount == 1)
+        check("被淘汰页签重新打开后内容仍正确", manager.activeModel.currentDirectory == warmA && container(in: root).flatMap { table(in: $0) }?.numberOfRows == 300)
+
         lines.append("")
         lines.append(failures.isEmpty ? "全部通过 ✔" : "有 \(failures.count) 项异常")
 
         // 把页签交互日志一并附上（stdout 可能被缓冲，文件才是可靠出口）
         lines.append("")
         lines.append("--- 页签交互日志 ---")
+        TabDiagnostics.shared.flush()
         if let log = try? String(contentsOf: TabDiagnostics.liveURL, encoding: .utf8) {
             lines.append(log.split(separator: "\n").suffix(40).joined(separator: "\n"))
         } else {

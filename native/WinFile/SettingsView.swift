@@ -125,14 +125,15 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Button(L("settings.diagnostics.open", "打开诊断日志")) {
+                        TabDiagnostics.shared.flush()
                         NSWorkspace.shared.open(TabDiagnostics.liveURL)
                     }
                     Button(L("settings.diagnostics.reveal", "在访达中显示")) {
+                        TabDiagnostics.shared.flush()
                         NSWorkspace.shared.activateFileViewerSelecting([TabDiagnostics.liveURL])
                     }
                     Button(L("settings.diagnostics.clear", "清空日志")) {
-                        try? FileManager.default.removeItem(at: TabDiagnostics.liveURL)
-                        TabDiagnostics.shared.record("diagnostics.cleared")
+                        TabDiagnostics.shared.clearPersistedLog()
                     }
                 }
             }

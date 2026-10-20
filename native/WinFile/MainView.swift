@@ -60,15 +60,14 @@ struct MainView: View {
             let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
                                            inspector: inspectorWidth, showsInspector: inspectorVisible)
             HStack(spacing: 0) {
-                // Preserve each tab's view identity when switching the active model.
-                SidebarView(engine: engine, model: model).id(activeTab.id).frame(width: widths.sidebar)
+                SidebarView(engine: engine, model: model).frame(width: widths.sidebar)
                 PaneResizeHandle(preferredWidth: $sidebarWidth, actualWidth: widths.sidebar, range: 160...360,
                                  expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216)
-                contentPane.id(activeTab.id)
+                contentPane
                 if inspectorVisible {
                     PaneResizeHandle(preferredWidth: $inspectorWidth, actualWidth: widths.inspector, range: 200...420,
                                      expandsToRight: false, title: L("layout.inspectorWidth", "详细信息宽度"), defaultWidth: 264)
-                    InspectorView(engine: engine, model: model).id(activeTab.id).frame(width: widths.inspector)
+                    InspectorView(engine: engine, model: model).frame(width: widths.inspector)
                 }
             }
         }
@@ -424,8 +423,6 @@ struct MainView: View {
                 Image(systemName: "list.bullet").tag(ViewLayout.details)
                 Image(systemName: "square.grid.2x2").tag(ViewLayout.icons)
             }.pickerStyle(.segmented).labelsHidden().frame(width: 84)
-            Button { showInspector.toggle() } label: { Image(systemName: "sidebar.right") }
-                .help(WLocalizedString("action.toggleInspector", comment: "显示详细信息"))
         }
     }
 
@@ -556,9 +553,11 @@ struct MainView: View {
     private var contentArea: some View {
         // 内容区必须自行观察模型：MainView 这一层不随模型变化重绘，
         // 否则文件列表会一直绑在旧模型上（表现为"点了跳转，要切页签才看到"）
-        TabContentHost(
+        CachedTabContent(
             engine: engine,
-            reader: reader,
+            manager: tabManager,
+            tab: activeTab,
+            tabs: tabs,
             dialog: $dialog,
             openFolderPanel: { openFolderPanel(newTab: true) }
         )
@@ -595,6 +594,15 @@ struct MainView: View {
                 Label(WLocalizedString("action.openWith", comment: "打开方式"), systemImage: "square.grid.2x2.fill")
             }
             .disabled(model.selectedCount != 1)
+
+            if !model.isWeChatCleanupView && !model.isStorageCleanupView {
+                Button { showInspector.toggle() } label: {
+                    Label(WLocalizedString("action.toggleInspector", comment: "显示详细信息"),
+                          systemImage: "sidebar.right")
+                }
+                .help(WLocalizedString("action.toggleInspector", comment: "显示详细信息"))
+                .accessibilityIdentifier("inspector.toggle")
+            }
         }
     }
 
@@ -794,7 +802,9 @@ struct TabChipView: View {
     private var isActive: Bool { manager.activeTab.id == tab.id }
 
     private func logChipRender() -> Bool {
-        TabDiagnostics.shared.record("chip", detail: "页签=\(tab.title) 高亮=\(isActive)")
+        if TabDiagnostics.recordsViewRendering {
+            TabDiagnostics.shared.record("chip", detail: "页签=\(tab.title) 高亮=\(isActive)")
+        }
         return true
     }
 

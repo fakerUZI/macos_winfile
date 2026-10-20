@@ -13,29 +13,23 @@ import Foundation
 final class ActiveTabReader: ObservableObject {
 
     let manager: TabManager
-    private var modelCancellable: AnyCancellable?
     private var managerCancellable: AnyCancellable?
-    private var observedModel: BrowserModel?
+    private var refreshScheduled = false
 
     init(manager: TabManager) {
         self.manager = manager
-        rebind()
         // 订阅 TabManager 的全部变更（新建/关闭/切换页签都会触发）。
         // 注意：不能只订阅 $activeID —— 新建页签时 tabs 先追加、activeID 后赋值，
         // 若在中间状态重新绑定就会绑到旧模型，表现为"新页签点不动，切换一次才好"。
         managerCancellable = manager.objectWillChange
             .sink { [weak self] _ in
                 // 延迟到本轮变更结束后再绑定，确保拿到的是最终的活动页签
-                DispatchQueue.main.async { self?.rebind() }
+                self?.scheduleRefresh()
             }
     }
 
     /// 当前的浏览模型（始终取自 TabManager，不复制）。
-    /// 读取时顺便校正绑定，避免任何时序问题导致绑到旧模型。
-    var model: BrowserModel {
-        rebind()
-        return manager.activeModel
-    }
+    var model: BrowserModel { manager.activeModel }
 
     /// 当前页签
     var tab: WinFileTab { manager.activeTab }
@@ -46,19 +40,15 @@ final class ActiveTabReader: ObservableObject {
     /// 每次需要界面重绘时自增：供视图读取以建立观察依赖
     @Published private(set) var refreshToken = 0
 
-    /// 通知界面重绘
-    private func bump() {
-        refreshToken &+= 1
-        objectWillChange.send()
-    }
-
-    /// 订阅「当前模型」的变化，并在切换页签时改订新模型
-    private func rebind() {
-        let current = manager.activeModel
-        guard observedModel !== current else { return }
-        observedModel = current
-        modelCancellable = current.objectWillChange
-            .sink { [weak self] _ in self?.bump() }
-        bump()
+    /// TabManager already forwards the active model. Observe it once, coalescing
+    /// each run-loop burst; getters must never publish while SwiftUI is rendering.
+    private func scheduleRefresh() {
+        guard !refreshScheduled else { return }
+        refreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.refreshScheduled = false
+            self.refreshToken &+= 1
+        }
     }
 }

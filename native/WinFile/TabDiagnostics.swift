@@ -4,6 +4,9 @@ import Foundation
 @MainActor
 final class TabDiagnostics {
     static let shared = TabDiagnostics()
+    static let recordsViewRendering = CommandLine.arguments.contains("--selftest-tabs")
+        || ProcessInfo.processInfo.environment["WINFILE_TAB_DEBUG"] == "1"
+    private nonisolated static let diskQueue = DispatchQueue(label: "WinFile.TabDiagnostics", qos: .utility)
 
     /// 系统事件和过渡布局可能包含 NaN、无穷或超出 Int 范围的值；诊断不可改变程序行为。
     static func coordinate(_ value: CGFloat) -> String {
@@ -11,7 +14,7 @@ final class TabDiagnostics {
     }
 
     /// 实时落盘的诊断文件（便于"你点几下、我读文件"这种协作排查）
-    static var liveURL: URL {
+    nonisolated static var liveURL: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".winfile-mac")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -29,14 +32,14 @@ final class TabDiagnostics {
         let line = "[\(formatter.string(from: Date()))] \(event)\(detail.isEmpty ? "" : " | \(detail)")"
         entries.append(line)
         if entries.count > 2000 { entries.removeFirst(500) }
-        // 立即追加写入，进程被强杀也不会丢
-        appendLineToDisk(line)
+        // Never wait for filesystem I/O from a click handler or view body.
+        Self.diskQueue.async { Self.appendLineToDisk(line) }
         if ProcessInfo.processInfo.environment["WINFILE_TAB_DEBUG"] == "1" {
             FileHandle.standardError.write(Data((line + "\n").utf8))
         }
     }
 
-    private func appendLineToDisk(_ line: String) {
+    private nonisolated static func appendLineToDisk(_ line: String) {
         let url = TabDiagnostics.liveURL
         guard let data = (line + "\n").data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: url) {
@@ -51,6 +54,14 @@ final class TabDiagnostics {
     func write(to path: String) {
         let text = entries.isEmpty ? "（没有记录到任何页签交互事件）" : entries.joined(separator: "\n")
         try? text.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    func flush() { Self.diskQueue.sync {} }
+
+    func clearPersistedLog() {
+        entries.removeAll()
+        Self.diskQueue.async { try? FileManager.default.removeItem(at: Self.liveURL) }
+        record("diagnostics.cleared")
     }
 
     func clear() { entries.removeAll() }

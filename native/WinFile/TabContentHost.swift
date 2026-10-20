@@ -10,18 +10,13 @@ import SwiftUI
 struct TabContentHost: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
-    /// 直接观察 TabManager：切换页签与页签内导航都会触发本视图重新求值。
-    /// （此前经由 reader 间接取模型，切页签时 reader 未重新绑定，
-    ///  导致内容区一直停留在旧页签的模型上。）
-    @ObservedObject var reader: ActiveTabReader
+    /// Each cached view is permanently bound to its own tab model.
+    @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
     let openFolderPanel: () -> Void
 
-    /// 每次求值都从 reader 解析当前模型，绝不缓存副本
-    private var model: BrowserModel { reader.model }
-
     /// 当前渲染的视图类型（供自动化验证内容区是否真的切换）
-    private var renderedKind: String {
+    static func renderedKind(for model: BrowserModel) -> String {
         if model.isStorageCleanupView { return "storageCleanup" }
         if model.isWeChatCleanupView { return "wechatCleanup" }
         if model.isHomeView { return "home" }
@@ -33,20 +28,22 @@ struct TabContentHost: View {
 
     /// 登记当前渲染的视图类型（供自动化验证内容区是否随导航切换）
     private func logRender() -> Bool {
-        WindowBridge.shared.recordContentKind(renderedKind)
+        if model.tabManager?.activeModel === model {
+            WindowBridge.shared.recordContentKind(Self.renderedKind(for: model))
+        }
         return true
     }
 
     /// 内容区当前渲染的类型（供诊断输出）
-    var currentRenderedKind: String { renderedKind }
+    var currentRenderedKind: String { Self.renderedKind(for: model) }
 
     var body: some View {
         let _ = logRender()
         ZStack {
-            if model.isHomeView {
-                HomeView(engine: engine, manager: reader.manager)
-            } else if model.isThisPCView {
-                ThisPCView(engine: engine, manager: reader.manager)
+            if model.isHomeView, let manager = model.tabManager {
+                HomeView(engine: engine, manager: manager, tabModel: model)
+            } else if model.isThisPCView, let manager = model.tabManager {
+                ThisPCView(engine: engine, manager: manager, tabModel: model)
             } else if model.isCleanupView {
                 CleanupHubView(model: model, dialog: $dialog)
             } else if model.isAppDataView {
@@ -78,7 +75,6 @@ struct TabContentHost: View {
         .background(Color(nsColor: .textBackgroundColor))
         .background(FileKeyboardShortcuts(model: model).frame(width: 0, height: 0))
         .onAppear { model.beginWatchingDirectory() }
-        .onChange(of: reader.manager.activeID) { _ in model.beginWatchingDirectory() }
         .onChange(of: model.currentDirectory) { _ in model.beginWatchingDirectory() }
         .overlay(alignment: .top) {
             VStack(spacing: 0) {

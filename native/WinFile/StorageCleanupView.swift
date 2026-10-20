@@ -21,8 +21,8 @@ struct StorageCleanupView: View {
         .padding(14)
         .background(Color(nsColor: .textBackgroundColor))
         .sheet(isPresented: $showsFolderPicker) {
-            FolderPickerSheet(initialDirectory: store.largeFolder ?? FileSystemService.realHomeDirectory(),
-                              title: L("cleanup.chooseFolder", "选择大文件扫描目录…")) { url in
+            FolderPickerSheet(initialDirectory: (store.isBaidu ? store.downloadFolder : store.largeFolder) ?? FileSystemService.realHomeDirectory(),
+                              title: store.folderPickerTitle) { url in
                 store.chooseFolder(url) ? nil : store.message
             }
         }
@@ -33,8 +33,9 @@ struct StorageCleanupView: View {
             Button(L("action.moveToTrash", "移到废纸篓"), role: .destructive) { store.clean() }
             Button(L("button.cancel", "取消"), role: .cancel) {}
         } message: {
-            Text(store.softwareMode ? L("software.confirm", "共 %d 项（%@），仅限当前软件的缓存和日志。执行前会复查文件身份、应用运行及占用状态。", store.pendingFiles.count,
-                   FileItem.formatSize(store.pendingFiles.reduce(0) { $0 + $1.size })) : L("cleanup.confirmDetail", "共 %d 项（%@）。安装包和大文件可能是你需要保留的资料，请先核对。执行前会复查文件身份、应用运行及占用状态。", store.pendingFiles.count,
+            Text(store.isBaidu ? L("software.baiduConfirm", "共 %d 项（%@）。下载文件是个人资料，请核对后再清理；请先退出百度网盘。执行前会复查文件身份与占用状态。", store.pendingFiles.count,
+                   FileItem.formatSize(store.pendingFiles.reduce(0) { $0 + $1.size })) : store.softwareMode ? L("software.confirm", "共 %d 项（%@），仅限当前软件的缓存和日志。执行前会复查文件身份、应用运行及占用状态。", store.pendingFiles.count,
+                   FileItem.formatSize(store.pendingFiles.reduce(0) { $0 + $1.size })) : L("cleanup.confirmDetail", "共 %d 项（%@）。附件、下载文件、安装包和大文件可能是你需要保留的资料，请先核对。执行前会复查文件身份、应用运行及占用状态。", store.pendingFiles.count,
                    FileItem.formatSize(store.pendingFiles.reduce(0) { $0 + $1.size })))
         }
     }
@@ -49,10 +50,17 @@ struct StorageCleanupView: View {
                 if store.busy { Button(L("button.cancel", "取消")) { store.cancel() } }
                 else { Button(store.hasScanned ? L("appData.rescan", "重新扫描") : L("cleanup.scan", "开始扫描")) { store.scan() } }
             }
-            Text(store.softwareMode ? L("software.cacheScope", "仅扫描当前软件的可重建缓存和日志；运行中的软件会跳过。扫描不会删除文件。") : L("cleanup.scope", "扫描多种应用的可重建缓存、日志、安装包与个人文件夹中的大文件；扫描不会删除文件。"))
+            Text(store.isBaidu ? L("software.baiduScope", "下载文件单独展示，不限大小和时间；跳过未完成任务。缓存和日志默认保留最近 7 天，运行时跳过。扫描不会删除文件，清理前请退出百度网盘。") : store.softwareMode ? L("software.cacheScope", "仅扫描当前软件的可重建缓存和日志；运行中的软件会跳过。扫描不会删除文件。") : L("cleanup.scope", "扫描应用缓存、日志、安装包、个人大文件、微信附件与网盘下载文件；扫描不会删除文件。"))
                 .font(.caption).foregroundStyle(.secondary)
+            if store.isBaidu {
+                HStack {
+                    Button(store.folderPickerTitle) { showsFolderPicker = true }.disabled(store.busy)
+                    Button(L("software.baiduDefaultFolders", "恢复常见下载目录")) { store.useDefaultDownloadFolders() }.disabled(store.busy)
+                }
+                Text(store.downloadScopeDescription).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
             if store.result.cancelled || store.result.limited || !store.result.inaccessible.isEmpty {
-                Label(store.result.cancelled ? L("cleanup.cancelled", "已取消，结果不完整。") : L("cleanup.partial", "扫描有上限或部分目录无法读取，结果不完整。"), systemImage: "exclamationmark.triangle")
+                Label(store.result.cancelled ? L("cleanup.cancelled", "已取消，结果不完整。") : L("cleanup.partial", "扫描有上限或部分目录无法读取，结果不完整。可在扫描设置中选择单一类别缩小范围。"), systemImage: "exclamationmark.triangle")
                     .font(.caption).foregroundStyle(.orange)
             }
         }
@@ -116,7 +124,7 @@ struct StorageCleanupView: View {
             }.labelsHidden().frame(width: 120)
             Picker(L("cleanup.owner", "应用 / 来源"), selection: $store.owner) {
                 Text(L("cleanup.allOwners", "全部应用 / 来源")).tag("all")
-                ForEach(store.owners, id: \.self) { Text($0).tag($0) }
+                ForEach(store.owners, id: \.self) { Text(store.ownerTitle($0)).tag($0) }
             }.labelsHidden().frame(width: 170)
             Picker(L("wechat.sort", "排序"), selection: $store.sort) {
                 Text(L("sort.size", "按大小")).tag("size")
@@ -131,7 +139,7 @@ struct StorageCleanupView: View {
                 HStack(spacing: 6) { Image(systemName: "doc").foregroundStyle(.secondary); Text(file.name).lineLimit(1) }.help(file.url.path)
             }.width(min: 140, ideal: 220)
             TableColumn(L("inspector.type", "类型")) { Text($0.rule.kind.title) }.width(min: 65, ideal: 80)
-            TableColumn(L("cleanup.owner", "应用 / 来源")) { Text($0.rule.owner).lineLimit(1) }.width(min: 100, ideal: 140)
+            TableColumn(L("cleanup.owner", "应用 / 来源")) { Text(store.displayOwner(for: $0)).lineLimit(1) }.width(min: 100, ideal: 140)
             TableColumn(L("column.size", "大小")) { Text(FileItem.formatSize($0.size)) }.width(min: 70, ideal: 85)
             TableColumn(L("cleanup.allocated", "磁盘占用")) { Text(FileItem.formatSize($0.allocated)) }.width(min: 70, ideal: 85)
             TableColumn(L("wechat.location", "所在目录")) { file in
@@ -197,7 +205,7 @@ struct StorageCleanupView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let message = store.message { Text(message).font(.caption).textSelection(.enabled) }
-                    Text(store.softwareMode ? L("software.protection", "仅处理当前软件的缓存和日志。跳过运行中的应用、数据库、凭据、持久数据、受保护缓存、符号链接及硬链接；无法确认安全状态的项目会保留。") : L("cleanup.protection", "跳过运行中的应用、数据库、凭据、受保护缓存、符号链接及硬链接；删除前无法确认安全状态的项目会保留。安装包和大文件需自行核对用途。"))
+                    Text(store.isBaidu ? L("software.baiduProtection", "仅处理明确下载目录中的文件，以及已识别的缓存和日志。不读取下载记录数据库；跳过未完成下载、数据库、凭据、隐藏文件、符号链接及硬链接。清理时检查百度网盘运行及文件占用状态，默认不勾选文件。") : store.softwareMode ? L("software.protection", "仅处理当前软件的缓存和日志。跳过运行中的应用、数据库、凭据、持久数据、受保护缓存、符号链接及硬链接；无法确认安全状态的项目会保留。") : L("cleanup.protection", "清理前检查应用运行和文件占用状态，跳过数据库、凭据、受保护缓存、符号链接及硬链接；无法确认安全状态的文件会保留。附件和下载文件是个人资料，请核对后再清理。"))
                         .font(.caption).foregroundStyle(.secondary)
                     Text(L("cleanup.skippedOwners", "已跳过 %d 个运行中应用的扫描位置", store.result.skippedRunning)).font(.caption)
                     if !store.softwareMode {

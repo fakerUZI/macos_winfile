@@ -8,10 +8,13 @@ struct HomeView: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 唯一真相来源：每次求值都从 TabManager 解析当前模型，绝不缓存副本
-    @ObservedObject var manager: TabManager
+    let manager: TabManager
+    @ObservedObject private var model: BrowserModel
 
-    /// 当前页签的浏览模型
-    private var model: BrowserModel { manager.activeModel }
+    init(engine: FSEngine, manager: TabManager, tabModel: BrowserModel? = nil) {
+        self.engine = engine; self.manager = manager
+        self.model = tabModel ?? manager.activeModel
+    }
 
     private let tileColumns = [GridItem(.adaptive(minimum: 148, maximum: 220), spacing: 12)]
 
@@ -86,9 +89,9 @@ struct HomeView: View {
                                open: {
                                    TabDiagnostics.shared.record("home.openQuickAccess",
                                                                 detail: "位置=\(place.name)")
-                                   manager.activeModel.selectFolder(place.url)
+                                   model.selectFolder(place.url)
                                },
-                               togglePin: { manager.activeModel.togglePin(place.url) })
+                               togglePin: { model.togglePin(place.url) })
                 }
             }
         }
@@ -127,7 +130,7 @@ struct HomeView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         TabDiagnostics.shared.record("home.openPinned", detail: "位置=\(url.lastPathComponent)")
-                        manager.activeModel.selectFolder(url)
+                        model.selectFolder(url)
                     }
                     if index < model.pinnedFolders.count - 1 {
                         Divider().padding(.leading, 34)
@@ -334,9 +337,13 @@ struct ThisPCView: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     /// 与 HomeView 同理：每次求值都从 TabManager 解析当前模型
-    @ObservedObject var manager: TabManager
+    let manager: TabManager
+    @ObservedObject private var model: BrowserModel
 
-    private var model: BrowserModel { manager.activeModel }
+    init(engine: FSEngine, manager: TabManager, tabModel: BrowserModel? = nil) {
+        self.engine = engine; self.manager = manager
+        self.model = tabModel ?? manager.activeModel
+    }
 
     private let columns = [GridItem(.adaptive(minimum: 260, maximum: 380), spacing: 14)]
     @State private var pageMarker: NSView?

@@ -215,9 +215,9 @@ struct WinFileCommands: Commands {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
     @ObservedObject private var updater = AppUpdater.shared
-    @FocusedValue(\.browserModel) private var model
-    @FocusedValue(\.tabCount) private var tabCount
-    @FocusedValue(\.canRestoreTab) private var canRestoreTab
+    @ObservedObject private var windowCommands = BrowserWindowCommands.shared
+    private var model: BrowserModel? { windowCommands.manager?.activeModel }
+    private var canRestoreTab: Bool { !(windowCommands.manager?.closedTabs.isEmpty ?? true) }
 
     @ObservedObject private var operationHistory = FileOperationHistory.shared
     private var editingText: Bool { NSApp.keyWindow?.firstResponder is NSTextView }
@@ -266,7 +266,7 @@ struct WinFileCommands: Commands {
 
             Button(L("tab.restore", "恢复关闭的标签页")) { model?.tabManager?.restoreClosedTab() }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
-                .disabled(canRestoreTab != true)
+                .disabled(!canRestoreTab)
 
             Divider()
 

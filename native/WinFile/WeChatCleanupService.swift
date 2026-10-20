@@ -67,6 +67,8 @@ struct WeChatTrashResult {
 }
 
 enum WeChatCleanupService {
+    static let customRootsPreferenceKey = "WeChatCleanupFolders"
+    static func excludesDirectory(_ name: String) -> Bool { excludedDirectories.contains(name.lowercased()) }
     private static let keys: Set<URLResourceKey> = [
         .isDirectoryKey, .isRegularFileKey, .creationDateKey, .isReadableKey, .isSymbolicLinkKey,
         .fileSizeKey, .contentModificationDateKey

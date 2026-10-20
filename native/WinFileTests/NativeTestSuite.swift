@@ -106,6 +106,9 @@ enum NativeTestSuite {
             testSidebarCategories()
             try testLanguageSelection()
             try testStorageCleanup(sandbox)
+            try testBaiduDownloads(sandbox)
+            try testCleanupSources(sandbox)
+            try testGeneralWeChatAttachments(sandbox)
             try testWeChatCleanup(sandbox)
             try testWeChatFileActions(sandbox)
             try testWeChatPagination(sandbox)
@@ -126,6 +129,208 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testGeneralWeChatAttachments(_ sandbox: URL) throws {
+        print("\n[通用清理：微信附件接入与共享扫描边界]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("GeneralWeChatHome")
+        func write(_ path: String) throws -> URL {
+            let url = home.appendingPathComponent(path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 65, count: 64).write(to: url)
+            return url
+        }
+        let base = "Library/Containers/com.tencent.xinWeChat/Data/"
+        let document = try write(base + "Documents/xwechat_files/wxid_test/msg/file/2026-10/recent.pdf")
+        let image = try write(base + "Library/Application Support/com.tencent.xinWeChat/FileStorage/Image/photo.dat")
+        let common = try write("Documents/xwechat_files/wxid_other/FileStorage/File/archive.zip")
+        let publicDatabase = try write("Documents/xwechat_files/wxid_other/db_storage/File/chat-data.bin")
+        let unrelated = try write(base + "misc/unrelated.pdf")
+        let database = try write(base + "Documents/xwechat_files/wxid_test/db_storage/File/database.bin")
+        let sqlite = try write(base + "Documents/xwechat_files/wxid_test/msg/file/chat.sqlite")
+        let hidden = try write(base + "Documents/.private/File/hidden.pdf")
+        let partial = try write(base + "Documents/xwechat_files/wxid_test/msg/file/pending.tmp")
+        let custom = try write("Relocated WeChat/notes.txt")
+        let external = try write("External/files/not-wechat.pdf")
+        _ = try write("Library/Caches/com.example.Editor/old.cache")
+        let container = home.appendingPathComponent(base)
+        try fm.createSymbolicLink(at: container.appendingPathComponent("Music"), withDestinationURL: external.deletingLastPathComponent())
+        try fm.createSymbolicLink(at: document.deletingLastPathComponent().appendingPathComponent("link.pdf"), withDestinationURL: external)
+        let config = StorageCleanupConfiguration(home: home, minimumLargeBytes: 1)
+        let scan = StorageCleanupService.scan(config, running: ["com.tencent.WeChat"])
+        let attachments = scan.files.filter { $0.rule.kind == .wechatAttachment }
+        check("通用扫描包含微信小文件和刚下载附件", attachments.contains { $0.url == document })
+        check("通用微信扫描可进入真实容器 Library 子目录", attachments.contains { $0.url == image })
+        check("微信公共目录附件优先分类且去重", scan.files.filter { $0.url == common }.count == 1 && scan.files.first { $0.url == common }?.rule.kind == .wechatAttachment)
+        check("微信公共目录数据库不会被大文件规则重新收录", !scan.files.contains { $0.url == publicDatabase })
+        check("微信运行时仍可查看附件", attachments.count == 3)
+        check("微信扫描不扩大到容器的普通杂项", !attachments.contains { $0.url == unrelated || $0.url == external })
+        check("通用微信候选跳过数据库、隐藏和未完成文件", !attachments.contains { [database, sqlite, hidden, partial].contains($0.url) || $0.name == "link.pdf" })
+        let discovery = WeChatCleanupService.discoverRoots(home: home)
+        let specialized = WeChatCleanupService.scan(roots: discovery.roots)
+        check("通用微信候选复用专用附件识别规则", attachments.allSatisfy { file in specialized.files.contains { $0.url == file.url } })
+        var limited = config; limited.candidateLimit = 1
+        let first = StorageCleanupService.scan(limited, running: [])
+        check("缓存和网盘文件不会抢占微信首个扫描名额", first.limited && first.files.count == 1 && first.files.first?.rule.kind == .wechatAttachment)
+        var single = config; single.kinds = [.wechatAttachment]
+        check("可单独扫描微信附件类别", StorageCleanupService.scan(single, running: []).files.count == 3)
+        single.weChatFolders = [custom.deletingLastPathComponent()]
+        check("通用清理复用已选择的微信目录", StorageCleanupService.scan(single, running: []).files.contains { $0.url == custom })
+        single.ignored = [custom.deletingLastPathComponent()]
+        check("忽略规则也约束自选微信目录", !StorageCleanupService.scan(single, running: []).files.contains { $0.url == custom })
+        single.ignored = []
+        single.weChatFolders = [home.appendingPathComponent("missing")]
+        check("失效的自选微信目录明确报告不可读", StorageCleanupService.scan(single, running: []).inaccessible.contains(home.appendingPathComponent("missing").path))
+        single.weChatFolders = []; single.entryLimit = 1
+        check("微信扫描仍遵守遍历上限", StorageCleanupService.scan(single, running: []).limited)
+        check("通用微信扫描可取消", StorageCleanupService.scan(config, running: [], cancelled: { true }).cancelled)
+        let candidate = attachments.first { $0.url == document }!
+        var moved = false
+        let blocked = StorageCleanupService.trash([candidate], config: config, running: { ["com.tencent.WeChat.helper"] }, isOpen: { _ in false }, move: { _ in moved = true; return nil })
+        check("清理时识别微信不同 bundle 名和辅助进程", !moved && blocked.removed.isEmpty && blocked.failures.count == 1)
+        let occupied = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in true }, move: { _ in moved = true; return nil })
+        check("通用微信清理跳过被占用的文件", !moved && occupied.removed.isEmpty)
+        let domain = "WinFile.GeneralWeChatTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set([custom.deletingLastPathComponent().path], forKey: WeChatCleanupService.customRootsPreferenceKey)
+        let model = StorageCleanupModel(home: home, defaults: defaults)
+        check("通用配置共享微信目录偏好", model.configuration.weChatFolders == [custom.deletingLastPathComponent()])
+        model.accept(scan); model.category = StorageCleanupKind.wechatAttachment.rawValue
+        check("微信附件支持统一类别筛选且默认不勾选", model.display.filtered.count == 3 && model.selection.isEmpty)
+        check("微信来源显示主应用名称", attachments.allSatisfy { model.displayOwner(for: $0) == L("software.wechat", "微信") })
+        model.selectAll(); model.requestTrash()
+        check("微信附件纳入通用确认清单", model.confirmsTrash && model.pendingFiles.count == 3)
+    }
+
+    @MainActor
+    private static func testCleanupSources(_ sandbox: URL) throws {
+        print("\n[通用清理：应用来源名称与辅助程序归属]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("CleanupSourceHome")
+        func write(_ path: String) throws -> URL {
+            let url = home.appendingPathComponent(path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 65, count: 64).write(to: url)
+            return url
+        }
+        let main = try write("Library/Caches/com.google.Chrome/main.cache")
+        let helper = try write("Library/Caches/com.google.Chrome.helper/child.cache")
+        let unknown = try write("Library/Caches/com.winfile-test.unidentified/unknown.cache")
+        let unknownHelper = try write("Library/Caches/com.winfile-test.unidentified.LoginHelper/helper.cache")
+        let net = try write("Library/Caches/net.winfile-test.unidentified/net.cache")
+        let document = try write("Documents/Project/video.mov")
+        let scan = StorageCleanupService.scan(StorageCleanupConfiguration(home: home, kinds: [.cache, .largeFile], minimumAgeDays: 0, minimumLargeBytes: 1), running: [])
+        let domain = "WinFile.CleanupSourceTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: domain)!
+        defer { defaults.removePersistentDomain(forName: domain) }
+        let store = StorageCleanupModel(home: home, defaults: defaults)
+        store.accept(scan)
+        check("来源下拉不再展示原始 bundle 标识", !store.owners.map { store.ownerTitle($0) }.contains { AppDataService.looksLikeBundleID($0) })
+        check("结果来源列不展示原始 bundle 标识", scan.files.allSatisfy { !AppDataService.looksLikeBundleID(store.displayOwner(for: $0)) })
+        check("辅助程序与主应用合并且来源去重", scan.files.filter { $0.url == main || $0.url == helper }.allSatisfy { store.displayOwner(for: $0) == "Google Chrome" } && store.owners.filter { $0 == "Google Chrome" }.count == 1)
+        store.owner = "Google Chrome"
+        check("主应用筛选包含其辅助程序缓存", Set(store.display.filtered.map(\.url)) == [main, helper])
+        store.selectAll(); store.requestTrash()
+        store.owner = SoftwareCleanupApp.otherSourceID
+        check("切换合并来源仍清空旧选择与确认", store.selection.isEmpty && store.pendingFiles.isEmpty && !store.confirmsTrash)
+        check("无法确认归属的来源合并为其他应用", Set(store.display.filtered.map(\.url)) == [unknown, unknownHelper, net])
+        check("名称合并不改变真实规则与应用标识", scan.files.first { $0.url == helper }?.rule.bundleID == "com.google.Chrome.helper")
+        check("个人目录来源保持原名", scan.files.first { $0.url == document }.map { store.displayOwner(for: $0) } == "Documents")
+        let names = ["com.example.Editor": "Editor", "com.example.Editor.helper": "Editor Helper"]
+        check("通过已解析的父应用识别辅助程序归属", SoftwareCleanupApp.sourceName(id: "com.example.Editor.helper", fallback: "Editor Helper", resolve: { names[$0] }) == "Editor")
+        check("未解析父应用不猜测归属或泄露标识", SoftwareCleanupApp.sourceName(id: "com.example.Missing.helper", fallback: "com.example.Missing.helper", resolve: { _ in nil }) == SoftwareCleanupApp.otherSourceID)
+        check("保留已有的可读软件名", SoftwareCleanupApp.sourceName(id: "com.example.Valid", fallback: "Readable App", resolve: { _ in nil }) == "Readable App")
+        let originalLanguage = UserDefaults.standard.object(forKey: Localization.preferenceKey)
+        defer {
+            if let originalLanguage { UserDefaults.standard.set(originalLanguage, forKey: Localization.preferenceKey) }
+            else { UserDefaults.standard.removeObject(forKey: Localization.preferenceKey) }
+        }
+        UserDefaults.standard.set("en", forKey: Localization.preferenceKey)
+        store.rebuild()
+        check("切换语言不使其他应用筛选失效", store.display.filtered.count == 3 && store.owner == SoftwareCleanupApp.otherSourceID)
+        UserDefaults.standard.set("zh-Hans", forKey: Localization.preferenceKey)
+        store.rebuild()
+        check("中文来源筛选保持相同文件范围", store.display.filtered.count == 3)
+    }
+
+    @MainActor
+    private static func testBaiduDownloads(_ sandbox: URL) throws {
+        print("\n[百度网盘：下载目录、软件归属与清理保护]")
+        let fm = FileManager.default
+        let home = sandbox.resolvingSymlinksInPath().appendingPathComponent("BaiduHome")
+        func write(_ path: String) throws -> URL {
+            let url = home.appendingPathComponent(path)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(repeating: 65, count: 64).write(to: url)
+            return url
+        }
+        let document = try write("baidu/Course/Files/notes.pdf")
+        let nested = try write("baidu/Course/Downloads/video.mp4")
+        let common = try write("Downloads/BaiduNetdisk/资料.zip")
+        let cache = try write("Library/Containers/com.baidu.netdisk/Data/Library/Application Support/baidunetdisk/DawnCache/data_0")
+        let database = try write("baidu/history.sqlite")
+        let partial = try write("baidu/video.mp4.baiduyun.downloading")
+        let hidden = try write("baidu/.private/secret.txt")
+        let other = try write("Downloads/unrelated.pdf")
+        let custom = try write("CustomDownloads/Docs/file.txt")
+        try fm.createSymbolicLink(at: home.appendingPathComponent("baidu/redirect"), withDestinationURL: custom.deletingLastPathComponent())
+        try fm.linkItem(at: document, to: home.appendingPathComponent("baidu/hard.pdf"))
+        // Use another normal file because both paths of a hard link are protected.
+        let normal = try write("baidu/Course/recent-small.txt")
+        var config = StorageCleanupConfiguration(home: home, kinds: [.download], bundleIDs: [StorageCleanupService.baiduBundleID])
+        let scan = StorageCleanupService.scan(config, running: [StorageCleanupService.baiduBundleID])
+        check("百度下载不受七天保留和百 MB 阈值限制", scan.files.contains { $0.url == normal && $0.rule.kind == .download })
+        check("百度下载中的 Files 与 Downloads 子目录不漏扫", scan.files.contains { $0.url == nested })
+        check("识别 Downloads 下的常见网盘目录", scan.files.contains { $0.url == common })
+        check("网盘运行中仍能只读预览下载文件", !scan.files.isEmpty && scan.skippedRunning == 0)
+        check("不把普通下载或自定义未知目录自动归入网盘", !scan.files.contains { $0.url == other || $0.url == custom })
+        check("跳过任务临时文件、数据库、隐藏文件与硬链接", !scan.files.contains { [partial, database, hidden, document].contains($0.url) || $0.name == "hard.pdf" })
+        check("网盘下载不跟随目录符号链接", !scan.files.contains { $0.url.path.contains("/redirect/") })
+        check("下载扫描有目录占用统计且不重复列出", !scan.folders.isEmpty && Set(scan.files.map(\.id)).count == scan.files.count)
+        var cacheConfig = config; cacheConfig.kinds = [.cache]; cacheConfig.minimumAgeDays = 0
+        check("识别网盘沙盒内明确的 Electron 缓存", StorageCleanupService.scan(cacheConfig, running: []).files.contains { $0.url == cache })
+        check("运行中的网盘缓存仍受保护", StorageCleanupService.scan(cacheConfig, running: [StorageCleanupService.baiduBundleID]).files.isEmpty)
+        var general = config; general.kinds = [.largeFile]; general.bundleIDs = nil; general.minimumLargeBytes = 1
+        check("通用大文件扫描不再漏掉 Downloads 子目录", StorageCleanupService.scan(general, running: []).files.contains { $0.url == common })
+        general.largeFolder = home.appendingPathComponent("baidu")
+        check("大文件扫描也跳过未完成下载", !StorageCleanupService.scan(general, running: []).files.contains { $0.url == partial })
+        config.downloadFolder = custom.deletingLastPathComponent().deletingLastPathComponent()
+        let customScan = StorageCleanupService.scan(config, running: [])
+        check("自选下载目录替换默认范围", customScan.files.map(\.url) == [custom])
+        config.downloadFolder = home
+        check("下载目录拒绝个人根目录", StorageCleanupService.rules(config).isEmpty)
+        config.downloadFolder = home.appendingPathComponent("Library")
+        check("下载目录拒绝 Library", StorageCleanupService.rules(config).isEmpty)
+        config.downloadFolder = nil
+        let candidate = scan.files.first { $0.url == normal }!
+        var changedScope = config; changedScope.downloadFolder = custom.deletingLastPathComponent()
+        let changed = StorageCleanupService.trash([candidate], config: changedScope, running: { [] }, isOpen: { _ in false }, move: { _ in throw CocoaError(.fileWriteUnknown) })
+        check("下载范围变化后拒绝执行旧候选", changed.removed.isEmpty && changed.failures.count == 1)
+        var isolated = config; isolated.bundleIDs = ["com.google.Chrome"]
+        check("网盘下载不混入其他软件范围", StorageCleanupService.scan(isolated, running: []).files.isEmpty)
+        var moved = false
+        let running = StorageCleanupService.trash([candidate], config: config, running: { [StorageCleanupService.baiduBundleID] }, isOpen: { _ in false }, move: { _ in moved = true; return nil })
+        check("下载清理要求先退出网盘且不执行移动", !moved && running.removed.isEmpty && running.failures.count == 1)
+        let open = StorageCleanupService.trash([candidate], config: config, running: { [] }, isOpen: { _ in true }, move: { _ in moved = true; return nil })
+        check("下载清理跳过占用文件", !moved && open.removed.isEmpty)
+        let defaults = UserDefaults(suiteName: "WinFileBaiduTest-" + UUID().uuidString)!
+        let store = StorageCleanupModel(home: home, defaults: defaults, softwareMode: true)
+        check("百度网盘与微信同级且可选择", store.softwareChoices.contains { $0.id == StorageCleanupService.baiduBundleID } && store.selectSoftware(StorageCleanupService.baiduBundleID))
+        check("百度类别包含下载而其他软件不扩大", store.availableKinds == [.download, .cache, .log])
+        store.accept(scan)
+        check("下载候选默认不勾选", store.selection.isEmpty)
+        store.selectAll(); store.requestTrash()
+        check("选择下载文件仍需确认", store.confirmsTrash && !store.pendingFiles.isEmpty)
+        store.search = "old-filter"; store.category = "cache"; store.scanScope = "cache"
+        check("应用内选择下载目录清空旧结果和确认", store.chooseFolder(custom.deletingLastPathComponent()) && store.result.files.isEmpty && store.selection.isEmpty && !store.confirmsTrash && !store.hasScanned)
+        check("更换下载目录重置旧类别与搜索条件", store.search.isEmpty && store.category == "all" && store.scanScope == "all")
+        let restored = StorageCleanupModel(home: home, defaults: defaults, softwareMode: true)
+        check("自选下载位置可持久恢复", restored.downloadFolder == custom.deletingLastPathComponent())
+        store.useDefaultDownloadFolders()
+        check("恢复常见目录清空持久自选位置", store.downloadFolder == nil && StorageCleanupModel(home: home, defaults: defaults, softwareMode: true).downloadFolder == nil)
     }
 
     @MainActor
@@ -3904,6 +4109,38 @@ enum NativeTestSuite {
               manager.activeModel.currentDirectory?.path ?? "无")
         manager.select(index: 2)
         check("可按序号切换页签", manager.activeTab.id == third.id)
+
+        let reader = ActiveTabReader(manager: manager)
+        var refreshes = 0
+        let readerProbe = reader.objectWillChange.sink { refreshes += 1 }
+        for _ in 0..<100 { _ = reader.model; _ = reader.tab; _ = reader.tabs }
+        check("读取当前页签不会发送刷新或修改状态", refreshes == 0 && reader.model === third.model)
+        waitFor { manager.tabs.allSatisfy { !$0.model.isBusy } }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        refreshes = 0
+        var forwardedEvents = 0
+        let forwardedProbe = manager.objectWillChange.sink { forwardedEvents += 1 }
+        third.model.objectWillChange.send()
+        third.model.objectWillChange.send()
+        third.model.objectWillChange.send()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        // Independent directory/clipboard completions may legitimately publish
+        // later; the three synchronous events must still save two refreshes.
+        check("同一轮模型事件合并成一次界面刷新", refreshes >= 1 && forwardedEvents >= 3 && refreshes <= forwardedEvents - 2,
+              "刷新 \(refreshes)，源事件 \(forwardedEvents)")
+        manager.select(firstTab)
+        check("切换后读取器立即返回新模型", reader.model === firstTab.model)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        refreshes = 0
+        third.model.objectWillChange.send()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        check("非活动页签不会触发当前页签刷新", refreshes == 0)
+        firstTab.model.objectWillChange.send()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        check("切换后仍接收当前模型导航变更", refreshes == 1)
+        _ = readerProbe
+        _ = forwardedProbe
+        manager.select(third)
 
         // 复制页签
         let copy = manager.duplicate(third)

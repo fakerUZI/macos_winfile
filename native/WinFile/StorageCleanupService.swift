@@ -5,7 +5,7 @@ import Foundation
 // Independent Swift implementation. Rules identify disposable locations; no
 // downloaded scripts, privileged operations, or permanent deletion are used.
 enum StorageCleanupKind: String, CaseIterable, Identifiable, Codable {
-    case cache, log, installer, largeFile
+    case cache, log, installer, largeFile, download, wechatAttachment
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -13,6 +13,8 @@ enum StorageCleanupKind: String, CaseIterable, Identifiable, Codable {
         case .log: return L("cleanup.log", "应用日志")
         case .installer: return L("cleanup.installer", "安装包")
         case .largeFile: return L("cleanup.large", "大文件")
+        case .download: return L("cleanup.download", "网盘下载文件")
+        case .wechatAttachment: return L("cleanup.wechatAttachments", "微信附件")
         }
     }
 }
@@ -56,6 +58,8 @@ struct StorageCleanupFile: Identifiable {
 struct StorageCleanupConfiguration {
     var home: URL
     var largeFolder: URL?
+    var downloadFolder: URL?
+    var weChatFolders: [URL] = []
     var ignored: [URL] = []
     var kinds = Set(StorageCleanupKind.allCases)
     /// nil scans all owners; an empty set deliberately scans none.
@@ -121,6 +125,23 @@ struct StorageCleanupOutcome {
 }
 
 enum StorageCleanupService {
+    static let baiduBundleID = "com.baidu.netdisk"
+    static let weChatBundleID = "com.tencent.xinWeChat"
+
+    /// Only known personal download locations; never infer downloads from the
+    /// app's databases, profiles or its entire container.
+    static func baiduDownloadRoots(_ config: StorageCleanupConfiguration) -> [URL] {
+        let home = config.home.standardizedFileURL
+        let candidates = config.downloadFolder.map { [$0.standardizedFileURL] } ??
+            ["baidu", "BaiduNetdisk", "百度网盘", "Downloads/BaiduNetdisk", "Downloads/百度网盘"].map { home.appendingPathComponent($0) }
+        var roots: [URL] = []
+        for root in candidates.sorted(by: { $0.pathComponents.count < $1.pathComponents.count }) {
+            guard allowedLargeFolder(root, home: home), let info = metadata(root), info.st_mode & S_IFMT == S_IFDIR,
+                  !roots.contains(where: { contains(root, in: $0) }) else { continue }
+            roots.append(root)
+        }
+        return roots
+    }
     static func contains(_ url: URL, in root: URL) -> Bool {
         let path = url.standardizedFileURL.path, boundary = root.standardizedFileURL.path
         return path == boundary || path.hasPrefix(boundary + "/")
@@ -155,14 +176,24 @@ enum StorageCleanupService {
     static func isRunning(_ bundleID: String?, in running: Set<String>) -> Bool {
         guard let bundleID else { return false }
         let id = bundleID.lowercased()
-        return running.contains { $0 == id || $0.hasPrefix(id + ".") || id.hasPrefix($0 + ".") }
+        let weChatIDs = ["com.tencent.xinwechat", "com.tencent.wechat"]
+        if weChatIDs.contains(id) {
+            return running.contains { value in
+                let active = value.lowercased()
+                return weChatIDs.contains { active == $0 || active.hasPrefix($0 + ".") }
+            }
+        }
+        return running.contains { value in
+            let active = value.lowercased()
+            return active == id || active.hasPrefix(id + ".") || id.hasPrefix(active + ".")
+        }
     }
     static func allowedLargeFolder(_ root: URL, home: URL) -> Bool {
         let relative = root.pathComponents.dropFirst(home.pathComponents.count)
         return contains(root, in: home) && root != home && physical(root)
             && !relative.contains(where: { $0.hasPrefix(".") || $0 == "Library" || $0.hasSuffix(".app") })
     }
-    static func rules(_ config: StorageCleanupConfiguration) -> [StorageCleanupRule] {
+    static func rules(_ config: StorageCleanupConfiguration, discoveredWeChatRoots: [URL]? = nil) -> [StorageCleanupRule] {
         let fm = FileManager.default
         let home = config.home.standardizedFileURL
         var result: [StorageCleanupRule] = []
@@ -171,6 +202,16 @@ enum StorageCleanupService {
             guard physical(root), let info = metadata(root), info.st_mode & S_IFMT == S_IFDIR,
                   !protectedOwner(id ?? owner) else { return }
             result.append(StorageCleanupRule(root: root, kind: kind, owner: id.flatMap { AppDataService.resolvedName(for: $0) } ?? owner, bundleID: id))
+        }
+        // Attachments precede high-volume cache/download rules so a global
+        // candidate limit cannot exhaust the scan before WeChat is visited.
+        if config.kinds.contains(.wechatAttachment) {
+            let discovered = discoveredWeChatRoots ?? WeChatCleanupService.discoverRoots(home: home).roots
+            for root in WeChatCleanupService.uniqueRoots(discovered + config.weChatFolders) {
+                guard physical(root), let info = metadata(root), info.st_mode & S_IFMT == S_IFDIR else { continue }
+                result.append(StorageCleanupRule(root: root, kind: .wechatAttachment,
+                    owner: L("software.wechat", "微信"), bundleID: weChatBundleID))
+            }
         }
         let caches = home.appendingPathComponent("Library/Caches")
         if physical(caches), let entries = try? fm.contentsOfDirectory(at: caches, includingPropertiesForKeys: nil) {
@@ -186,6 +227,16 @@ enum StorageCleanupService {
             for leaf in ["Cache", "Code Cache", "GPUCache", "CachedData"] {
                 add("Library/Application Support/\(name)/\(leaf)", .cache, name, id)
             }
+        }
+        for base in ["Library/Application Support/baidunetdisk",
+                     "Library/Containers/com.baidu.netdisk/Data/Library/Application Support/baidunetdisk"] {
+            for leaf in ["Cache", "Code Cache", "GPUCache", "DawnCache"] {
+                add("\(base)/\(leaf)", .cache, "BaiduNetdisk", baiduBundleID)
+            }
+        }
+        for root in baiduDownloadRoots(config) {
+            result.append(StorageCleanupRule(root: root, kind: .download,
+                owner: L("software.baidu", "百度网盘"), bundleID: baiduBundleID))
         }
         for (name, id) in [("Google/Chrome", "com.google.Chrome"), ("Microsoft Edge", "com.microsoft.edgemac"),
                            ("BraveSoftware/Brave-Browser", "com.brave.Browser")] {
@@ -237,6 +288,15 @@ enum StorageCleanupService {
         guard info.st_mode & S_IFMT == S_IFREG, info.st_nlink == 1, info.st_size > 0, info.st_blocks > 0, !protectedFile(url),
               !ignored(url, config: config), physical(url), contains(url, in: rule.root), url != rule.root,
               !((rule.kind == .largeFile || rule.kind == .installer) && url.lastPathComponent.hasPrefix(".")) else { return false }
+        if (rule.kind == .download || rule.kind == .largeFile || rule.kind == .installer || rule.kind == .wechatAttachment),
+           ["downloading", "baiduyun", "bdtmp", "part", "partial", "tmp", "aria2"].contains(url.pathExtension.lowercased()) { return false }
+        if rule.kind == .wechatAttachment {
+            return !url.lastPathComponent.hasPrefix(".") && weChatAttachment(url, rule: rule, config: config)
+        }
+        if rule.kind == .download {
+            // Incomplete tasks are not downloaded documents and must be kept.
+            return !url.lastPathComponent.hasPrefix(".")
+        }
         if rule.kind == .largeFile { return info.st_size >= max(1, config.minimumLargeBytes) }
         let cutoff = config.now.addingTimeInterval(-Double(max(0, config.minimumAgeDays)) * 86400)
         guard Date(timeIntervalSince1970: Double(info.st_mtimespec.tv_sec)) <= cutoff else { return false }
@@ -250,6 +310,10 @@ enum StorageCleanupService {
         }
         return true
     }
+    private static func weChatAttachment(_ url: URL, rule: StorageCleanupRule, config: StorageCleanupConfiguration) -> Bool {
+        let explicit = config.weChatFolders.contains { contains(url, in: $0.standardizedFileURL) }
+        return WeChatCleanupService.attachmentKind(url: url, root: rule.root, explicitFolder: explicit) != nil
+    }
     static func scan(_ config: StorageCleanupConfiguration, running: Set<String> = runningBundleIDs(),
                      cancelled: () -> Bool = { false }, progress: (StorageCleanupProgress) -> Void = { _ in }) -> StorageCleanupScanResult {
         var result = StorageCleanupScanResult()
@@ -259,16 +323,31 @@ enum StorageCleanupService {
         var measuredLarge = Set<String>()
         var usages: [String: StorageFolderUsage] = [:]
         let fm = FileManager.default
+        let needsWeChatRoots = !config.kinds.isDisjoint(with: [.wechatAttachment, .largeFile, .installer])
+        let weChatDiscovery = needsWeChatRoots ? WeChatCleanupService.discoverRoots(home: config.home) : nil
+        let weChatRoots = WeChatCleanupService.uniqueRoots((weChatDiscovery?.roots ?? []) + config.weChatFolders)
+        if let weChatDiscovery, config.kinds.contains(.wechatAttachment) {
+            result.inaccessible += weChatDiscovery.inaccessible
+            for root in config.weChatFolders where !physical(root) || !fm.isReadableFile(atPath: root.path) {
+                result.inaccessible.append(root.path)
+            }
+        }
         for relative in ["Library/Caches", "Library/Logs", "Library/Containers", "Library/Application Support"] {
             let root = config.home.appendingPathComponent(relative)
             if FileManager.default.fileExists(atPath: root.path), !FileManager.default.isReadableFile(atPath: root.path) {
                 result.inaccessible.append(root.path)
             }
         }
-        rootLoop: for rule in rules(config) {
+        rootLoop: for rule in rules(config, discoveredWeChatRoots: weChatDiscovery?.roots) {
             if cancelled() { result.cancelled = true; break }
             if ignored(rule.root, config: config) { continue }
-            if isRunning(rule.bundleID, in: running) { result.skippedRunning += 1; continue }
+            let personalFiles = rule.kind == .largeFile || rule.kind == .installer
+            // WeChat containers may live under Documents. Do not let the
+            // generic large-file pass reclassify a chat database or settings.
+            if personalFiles && weChatRoots.contains(where: { contains(rule.root, in: $0) }) { continue }
+            // Completed downloads can be listed while the client is running;
+            // trash() still requires the app to be closed and the file unused.
+            if rule.kind != .download && rule.kind != .wechatAttachment && isRunning(rule.bundleID, in: running) { result.skippedRunning += 1; continue }
             guard let rootInfo = metadata(rule.root), let walker = fm.enumerator(at: rule.root,
                 includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsPackageDescendants],
                 errorHandler: { url, _ in result.inaccessible.append(url.path); return true }) else { continue }
@@ -289,12 +368,18 @@ enum StorageCleanupService {
                     result.skippedProtected += 1; continue
                 }
                 if info.st_mode & S_IFMT == S_IFDIR {
-                    if ["indexeddb", "local storage", "webstorage", "databases", "sessions", "backups", "offline", "service worker", "file", "files", "attach", "attachments", "download", "downloads", "messages", "chats", "xwechat_files"].contains(url.lastPathComponent.lowercased())
-                        || [".git", ".ssh", ".gnupg", ".Trash", "Library"].contains(url.lastPathComponent)
-                        || ((rule.kind == .largeFile || rule.kind == .installer) && url.lastPathComponent.hasPrefix(".")) { walker.skipDescendants() }
+                    if personalFiles && weChatRoots.contains(where: { contains(url, in: $0) }) {
+                        walker.skipDescendants(); continue
+                    }
+                    if ((rule.kind == .cache || rule.kind == .log) && ["indexeddb", "local storage", "webstorage", "databases", "sessions", "backups", "offline", "service worker", "file", "files", "attach", "attachments", "download", "downloads", "messages", "chats", "xwechat_files"].contains(url.lastPathComponent.lowercased()))
+                        || [".git", ".ssh", ".gnupg", ".Trash"].contains(url.lastPathComponent)
+                        || (url.lastPathComponent == "Library" && rule.kind != .wechatAttachment)
+                        || (rule.kind == .wechatAttachment && WeChatCleanupService.excludesDirectory(url.lastPathComponent))
+                        || ((rule.kind == .largeFile || rule.kind == .installer || rule.kind == .download || rule.kind == .wechatAttachment) && url.lastPathComponent.hasPrefix(".")) { walker.skipDescendants() }
                     continue
                 }
                 guard info.st_mode & S_IFMT == S_IFREG else { continue }
+                if rule.kind == .wechatAttachment && !weChatAttachment(url, rule: rule, config: config) { continue }
                 let identity = "\(info.st_dev):\(info.st_ino)"
                 // Installer and large-file scopes overlap. Measure once, but
                 // allow the later rule to classify a file the first rule rejected.
@@ -302,7 +387,7 @@ enum StorageCleanupService {
                     let allocated = Int64(info.st_blocks) * 512
                     result.scannedBytes += allocated
                 }
-                if rule.kind == .largeFile && measuredLarge.insert(identity).inserted {
+                if (rule.kind == .largeFile || rule.kind == .download || rule.kind == .wechatAttachment) && measuredLarge.insert(identity).inserted {
                         let allocated = Int64(info.st_blocks) * 512
                         let relative = url.pathComponents.dropFirst(rule.root.pathComponents.count)
                         let group = relative.count > 1 ? rule.root.appendingPathComponent(String(relative.first!)) : rule.root

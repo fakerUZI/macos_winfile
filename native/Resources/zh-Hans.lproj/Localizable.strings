@@ -933,7 +933,7 @@
 "cleanup.chooseFolder" = "选择大文件扫描目录…";
 "cleanup.cleaning" = "正在复查并清理第 %d 项…";
 "cleanup.confirm" = "将所选文件移到废纸篓？";
-"cleanup.confirmDetail" = "共 %d 项（%@）。安装包和大文件可能是你需要保留的资料，请先核对。执行前会复查文件身份、应用运行及占用状态。";
+"cleanup.confirmDetail" = "共 %d 项（%@）。附件、下载文件、安装包和大文件可能是你需要保留的资料，请先核对。执行前会复查文件身份、应用运行及占用状态。";
 "cleanup.defaultFolders" = "恢复默认大文件扫描范围";
 "cleanup.defaultScope" = "大文件范围：下载、桌面、文稿、影片、图片和音乐；自选目录需位于个人文件夹内，且不能是 Library。";
 "cleanup.details" = "扫描详情 / 忽略 / 历史";
@@ -952,14 +952,14 @@
 "cleanup.open" = "文件被占用或无法确认占用状态，已跳过：%@";
 "cleanup.outcome" = "已移到废纸篓 %d 项（%@），跳过或失败 %d 项。";
 "cleanup.owner" = "应用 / 来源";
-"cleanup.partial" = "扫描有上限或部分目录无法读取，结果不完整。";
+"cleanup.partial" = "扫描有上限或部分目录无法读取，结果不完整。可在扫描设置中选择单一类别缩小范围。";
 "cleanup.progress" = "已检查 %d 项，发现 %d 个候选";
-"cleanup.protection" = "跳过运行中的应用、数据库、凭据、受保护缓存、符号链接及硬链接；删除前无法确认安全状态的项目会保留。安装包和大文件需自行核对用途。";
+"cleanup.protection" = "清理前检查应用运行和文件占用状态，跳过数据库、凭据、受保护缓存、符号链接及硬链接；无法确认安全状态的文件会保留。附件和下载文件是个人资料，请核对后再清理。";
 "cleanup.ready" = "点击“开始扫描”查看空间占用和清理候选。";
 "cleanup.running" = "应用正在运行，已跳过：%@";
 "cleanup.scan" = "开始扫描";
 "cleanup.scanned" = "已扫描文件占用（估算）";
-"cleanup.scope" = "扫描多种应用的可重建缓存、日志、安装包与个人文件夹中的大文件；扫描不会删除文件。";
+"cleanup.scope" = "扫描应用缓存、日志、安装包、个人大文件、微信附件与网盘下载文件；扫描不会删除文件。";
 "cleanup.search" = "按文件名或路径筛选";
 "cleanup.selected" = "已选文件";
 "cleanup.skipped" = "项跳过 / 失败";
@@ -987,7 +987,7 @@
 "software.wechat" = "微信";
 "software.select" = "选择软件";
 "software.refresh" = "刷新软件列表";
-"software.scope" = "微信支持聊天附件清理；其他软件仅扫描已识别的缓存和日志。列表按本机可读取的清理目录生成，不会卸载软件或删除账号资料。";
+"software.scope" = "微信支持聊天附件，百度网盘支持本机下载文件；其他软件扫描已识别的缓存和日志。可识别到清理目录的软件及已安装的百度网盘会出现在列表中，不会卸载软件或删除账号资料。";
 "software.cacheScope" = "仅扫描当前软件的可重建缓存和日志；运行中的软件会跳过。扫描不会删除文件。";
 "software.age" = "缓存 / 日志保留";
 "software.confirm" = "共 %d 项（%@），仅限当前软件的缓存和日志。执行前会复查文件身份、应用运行及占用状态。";
@@ -995,3 +995,17 @@
 
 "cleanup.section" = "清理范围";
 "cleanup.general" = "通用清理";
+
+// Baidu Netdisk download cleanup
+"cleanup.download" = "网盘下载文件";
+"software.baidu" = "百度网盘";
+"software.baiduChooseFolder" = "选择百度网盘下载目录…";
+"software.baiduDefaultFolders" = "恢复常见下载目录";
+"software.baiduMissing" = "未找到常见下载目录，请选择百度网盘实际使用的下载文件夹。";
+"software.baiduConfirm" = "共 %d 项（%@）。下载文件是个人资料，请核对后再清理；请先退出百度网盘。执行前会复查文件身份与占用状态。";
+"software.baiduScope" = "下载文件单独展示，不限大小和时间；跳过未完成任务。缓存和日志默认保留最近 7 天，运行时跳过。扫描不会删除文件，清理前请退出百度网盘。";
+"software.baiduProtection" = "仅处理明确下载目录中的文件，以及已识别的缓存和日志。不读取下载记录数据库；跳过未完成下载、数据库、凭据、隐藏文件、符号链接及硬链接。清理时检查百度网盘运行及文件占用状态，默认不勾选文件。";
+
+"cleanup.otherApps" = "其他应用";
+
+"cleanup.wechatAttachments" = "微信附件";

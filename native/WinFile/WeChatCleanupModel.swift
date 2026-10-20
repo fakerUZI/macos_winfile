@@ -78,7 +78,7 @@ final class WeChatCleanupModel: ObservableObject {
     @Published private(set) var customRoots: [URL]
     private var scanTask: Task<WeChatScanResult, Never>?
     private var scanID = UUID()
-    private static let rootsKey = "WeChatCleanupFolders"
+    private static let rootsKey = WeChatCleanupService.customRootsPreferenceKey
     @Published private(set) var lastScanDate: Date?
 
     /// 兼容访问器：写入时走统一的 setSort，保证只发布一次

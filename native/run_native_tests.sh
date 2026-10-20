@@ -34,6 +34,7 @@ CORE=(
   "$SRC/FileTransferService.swift"
   "$SRC/BrowserModel.swift"
   "$SRC/TabManager.swift"
+  "$SRC/ActiveTabReader.swift"
   "$SRC/TabDiagnostics.swift"
   "$SRC/AppDataService.swift"
   "$SRC/StorageCleanupService.swift"

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-921%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-987%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,15 +42,15 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.3.0
+## What’s new in v1.3.1
 
-- **Storage cleanup:** one sidebar entry with General Cleanup and Software Cleanup for caches, logs, installers and large personal files, with usage estimates, filtering, exclusions and confirmation.
-- **Per-app cleanup:** WeChat appears alongside other apps and retains its attachment filters. Other apps are limited to identified caches and logs; raw bundle identifiers and helper components are hidden.
-- **File protection and recovery:** files are rechecked before moving to Trash; running apps and protected data are skipped. General cleanup and other apps’ cache cleanup support `⌘Z` undo.
-- **Fixes:** changing cleanup filters clears old selections and pending confirmations; usage updates after cleanup and lists refresh after undo; duplicate-file scans no longer skip real sibling directories after symlinks.
-- 921 automated tests pass in each Apple Silicon and Intel app bundle. Physical Android device read/write tests are excluded from this run.
+- **Baidu Netdisk downloads:** storage cleanup detects common download folders and supports a saved custom download location.
+- **WeChat attachments in General Cleanup:** reuse attachment detection and custom folders, keeping attachments separate from caches and protecting databases and other persistent data.
+- **Readable app sources:** source filters and rows use consistent application names. Helpers are grouped with their identified parent app; unresolved sources appear under Other Apps.
+- **Faster tab switching:** reuse the three most recent content views, preserve list scroll positions, coalesce refreshes and write diagnostics in the background. Menu commands follow the active tab in the current window.
+- **Inspector control:** the button to show or hide the right inspector now sits at the right of the top window toolbar.
 
-See the [v1.3.0 release notes](docs/releases/v1.3.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.3.1 release notes](docs/releases/v1.3.1.md) and [v1.3.0 release notes](docs/releases/v1.3.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -110,7 +110,9 @@ The app bundles the official universal macOS console [7-Zip 26.04](https://www.7
 
 The sidebar has one **Storage cleanup** entry with the standard text color. Inside it, choose **Software cleanup**; its unified app picker lists WeChat alongside other apps. Unresolved bundle identifiers and helper, updater and extension processes are hidden. Choose WeChat or another detected app. Supported locations include Chrome, Edge, Brave, VS Code, Slack, Discord and Teams caches, plus recognized per-app cache and log folders. Only apps with readable cleanup folders appear; refresh the list to detect new folders.
 
-WeChat keeps its existing attachment scanner and account/month filters. Other apps scan only the selected app’s identified caches and logs, keep the last seven days by default, and skip running apps. Databases, accounts, configuration, offline data and other apps’ chat attachments are preserved. Switching apps cancels the old scan and clears its results, selection and pending confirmation. Filtering, exclusions, context menus, confirmation, Trash and undo remain available. Saved tabs retain the selected app.
+WeChat keeps its existing attachment scanner and account/month filters. Except for Baidu Netdisk downloads, other apps scan only the selected app’s identified caches and logs, keep the last seven days by default, and skip running apps. Databases, accounts, configuration, offline data and other apps’ chat attachments are preserved. Switching apps cancels the old scan and clears its results, selection and pending confirmation. Filtering, exclusions, context menus, confirmation, Trash and undo remain available. Saved tabs retain the selected app.
+
+**Baidu Netdisk downloads:** choose Baidu Netdisk in Software cleanup to list completed local downloads separately, without the 100 MB large-file threshold or cache age limit. Common home folders (`baidu`, `BaiduNetdisk`, `百度网盘`) and Netdisk subfolders of Downloads are detected automatically. Use the built-in folder picker for a custom download location; it must be an ordinary subfolder of your home, outside Library. The selected folder is saved. No download-history/account databases or cloud files are read. Incomplete tasks, hidden files, databases, credentials, symbolic links and hard links are skipped. Nothing is preselected; quit Baidu Netdisk before confirming a move to Trash. Undo is supported. General cleanup also detects common Netdisk download folders under a separate Netdisk downloads category.
 
 **Storage cleanup** is the last sidebar item. It contains General cleanup for cross-app scans, installers and large personal files, and Software cleanup for individual apps.
 
@@ -158,6 +160,10 @@ Drag the sidebar and inspector dividers to resize them; double-click to reset. P
 ## Storage cleanup (new in v1.3.0)
 
 Choose **Storage cleanup** at the bottom of the sidebar, select **General cleanup**, then start a scan. Review supported app caches and logs, installers in Downloads/Desktop, and large files in personal folders. Each category can be scanned separately. Browser rules target explicit cache locations and preserve profiles, databases and offline state. ZIP contents are inspected to distinguish installers from ordinary archives.
+
+General cleanup also lists WeChat attachments under the WeChat source, without a minimum size or cache age limit. It reuses the dedicated scanner’s attachment rules and the custom folders saved in the WeChat page, without reading or decrypting chat databases. Attachments are scanned before high-volume caches and Netdisk downloads. If a combined scan reaches its limit, choose WeChat attachments in Scan settings. Scanning works while WeChat is running; quit WeChat before confirming cleanup. File identity and open-file checks still apply, and successful moves from General cleanup support `⌘Z` undo. Account and month filters remain available in Software cleanup → WeChat.
+
+Sources use readable app names. Helpers with a confirmed parent app are grouped under that app; unidentified sources appear under Other apps instead of raw bundle identifiers. Personal folders retain their directory names. Actual file paths and cleanup revalidation remain intact.
 
 Caches, logs and installers from the last 7 days are kept by default; the large-file threshold is 100 MB. Nothing is preselected. Filter by source, category or path, sort results, and review 200 rows per page with selection preserved across pages. Double-click to open; the context menu includes preview, copying paths, opening the containing folder in a new tab, and exclusions.
 
@@ -244,7 +250,7 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
 
-v1.3.0 release validation: **921 passing, 0 failures** in both the arm64 and x86_64 app bundles. This run uses `--skip-device-tests`; physical Android device read/write tests are excluded. New regressions cover app isolation, app switching, classification, open-file protection, replacement detection, pagination, selection resets after filtering, cleanup usage updates, background cleanup, history, refresh after real Trash undo, and symlink boundaries in duplicate-file scans.
+v1.3.1 validation: **987 passing, 0 failures** in both the arm64 and x86_64/Rosetta app bundles, using `--skip-device-tests`. Physical Android device read/write tests are excluded. New regressions cover Baidu download folders, WeChat attachments and protected-data boundaries, source display and filtering, coalesced tab refreshes and inactive-model isolation. Native window checks cover table reuse across repeated switches, preserved scroll positions, cache bounds, command targets and the top-toolbar inspector button. See the [v1.3.1 release notes](docs/releases/v1.3.1.md).
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 
@@ -360,3 +366,7 @@ No. Defaults set inside WinFile are stored only in WinFile's own preferences and
 | Not implemented | Tag colors, network locations (SMB/FTP) |
 
 If this project helps you, a star is appreciated. Issues and suggestions are welcome.
+
+### Tab switching and view reuse
+
+The shared bars and sidebar stay mounted while switching tabs. Up to three recently used content views are reused to preserve native tables, icons and scroll state; closing a tab releases its view. Tabs outside that cache keep their browser models and rebuild their content on demand. Active-model refresh bursts are coalesced, and inactive tabs do not refresh the active page. Diagnostics are written in the background; normal use does not log every tab render.

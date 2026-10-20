@@ -13,9 +13,27 @@ struct StorageCleanupHistoryEntry: Codable, Identifiable {
 }
 
 struct SoftwareCleanupApp: Identifiable {
+    static let otherSourceID = "__winfile_other_apps__"
     let id: String
     let name: String
     var title: String { id == "wechat" ? L("software.wechat", "微信") : name }
+
+    /// Returns a display name or the stable key for unidentified applications.
+    /// Presentation only: keep the original bundle ID and scan rule intact for
+    /// app isolation, running-process checks and trash revalidation.
+    static func sourceName(id: String, fallback: String, resolve: (String) -> String? = AppDataService.resolvedName) -> String {
+        if isVisible(id: id, name: fallback) { return fallback }
+        if let name = resolve(id), isVisible(id: id, name: name) { return name }
+        // A helper can belong to a known app even when LaunchServices cannot
+        // resolve the helper itself. Only use an ancestor with a resolved name.
+        var parts = id.split(separator: ".").map(String.init)
+        while parts.count > 3 {
+            parts.removeLast()
+            let parent = parts.joined(separator: ".")
+            if let name = resolve(parent), isVisible(id: parent, name: name) { return name }
+        }
+        return otherSourceID
+    }
 
     static func isVisible(id: String, name: String) -> Bool {
         let title = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,6 +79,7 @@ final class StorageCleanupModel: ObservableObject {
     @Published var minimumAgeDays = 7
     @Published var minimumLargeMB = 100
     @Published private(set) var largeFolder: URL?
+    @Published private(set) var downloadFolder: URL?
     @Published private(set) var ignored: [URL]
     @Published private(set) var history: [StorageCleanupHistoryEntry]
     @Published private(set) var message: String?
@@ -73,12 +92,16 @@ final class StorageCleanupModel: ObservableObject {
     private var task: Task<Void, Never>?
     private var generation = UUID()
     private var configurationAtScan: StorageCleanupConfiguration?
+    private var sourceNames: [String: String] = [:]
+    private var sourceLanguage = ""
     private static let ignoreKey = "StorageCleanup.ignored.v1"
     private static let historyKey = "StorageCleanup.history.v1"
+    private static let downloadFolderKey = "StorageCleanup.baiduDownloadFolder.v1"
 
     init(home: URL = FileSystemService.realHomeDirectory(), defaults: UserDefaults = .standard, softwareMode: Bool = false) {
         self.home = home.resolvingSymlinksInPath(); self.defaults = defaults; self.softwareMode = softwareMode
         ignored = (defaults.stringArray(forKey: Self.ignoreKey) ?? []).map { URL(fileURLWithPath: $0) }
+        downloadFolder = defaults.string(forKey: Self.downloadFolderKey).map { URL(fileURLWithPath: $0) }
         if let data = defaults.data(forKey: Self.historyKey), let value = try? JSONDecoder().decode([StorageCleanupHistoryEntry].self, from: data) {
             history = Array(value.prefix(30))
         } else { history = [] }
@@ -86,16 +109,22 @@ final class StorageCleanupModel: ObservableObject {
     }
     deinit { task?.cancel() }
     var busy: Bool { isScanning || isCleaning }
-    var availableKinds: [StorageCleanupKind] { softwareMode ? [.cache, .log] : StorageCleanupKind.allCases }
+    var isBaidu: Bool { softwareMode && selectedSoftwareID == StorageCleanupService.baiduBundleID }
+    var availableKinds: [StorageCleanupKind] { softwareMode ? (isBaidu ? [.download, .cache, .log] : [.cache, .log]) : StorageCleanupKind.allCases }
+    var folderPickerTitle: String { isBaidu ? L("software.baiduChooseFolder", "选择百度网盘下载目录…") : L("cleanup.chooseFolder", "选择大文件扫描目录…") }
+    var downloadScopeDescription: String {
+        let roots = StorageCleanupService.baiduDownloadRoots(configuration)
+        return roots.isEmpty ? L("software.baiduMissing", "未找到常见下载目录，请选择百度网盘实际使用的下载文件夹。") : roots.map(\.path).joined(separator: "\n")
+    }
     var softwareTitle: String { softwareChoices.first { $0.id == selectedSoftwareID }?.title ?? selectedSoftwareID }
     func refreshSoftwareChoices() {
         guard softwareMode, !busy else { return }
         let names = ["com.google.chrome": "Google Chrome", "com.microsoft.edgemac": "Microsoft Edge",
                      "com.brave.browser": "Brave", "com.microsoft.vscode": "Visual Studio Code",
                      "com.tinyspeck.slackmacgap": "Slack", "com.hnc.discord": "Discord",
-                     "com.microsoft.teams2": "Microsoft Teams"]
+                     "com.microsoft.teams2": "Microsoft Teams", "com.baidu.netdisk": L("software.baidu", "百度网盘")]
         var apps: [String: SoftwareCleanupApp] = [:]
-        let config = StorageCleanupConfiguration(home: home, kinds: [.cache, .log])
+        let config = StorageCleanupConfiguration(home: home, downloadFolder: downloadFolder, kinds: [.cache, .log, .download])
         for rule in StorageCleanupService.rules(config) {
             guard let rawID = rule.bundleID else { continue }
             let id = rawID.lowercased()
@@ -103,6 +132,9 @@ final class StorageCleanupModel: ObservableObject {
             let name = names[id] ?? rule.owner
             guard SoftwareCleanupApp.isVisible(id: id, name: name) else { continue }
             apps[id] = SoftwareCleanupApp(id: id, name: name)
+        }
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: StorageCleanupService.baiduBundleID) != nil {
+            apps[StorageCleanupService.baiduBundleID] = SoftwareCleanupApp(id: StorageCleanupService.baiduBundleID, name: L("software.baidu", "百度网盘"))
         }
         // Keep an already selected source visible even if its last cache was removed.
         if selectedSoftwareID != "wechat", apps[selectedSoftwareID] == nil,
@@ -124,21 +156,44 @@ final class StorageCleanupModel: ObservableObject {
         return true
     }
     var configuration: StorageCleanupConfiguration {
-        StorageCleanupConfiguration(home: home, largeFolder: largeFolder, ignored: ignored,
+        StorageCleanupConfiguration(home: home, largeFolder: largeFolder, downloadFolder: downloadFolder,
+                                    weChatFolders: (defaults.stringArray(forKey: WeChatCleanupService.customRootsPreferenceKey) ?? []).map { URL(fileURLWithPath: $0) }, ignored: ignored,
                                     kinds: (StorageCleanupKind(rawValue: scanScope).map { Set([$0]) } ?? Set(availableKinds)).intersection(availableKinds),
                                     bundleIDs: softwareMode ? (selectedSoftwareID == "wechat" ? [] : [selectedSoftwareID]) : nil,
                                     minimumAgeDays: minimumAgeDays, minimumLargeBytes: Int64(minimumLargeMB) * 1024 * 1024)
     }
     var owners: [String] {
-        var values = Set(result.files.map { $0.rule.owner })
+        var values = Set(result.files.map { sourceOwner(for: $0) })
         if owner != "all" { values.insert(owner) }
         return values.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
     var selectedFiles: [StorageCleanupFile] { result.files.filter { selection.contains($0.id) } }
     var selectedBytes: Int64 { selectedFiles.reduce(0) { $0 + $1.size } }
     var totalBytes: Int64 { result.files.reduce(0) { $0 + $1.size } }
+    private func sourceOwner(for file: StorageCleanupFile) -> String {
+        guard let id = file.rule.bundleID else { return file.rule.owner }
+        let language = Localization.languageCode
+        if sourceLanguage != language { sourceNames = [:]; sourceLanguage = language }
+        let key = id + "\n" + file.rule.owner
+        if let name = sourceNames[key] { return name }
+        let name = SoftwareCleanupApp.sourceName(id: id, fallback: file.rule.owner)
+        sourceNames[key] = name
+        return name
+    }
+    func displayOwner(for file: StorageCleanupFile) -> String {
+        file.rule.bundleID == nil ? file.rule.owner : ownerTitle(sourceOwner(for: file))
+    }
+    func ownerTitle(_ value: String) -> String {
+        if value == SoftwareCleanupApp.otherSourceID { return L("cleanup.otherApps", "其他应用") }
+        // Also cover an existing filter whose source disappeared after a scan.
+        if AppDataService.looksLikeBundleID(value) {
+            let name = SoftwareCleanupApp.sourceName(id: value, fallback: value)
+            return name == SoftwareCleanupApp.otherSourceID ? L("cleanup.otherApps", "其他应用") : name
+        }
+        return value
+    }
     func accept(_ result: StorageCleanupScanResult) {
-        self.result = result; hasScanned = true
+        self.result = result; sourceNames = [:]; hasScanned = true
         selection.formIntersection(Set(result.files.map(\.id)))
         rebuild()
     }
@@ -148,7 +203,7 @@ final class StorageCleanupModel: ObservableObject {
     }
     func rebuild(page: Int = 0) {
         var filtered = result.files.filter {
-            (category == "all" || $0.rule.kind.rawValue == category) && (owner == "all" || $0.rule.owner == owner)
+            (category == "all" || $0.rule.kind.rawValue == category) && (owner == "all" || sourceOwner(for: $0) == owner)
                 && (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) || $0.url.path.localizedCaseInsensitiveContains(search))
         }
         filtered.sort {
@@ -173,9 +228,23 @@ final class StorageCleanupModel: ObservableObject {
             message = L("cleanup.invalidFolder", "请选择个人文件夹内的普通子目录；不支持个人文件夹根目录、Library、隐藏目录或应用包。")
             return false
         }
-        largeFolder = target
+        if isBaidu {
+            downloadFolder = target
+            defaults.set(target.path, forKey: Self.downloadFolderKey)
+            resetDownloadScan()
+        } else { largeFolder = target }
         hasScanned = false
         return true
+    }
+    func useDefaultDownloadFolders() {
+        guard !busy else { return }
+        downloadFolder = nil; defaults.removeObject(forKey: Self.downloadFolderKey)
+        resetDownloadScan()
+    }
+    private func resetDownloadScan() {
+        result = StorageCleanupScanResult(); display = Display(); progress = StorageCleanupProgress()
+        selection = []; pendingFiles = []; confirmsTrash = false; configurationAtScan = nil; hasScanned = false
+        search = ""; category = "all"; owner = "all"; scanScope = "all"; message = nil
     }
     func useDefaultFolders() { guard !busy else { return }; largeFolder = nil; hasScanned = false }
     func ignore(_ url: URL) {
