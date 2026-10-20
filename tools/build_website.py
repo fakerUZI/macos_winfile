@@ -148,7 +148,8 @@ def build():
         shutil.copy2(SOURCE / "assets" / name, OUTPUT / "assets" / name)
     shutil.copy2(SOURCE / "assets/app-icon.png", OUTPUT / "assets/app-icon.png")
     def substitute(text):
-        for key, value in {"VERSION": info["version"], "MIN_MACOS": info["minimum_macos"]}.items():
+        for key, value in {"VERSION": info["version"], "DOWNLOAD_VERSION": info["download_version"],
+                           "SCREENSHOT_VERSION": info["screenshot_version"], "MIN_MACOS": info["minimum_macos"]}.items():
             text = text.replace("{{" + key + "}}", value)
         return text
     source = substitute((SOURCE / "index.html").read_text())

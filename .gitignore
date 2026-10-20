@@ -2,3 +2,9 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Local app build outputs left behind when switching from the application branch.
+/WinFile*.app/
+/native/
+/dist/
+/docs/
