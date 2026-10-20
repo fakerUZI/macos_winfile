@@ -4,6 +4,8 @@
 
 **English** | [简体中文](README.md)
 
+[Product website (Chinese)](https://fakeruzi.github.io/macos_winfile/) · [Latest release](https://github.com/fakerUZI/macos_winfile/releases/latest) · [Website maintenance](website/README.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
