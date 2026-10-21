@@ -417,7 +417,7 @@ final class FSEngine: ObservableObject {
         var created: [URL] = []
         let destPath = directory.standardizedFileURL.resolvingSymlinksInPath().path
         for item in items {
-            if item.isDirectory {
+            if item.isDirectory && !item.isSymlink {
                 let sourcePath = item.url.standardizedFileURL.resolvingSymlinksInPath().path
                 if destPath == sourcePath || destPath.hasPrefix(sourcePath + "/") {
                     throw FSError.recursiveTransfer(item.name)
@@ -456,6 +456,7 @@ final class FSEngine: ObservableObject {
 enum FSError: LocalizedError {
     case notFound(URL)
     case notDirectory(URL)
+    case unavailableSymlink(URL)
     case notAuthorized(URL)
     case invalidName
     case nameExists(String)
@@ -465,6 +466,8 @@ enum FSError: LocalizedError {
         switch self {
         case .notFound(let url):
             return String(format: WLocalizedString("error.notFound", comment: "路径不存在"), url.lastPathComponent)
+        case .unavailableSymlink(let url):
+            return L("error.symlinkTarget", "链接“%@”的目标不存在或无法访问。", url.lastPathComponent)
         case .notDirectory(let url):
             return String(format: WLocalizedString("error.notDirectory", comment: "不是文件夹"), url.lastPathComponent)
         case .notAuthorized:

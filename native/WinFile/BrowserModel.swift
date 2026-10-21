@@ -554,13 +554,16 @@ final class BrowserModel: ObservableObject {
         let navigation = navigationID
         listingTask = Task { [weak self] in
             var loaded: [FileItem] = []
-            var failure: String?
+            var browsingDirectory: URL?
+            var failure: NSError?
             do {
-                loaded = try await Task.detached(priority: .userInitiated) {
-                    try FileSystemService.list(directory, showHidden: showHidden)
+                let listing = try await Task.detached(priority: .userInitiated) {
+                    try FileSystemService.directoryListing(directory, showHidden: showHidden)
                 }.value
+                loaded = listing.items
+                browsingDirectory = listing.directory
             } catch {
-                failure = error.localizedDescription
+                failure = error as NSError
             }
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in
@@ -575,9 +578,15 @@ final class BrowserModel: ObservableObject {
                 }
                 self.isBusy = false
                 if let failure {
-                    self.errorMessage = failure
-                    self.statusMessage = failure
+                    TabDiagnostics.shared.recordFileError(failure, operation: "listDirectory", url: directory)
+                    self.errorMessage = failure.localizedDescription
+                    self.statusMessage = failure.localizedDescription
                 } else {
+                    if let browsingDirectory {
+                        self.currentDirectory = browsingDirectory
+                        if case .folder = self.selection { self.selection = .folder(browsingDirectory) }
+                    }
+                    self.errorMessage = nil
                     self.updateStatus()
                     self.installDirectoryWatcher()
                 }
@@ -1425,7 +1434,8 @@ final class BrowserModel: ObservableObject {
 
     // MARK: - 操作
 
-    func activate(_ item: FileItem) {
+    func activate(_ original: FileItem) {
+        let item = original
         TabDiagnostics.shared.record("activate", detail: "项目=\(item.name) 目录=\(item.isDirectory)")
         // 安卓条目不能交给 NSWorkspace（android:// 不是本机可打开的地址）
         if AndroidURL.isAndroid(item.url) {
@@ -1434,10 +1444,21 @@ final class BrowserModel: ObservableObject {
             }
             return
         }
+        activateLocal(original)
+    }
+
+    private func activateLocal(_ original: FileItem) {
+        let item: FileItem
+        do { item = try original.resolvedForOpening() }
+        catch {
+            TabDiagnostics.shared.recordFileError(error, operation: "resolveForOpening", url: original.url)
+            errorMessage = error.localizedDescription
+            return
+        }
         // .app 包双击启动；普通文件夹进入浏览
         if item.isBundle && item.url.pathExtension.lowercased() == "app" {
             noteOpened(item.url)
-            engine.open(item)
+            if !engine.open(item) { errorMessage = engine.lastError ?? L("error.openFailed", "无法打开") }
             return
         }
         if item.isDirectory {
@@ -1452,7 +1473,7 @@ final class BrowserModel: ObservableObject {
             return
         }
         noteOpened(item.url)
-        engine.open(item)
+        if !engine.open(item) { errorMessage = engine.lastError ?? L("error.openFailed", "无法打开") }
     }
 
     /// 用指定应用打开若干文件

@@ -40,10 +40,19 @@ enum FileSystemService {
     // MARK: - 列目录
 
     static func list(_ directory: URL, showHidden: Bool) throws -> [FileItem] {
+        try directoryListing(directory, showHidden: showHidden).items
+    }
+
+    /// Return the actual browsing root with its entries so watchers and saved tabs use it too.
+    static func directoryListing(_ requested: URL, showHidden: Bool) throws -> (directory: URL, items: [FileItem]) {
+        let directory = requested.standardizedFileURL.resolvingSymlinksInPath()
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: directory.path, isDirectory: &isDir) else {
-            throw FSError.notFound(directory)
+            if (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+                throw FSError.unavailableSymlink(requested)
+            }
+            throw FSError.notFound(requested)
         }
         guard isDir.boolValue else { throw FSError.notDirectory(directory) }
 
@@ -59,7 +68,9 @@ enum FileSystemService {
                 items.append(item)
             }
         }
-        return sort(items, field: .name, ascending: true)
+        // Preserve ordinary URLs (including their directory hint) when the path did not change.
+        return (directory.path == requested.path ? requested : directory,
+                sort(items, field: .name, ascending: true))
     }
 
     static func listApplications() -> [FileItem] {
@@ -150,12 +161,17 @@ enum FileSystemService {
     static func searchReport(under root: URL, matching text: String, limit: Int = 400,
                              entryLimit: Int = 100_000, showHidden: Bool = false,
                              criteria: FileSearchCriteria = FileSearchCriteria(),
+                             recursive: Bool = true,
+                             progress: (Int) -> Void = { _ in },
                              cancelled: () -> Bool = { false }) -> FileScanReport {
         guard (!text.isEmpty || criteria.isActive), criteria.isValid else { return FileScanReport() }
-        return scanFiles(under: [root], depth: Int.max, limit: limit, entryLimit: entryLimit,
-                         showHidden: showHidden, cancelled: cancelled) {
+        var report = scanFiles(under: [root.standardizedFileURL.resolvingSymlinksInPath()], depth: recursive ? Int.max : 0, limit: limit, entryLimit: entryLimit,
+                         showHidden: showHidden, cancelled: cancelled, progress: progress) {
             (text.isEmpty || $0.name.localizedCaseInsensitiveContains(text)) && criteria.matches($0)
         }
+        // A deliberately shallow search has completed its requested scope.
+        if !recursive { report.depthLimited = false }
+        return report
     }
 
     static func categoryReport(_ category: FileCategory, under roots: [URL], depth: Int = 4,
@@ -166,13 +182,14 @@ enum FileSystemService {
     }
 
     private static func scanFiles(under roots: [URL], depth: Int, limit: Int, entryLimit: Int,
-                                  showHidden: Bool, cancelled: () -> Bool,
+                                  showHidden: Bool, cancelled: () -> Bool, progress: (Int) -> Void = { _ in },
                                   matching: (FileItem) -> Bool) -> FileScanReport {
         var result = FileScanReport()
         var seenDirectories = Set<String>()
         var seenFiles = Set<String>()
         var inaccessible = Set<String>()
         let fm = FileManager.default
+        var lastProgress = Date.distantPast
         func stopped() -> Bool {
             if cancelled() { result.cancelled = true }
             return result.cancelled || result.limitReached || result.visitLimitReached
@@ -189,6 +206,9 @@ enum FileSystemService {
                 if stopped() { return }
                 guard result.visited < entryLimit else { result.visitLimitReached = true; return }
                 result.visited += 1
+                if result.visited % 256 == 0, Date().timeIntervalSince(lastProgress) >= 0.1 {
+                    lastProgress = Date(); progress(result.visited)
+                }
                 guard let item = FileItem(url: url, resourceKeys: resourceKeys, showHidden: showHidden) else {
                     inaccessible.insert(url.path); continue
                 }
@@ -211,6 +231,7 @@ enum FileSystemService {
             guard values?.isSymbolicLink != true else { continue }
             walk(root, level: 0)
         }
+        progress(result.visited)
         result.inaccessibleCount = inaccessible.count
         result.items = sort(result.items, field: .modified, ascending: false)
         return result

@@ -28,6 +28,7 @@ CORE=(
   "$SRC/DirectoryWatcher.swift"
   "$SRC/BrowserSession.swift"
   "$SRC/FileSearchCriteria.swift"
+  "$SRC/FileSearchModel.swift"
   "$SRC/BatchRenameService.swift"
   "$SRC/DuplicateFileService.swift"
   "$SRC/FileOperationHistory.swift"

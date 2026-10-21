@@ -42,7 +42,7 @@ final class FolderPickerModel: ObservableObject {
 
     nonisolated static func listFolders(_ directory: URL, showHidden: Bool) throws -> [URL] {
         let fm = FileManager.default
-        return try fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey],
+        return try fm.contentsOfDirectory(at: directory.standardizedFileURL.resolvingSymlinksInPath(), includingPropertiesForKeys: [.isDirectoryKey],
                                           options: showHidden ? [] : [.skipsHiddenFiles])
             .filter { url in
                 var isDirectory: ObjCBool = false
@@ -79,15 +79,19 @@ final class FolderPickerModel: ObservableObject {
         errorMessage = nil
         loadTask = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
-                Result { try Self.listFolders(target, showHidden: hidden) }
+                Result {
+                    let resolved = target.resolvingSymlinksInPath()
+                    let browsing = resolved.path == target.path ? target : resolved
+                    return (browsing, try Self.listFolders(browsing, showHidden: hidden))
+                }
             }.value
             guard let self, !Task.isCancelled, self.generation == request else { return }
             self.isLoading = false
             switch result {
-            case .success(let folders):
-                self.directory = target
-                self.pathText = target.path
-                self.folders = folders
+            case .success(let listing):
+                self.directory = listing.0
+                self.pathText = listing.0.path
+                self.folders = listing.1
                 self.selectedPaths = []
                 self.search = ""
             case .failure(let error):

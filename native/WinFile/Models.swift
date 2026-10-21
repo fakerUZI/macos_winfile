@@ -430,9 +430,24 @@ struct FileItem: Identifiable, Hashable {
         category == .image || category == .video || category == .pdf
     }
 
-    /// 统一的 id 计算：解析符号链接，保证同一文件得到同一个 id
+    /// Normalize the parent (/var vs /private/var), while preserving the entry itself.
+    /// A symbolic link and its target are distinct rows and mutation targets.
     static func canonicalID(for url: URL) -> String {
-        url.standardizedFileURL.resolvingSymlinksInPath().path
+        let entry = url.standardizedFileURL
+        guard entry.path != "/" else { return "/" }
+        return entry.deletingLastPathComponent().resolvingSymlinksInPath()
+            .appendingPathComponent(entry.lastPathComponent).path
+    }
+
+    /// Resolve only for opening; keep `url` unchanged for copy, rename and removal.
+    func resolvedForOpening() throws -> FileItem {
+        guard isSymlink, url.isFileURL else { return self }
+        let target = url.standardizedFileURL.resolvingSymlinksInPath()
+        guard FileManager.default.fileExists(atPath: target.path),
+              let item = FileItem(url: target, resourceKeys: FileSystemService.resourceKeys, showHidden: true) else {
+            throw FSError.unavailableSymlink(url)
+        }
+        return item
     }
 
     /// 图标视图中名称区域的高度（固定值）。
@@ -493,22 +508,21 @@ extension FileItem {
     init?(url: URL, resourceKeys: [URLResourceKey], showHidden: Bool) {
         guard let values = try? url.resourceValues(forKeys: Set(resourceKeys)) else { return nil }
 
-        let isDirectory = values.isDirectory ?? false
         let isSymlink = values.isSymbolicLink ?? false
+        let target = isSymlink ? url.standardizedFileURL.resolvingSymlinksInPath() : url
+        let isDirectory = isSymlink
+            ? ((try? target.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false)
+            : (values.isDirectory ?? false)
         let isHidden = (values.isHidden ?? false) || url.lastPathComponent.hasPrefix(".")
         if isHidden && !showHidden { return nil }
 
         let name = url.lastPathComponent
         guard !name.isEmpty else { return nil }
 
-        let bundle = FileTypeDB.isBundle(url, isDirectory: isDirectory)
+        let bundle = FileTypeDB.isBundle(target, isDirectory: isDirectory)
         let info = FileTypeDB.info(name: name, isDirectory: isDirectory, isSymlink: isSymlink, isBundle: bundle)
 
-        // id 使用规范化路径。
-        //
-        // 必要性：/var 是 /private/var 的符号链接，同一文件经由不同途径
-        // （分类扫描 vs 目录枚举）得到的路径可能不同，导致 id 不相等 ——
-        // 表现为「跳转到文件所在目录后选不中该文件」，去重与选择也会错乱。
+        // Parent aliases normalize to one path; the last link component keeps its identity.
         self.id = FileItem.canonicalID(for: url)
         self.url = url
         self.name = name

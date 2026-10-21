@@ -153,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 每次启动重置页签交互日志（便于"你操作、我读日志"）
         try? FileManager.default.removeItem(at: TabDiagnostics.liveURL)
-        TabDiagnostics.shared.record("app.launch", detail: "版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")")
+        TabDiagnostics.shared.record("app.launch", detail: "版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) | \(ProcessInfo.processInfo.operatingSystemVersionString)")
         // 界面快照：必须在应用启动完成后执行，否则 SF Symbols 无法解析
         if let index = CommandLine.arguments.firstIndex(of: "--render-snapshot") {
             let target = index + 1 < CommandLine.arguments.count
@@ -326,6 +326,14 @@ struct WinFileCommands: Commands {
             }
         }
 
+        CommandGroup(after: .textEditing) {
+            Button(L("search.windowTitle", "搜索文件")) {
+                NotificationCenter.default.post(name: .winFileSearch, object: windowCommands.manager)
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .disabled(windowCommands.manager == nil)
+        }
+
         // 前往
         CommandMenu(WLocalizedString("menu.go", comment: "前往")) {
             Button(WLocalizedString("menu.back", comment: "后退")) { model?.goBack() }
@@ -376,6 +384,7 @@ struct WinFileCommands: Commands {
 
 extension Notification.Name {
     static let winFileBeginRename = Notification.Name("WinFileBeginRename")
+    static let winFileSearch = Notification.Name("WinFileSearch")
     static let winFileOpenFolder = Notification.Name("WinFileOpenFolder")
     static let winFileShowHelp = Notification.Name("WinFileShowHelp")
     static let winFileGetInfo = Notification.Name("WinFileGetInfo")

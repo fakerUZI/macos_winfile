@@ -991,3 +991,39 @@
 "cleanup.otherApps" = "Other apps";
 
 "cleanup.wechatAttachments" = "WeChat attachments";
+
+// Independent file search
+"search.windowTitle" = "Search Files";
+"search.unreadable" = "%d locations could not be read; results may be incomplete.";
+"search.rulesHint" = "All filters apply together. Searches file names, not file contents.";
+"search.stop" = "Stop";
+"search.reset" = "Reset Filters";
+"search.chooseScope" = "Choose Search Folder";
+"search.scope" = "Search in";
+"search.quickScope" = "Locations";
+"search.currentScope" = "Current Folder";
+"search.nameHint" = "Enter a file name, part of a name, or use filters";
+"search.entryKind" = "Find";
+"search.all" = "All";
+"search.files" = "Files";
+"search.folders" = "Folders";
+"search.allTypes" = "All Types";
+"search.extensions" = "Extensions, e.g. pdf, zip, jpg";
+"search.recursive" = "Include Subfolders";
+"search.scanning" = "Scanning… %d items checked";
+"search.found" = "%d results · %d items checked";
+"search.sort" = "Sort";
+"search.reverseSort" = "Reverse Sort";
+"search.location" = "Folder";
+"search.locate" = "Show Enclosing Folder in New Tab";
+"search.searching" = "Searching…";
+"search.ready" = "Choose a folder, enter a name or filters, then search.";
+"search.noMatches" = "No matches. Try different filters or another search folder.";
+"search.changed" = "Filters changed. Search again to update the results.";
+"search.stopped" = "Search stopped. Showing results found so far.";
+"search.limited" = "Scan limit reached. Expand the scan, narrow the folder, or add filters.";
+"search.expand" = "Expand Scan";
+"search.close" = "Close";
+"search.invalidRange" = "Enter valid nonnegative sizes. Minimum size and start date must not exceed their end values.";
+
+"error.symlinkTarget" = "The target of “%@” does not exist or cannot be accessed.";

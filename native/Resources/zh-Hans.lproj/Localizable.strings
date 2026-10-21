@@ -1009,3 +1009,39 @@
 "cleanup.otherApps" = "其他应用";
 
 "cleanup.wechatAttachments" = "微信附件";
+
+// Independent file search
+"search.windowTitle" = "搜索文件";
+"search.unreadable" = "%d 个位置无法读取，结果可能不完整。";
+"search.rulesHint" = "条件同时满足；仅搜索文件名，不读取文件内容。";
+"search.stop" = "停止搜索";
+"search.reset" = "重置条件";
+"search.chooseScope" = "选择搜索范围";
+"search.scope" = "搜索范围";
+"search.quickScope" = "常用位置";
+"search.currentScope" = "当前文件夹";
+"search.nameHint" = "输入文件名或部分名称，也可只使用筛选条件";
+"search.entryKind" = "对象";
+"search.all" = "全部";
+"search.files" = "文件";
+"search.folders" = "文件夹";
+"search.allTypes" = "全部类型";
+"search.extensions" = "扩展名，如 pdf, zip, jpg";
+"search.recursive" = "包含子文件夹";
+"search.scanning" = "正在扫描，已检查 %d 项…";
+"search.found" = "%d 个结果 · 已检查 %d 项";
+"search.sort" = "排序";
+"search.reverseSort" = "反转排序";
+"search.location" = "所在文件夹";
+"search.locate" = "在新页签中打开所在文件夹";
+"search.searching" = "正在搜索…";
+"search.ready" = "选择范围，输入名称或筛选条件后开始搜索。";
+"search.noMatches" = "没有找到匹配项，可调整条件或搜索范围。";
+"search.changed" = "条件已更改，点击搜索以更新结果。";
+"search.stopped" = "搜索已停止，显示已找到的结果。";
+"search.limited" = "已达到本轮扫描上限，结果不完整。可扩大扫描，或缩小范围、增加条件。";
+"search.expand" = "扩大扫描";
+"search.close" = "关闭";
+"search.invalidRange" = "请填写有效的非负大小，并确保起始大小和日期不晚于结束值。";
+
+"error.symlinkTarget" = "链接“%@”的目标不存在或无法访问。";

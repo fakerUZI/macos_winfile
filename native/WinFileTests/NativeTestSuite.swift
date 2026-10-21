@@ -112,6 +112,9 @@ enum NativeTestSuite {
             try testWeChatCleanup(sandbox)
             try testWeChatFileActions(sandbox)
             try testWeChatPagination(sandbox)
+            testFileErrorDiagnostics()
+            try testSymbolicLinkBrowsing(sandbox)
+            try testNativeSearch(sandbox)
             try testFunctionalImprovements(sandbox)
             try testExperienceImprovements(sandbox)
             try testLayoutAndFilterExperience(sandbox)
@@ -129,6 +132,192 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testFileErrorDiagnostics() {
+        print("\n== 文件错误诊断 ==")
+        let underlying = NSError(domain: NSPOSIXErrorDomain, code: 20,
+                                 userInfo: [NSLocalizedDescriptionKey: "Not a directory"])
+        let error = NSError(domain: NSCocoaErrorDomain, code: 256,
+                            userInfo: [NSLocalizedDescriptionKey: "Cannot open\nOrbStack", NSUnderlyingErrorKey: underlying,
+                                       "unrelated": "private-value-must-not-be-logged"])
+        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("OrbStack")
+        let detail = TabDiagnostics.fileErrorDetail(error, operation: "listDirectory", url: url)
+        check("文件错误日志保留操作、路径和完整底层错误码", detail.contains("operation=listDirectory") && detail.contains("path=~/OrbStack") && detail.contains("NSCocoaErrorDomain code=256") && detail.contains("NSPOSIXErrorDomain code=20"))
+        check("文件错误不会注入额外日志行", !detail.contains("\n") && detail.contains("Cannot open\\nOrbStack"))
+        check("文件错误不导出任意 userInfo 数据", !detail.contains("private-value-must-not-be-logged"))
+        var nested = underlying
+        for _ in 0..<12 { nested = NSError(domain: "nested", code: 1, userInfo: [NSUnderlyingErrorKey: nested]) }
+        let bounded = TabDiagnostics.fileErrorDetail(nested, operation: "listDirectory", url: url)
+        check("文件错误链有固定深度上限", bounded.contains("error[7]") && !bounded.contains("error[8]"))
+    }
+
+    @MainActor
+    private static func testSymbolicLinkBrowsing(_ sandbox: URL) throws {
+        print("\n== 符号链接导航、条目标识与会话恢复 ==")
+        let fm = FileManager.default
+        let root = sandbox.resolvingSymlinksInPath().appendingPathComponent("SymlinkBrowsing")
+        let target = root.appendingPathComponent("Target")
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        let sample = target.appendingPathComponent("sample.txt")
+        try Data("symlink sample".utf8).write(to: sample)
+        let link = root.appendingPathComponent("Directory Link")
+        let fileLink = root.appendingPathComponent("File Link")
+        let broken = root.appendingPathComponent("Broken Link")
+        let relative = root.appendingPathComponent("Relative Link")
+        let chained = root.appendingPathComponent("Chained Link")
+        try fm.createSymbolicLink(at: link, withDestinationURL: target)
+        try fm.createSymbolicLink(at: fileLink, withDestinationURL: sample)
+        try fm.createSymbolicLink(at: broken, withDestinationURL: root.appendingPathComponent("Missing"))
+        try fm.createSymbolicLink(atPath: relative.path, withDestinationPath: "Target")
+        try fm.createSymbolicLink(at: chained, withDestinationURL: relative)
+        let loop = target.appendingPathComponent("loop")
+        try fm.createSymbolicLink(at: loop, withDestinationURL: target)
+        let cyclic = root.appendingPathComponent("Cyclic")
+        try fm.createSymbolicLink(atPath: cyclic.path, withDestinationPath: "Cyclic")
+        let app = root.appendingPathComponent("Demo.app")
+        try fm.createDirectory(at: app, withIntermediateDirectories: true)
+        let appLink = root.appendingPathComponent("App Link")
+        try fm.createSymbolicLink(at: appLink, withDestinationURL: app)
+        let listed = try FileSystemService.list(root, showHidden: true)
+        func item(_ name: String) throws -> FileItem {
+            guard let result = listed.first(where: { $0.name == name }) else { throw FSError.notFound(root.appendingPathComponent(name)) }
+            return result
+        }
+        let directoryItem = try item("Directory Link")
+        let targetItem = try item("Target")
+        let fileItem = try item("File Link")
+        let brokenItem = try item("Broken Link")
+        check("目录链接保留链接元数据且可作为文件夹浏览", directoryItem.isDirectory && directoryItem.isSymlink && directoryItem.category == .folder)
+        check("链接与同级目标拥有不同的列表 ID", directoryItem.id != targetItem.id && Set(listed.map(\.id)).count == listed.count)
+        check("正常与失效链接均保留原来的条目名称", listed.contains { $0.name == "Directory Link" } && listed.contains { $0.name == "Broken Link" })
+        let aliasRoot = root.appendingPathComponent("Parent Alias")
+        try fm.createSymbolicLink(at: aliasRoot, withDestinationURL: root)
+        check("父目录路径别名不改变普通文件身份", FileItem.canonicalID(for: aliasRoot.appendingPathComponent("Target/sample.txt")) == FileItem.canonicalID(for: sample))
+        check("父目录路径别名不改变链接条目身份", FileItem.canonicalID(for: aliasRoot.appendingPathComponent("Directory Link")) == directoryItem.id)
+        check("链接自身仍保留为复制和改名的源 URL", directoryItem.url.lastPathComponent == "Directory Link" && fileItem.url.lastPathComponent == "File Link")
+        check("文件链接按真实目标解析打开类型", try fileItem.resolvedForOpening().url == sample && !fileItem.isDirectory)
+        let appItem = try item("App Link").resolvedForOpening()
+        check("应用链接解析后保持应用包而非普通目录", appItem.url.path == app.path && appItem.isBundle && !appItem.isBrowsableFolder)
+        for name in ["Broken Link", "Cyclic"] {
+            do { _ = try item(name).resolvedForOpening(); check("\(name) 应拒绝打开", false) }
+            catch FSError.unavailableSymlink { check("\(name) 给出链接目标不可用错误", true) }
+            catch { check("\(name) 错误类型正确", false, error.localizedDescription) }
+        }
+        for entry in [link, relative, chained] {
+            let listing = try FileSystemService.directoryListing(entry, showHidden: true)
+            check("目录链接导航成功：\(entry.lastPathComponent)", listing.directory.path == target.path && listing.items.contains { $0.name == "sample.txt" })
+        }
+        do { _ = try FileSystemService.list(broken, showHidden: true); check("失效目录链接应拒绝列目录", false) }
+        catch FSError.unavailableSymlink { check("地址栏失效目录链接给出明确提示", true) }
+        let scan = FileSystemService.searchReport(under: link, matching: "sample")
+        check("显式链接搜索范围可扫描目标且不沿子链接循环", scan.items.map(\.name) == ["sample.txt"] && scan.visited < 10 && !scan.isPartial)
+        let picker = FolderPickerModel(initialDirectory: root)
+        func waitUntil(_ done: () -> Bool) {
+            let deadline = Date().addingTimeInterval(8)
+            while !done() && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        picker.navigate(to: relative); waitUntil { !picker.isLoading }
+        check("应用内目录选择器可进入相对链接并更新真实路径", picker.errorMessage == nil && picker.directory.path == target.path && picker.pathText == target.path)
+        picker.cancelLoading()
+        let engine = FSEngine(); engine.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engine, startDirectory: link)
+        waitUntil { !model.isBusy }
+        check("启动目录为符号链接时正常显示内容", model.errorMessage == nil && model.currentDirectory?.path == target.path && model.items.contains { $0.name == "sample.txt" })
+        check("地址栏与导航选择同步为真实目标", { if case .folder(let directory) = model.selection { return directory.path == target.path }; return false }())
+        let saved = SavedBrowserTab(model: model)
+        check("会话保存真实目录路径防止启动重复报错", saved.path == target.path)
+        var legacy = saved; legacy.path = chained.path
+        let restored = BrowserModel(engine: engine, startDirectory: nil)
+        legacy.apply(to: restored); waitUntil { !restored.isBusy }
+        check("旧会话中的链接路径也能恢复", restored.errorMessage == nil && restored.currentDirectory?.path == target.path && restored.items.contains { $0.name == "sample.txt" })
+        restored.selectFolder(root); waitUntil { !restored.isBusy }
+        restored.activate(directoryItem); waitUntil { !restored.isBusy }
+        check("双击目录链接在当前 WinFile 模型内进入", restored.errorMessage == nil && restored.currentDirectory?.path == target.path && restored.items.contains { $0.name == "sample.txt" })
+        restored.activate(brokenItem)
+        check("失效链接提示错误且保留当前浏览目录", restored.errorMessage == FSError.unavailableSymlink(broken).localizedDescription && restored.currentDirectory?.path == target.path && !restored.isBusy)
+        restored.selectFolder(relative); waitUntil { !restored.isBusy }
+        check("再次成功导航清除旧错误", restored.errorMessage == nil && restored.currentDirectory?.path == target.path)
+        restored.beginWatchingDirectory()
+        try Data("new".utf8).write(to: target.appendingPathComponent("new.txt"))
+        waitUntil { restored.items.contains { $0.name == "new.txt" } }
+        check("链接导航后监听真实目录的新增文件", restored.items.contains { $0.name == "new.txt" })
+        let manager = TabManager(engine: engine, startDirectory: root)
+        waitUntil { !manager.activeModel.isBusy }
+        manager.activeModel.openContainingFolder(of: link)
+        waitUntil { !manager.activeModel.isBusy }
+        check("新页签定位链接时只选中链接本身", manager.activeModel.selectedItems.map(\.name) == ["Directory Link"])
+        let output = root.appendingPathComponent("Output")
+        try fm.createDirectory(at: output, withIntermediateDirectories: false)
+        let copied = FileTransferService.transfer([directoryItem], to: output, mode: .copy, token: ScanCancellation(), onProgress: { _ in })
+        check("复制目录链接仍保留链接而不复制整个目标", copied.failures.isEmpty && (try? fm.destinationOfSymbolicLink(atPath: output.appendingPathComponent("Directory Link").path)) == target.path)
+        let legacyCopy = try FSEngine.transfer([directoryItem], to: target, mode: .copy)
+        check("旧复制入口不会把目录链接误判为递归复制", legacyCopy.count == 1 && (try? fm.destinationOfSymbolicLink(atPath: legacyCopy[0].path)) == target.path)
+        let renamed = try FSEngine.rename(directoryItem, to: "Renamed Link")
+        check("重命名链接不会重命名目标目录", fm.fileExists(atPath: target.path) && (try? fm.destinationOfSymbolicLink(atPath: renamed.path)) == target.path && fm.fileExists(atPath: sample.path))
+    }
+
+    @MainActor
+    private static func testNativeSearch(_ sandbox: URL) throws {
+        print("\n== 原生搜索弹窗与筛选 ==")
+        let fm = FileManager.default
+        let root = sandbox.appendingPathComponent("NativeSearch")
+        let folder = root.appendingPathComponent("FolderAlpha")
+        let bundle = root.appendingPathComponent("Demo.app")
+        for url in [folder, bundle] { try fm.createDirectory(at: url, withIntermediateDirectories: true) }
+        for path in ["TopAlpha.PDF", "FolderAlpha/DeepAlpha.pdf", "Archive.zip", ".hiddenAlpha.pdf", "Demo.app/privateAlpha.pdf"] {
+            try Data("sample".utf8).write(to: root.appendingPathComponent(path))
+        }
+        try fm.createSymbolicLink(at: root.appendingPathComponent("linkedAlpha.pdf"), withDestinationURL: folder.appendingPathComponent("DeepAlpha.pdf"))
+        let pdf = FileSearchCriteria(extensions: ["pdf"])
+        let recursive = FileSystemService.searchReport(under: root, matching: "", criteria: pdf)
+        check("原生搜索按扩展名忽略大小写且不进入应用包或符号链接", Set(recursive.items.map(\.name)) == ["TopAlpha.PDF", "DeepAlpha.pdf"])
+        let shallow = FileSystemService.searchReport(under: root, matching: "", criteria: pdf, recursive: false)
+        check("不含子文件夹只搜索当前层且不报深度截断", shallow.items.map(\.name) == ["TopAlpha.PDF"] && !shallow.depthLimited)
+        let hidden = FileSystemService.searchReport(under: root, matching: "", showHidden: true, criteria: pdf)
+        check("原生搜索隐藏文件开关生效", hidden.items.count == 3 && hidden.items.contains { $0.name == ".hiddenAlpha.pdf" })
+        let folders = FileSystemService.searchReport(under: root, matching: "Alpha", criteria: FileSearchCriteria(foldersOnly: true))
+        check("原生搜索只查文件夹", folders.items.map(\.name) == ["FolderAlpha"])
+        let archives = FileSystemService.searchReport(under: root, matching: "", criteria: FileSearchCriteria(category: .archive))
+        check("原生搜索只查压缩包分类", archives.items.map(\.name) == ["Archive.zip"])
+        let combined = FileSystemService.searchReport(under: root, matching: "Alpha", criteria: FileSearchCriteria(minimumBytes: 7, extensions: ["pdf"]))
+        check("原生搜索名称类型与大小同时生效", combined.items.isEmpty)
+        check("扩展名输入支持点前缀中文分隔符且去重", FileSearchCriteria.parseExtensions(".PDF，zip; pdf JPG") == ["jpg", "pdf", "zip"])
+        let legacy = try JSONDecoder().decode(FileSearchCriteria.self, from: Data("{\"minimumBytes\":1}".utf8))
+        check("旧版搜索会话可解码且保留原条件", legacy.minimumBytes == 1 && legacy.foldersOnly == nil && legacy.extensions == nil)
+        let roundTrip = try JSONDecoder().decode(FileSearchCriteria.self, from: JSONEncoder().encode(pdf))
+        check("新增搜索条件可随会话往返", roundTrip == pdf)
+        var visited = 0
+        let progress = FileSystemService.searchReport(under: root, matching: "Alpha", progress: { visited = $0 })
+        check("搜索进度最终计数与扫描报告一致", visited == progress.visited && visited > 0)
+        var calls = 0
+        let stopped = FileSystemService.searchReport(under: root, matching: "Alpha", cancelled: { calls += 1; return calls > 4 })
+        check("扫描中途取消有明确标志且停止遍历", stopped.cancelled && stopped.visited < progress.visited)
+        check("搜索请求拒绝网络地址与空条件", !FileSearchRequest(root: URL(string: "https://example.com")!, query: "x").isValid && !FileSearchRequest(root: root, query: "  ").isValid)
+        let many = root.appendingPathComponent("Many")
+        try fm.createDirectory(at: many, withIntermediateDirectories: true)
+        for i in 0..<450 { try Data().write(to: many.appendingPathComponent("entry-\(i).pdf")) }
+        func wait(_ model: FileSearchModel) {
+            let deadline = Date().addingTimeInterval(10)
+            while model.isSearching && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        let model = FileSearchModel()
+        let request = FileSearchRequest(root: many, query: "entry-")
+        model.search(request); wait(model)
+        check("弹窗搜索初始限制且可扩大扫描", !model.isSearching && model.report.items.count == 400 && model.report.limitReached && model.canExpand)
+        model.expand(); wait(model)
+        check("扩大扫描保留条件并找全结果", model.request == request && model.report.items.count == 450 && !model.report.isPartial)
+        model.search(request)
+        model.search(FileSearchRequest(root: root, query: "TopAlpha")); wait(model)
+        check("连续搜索丢弃上一轮结果与进度", model.report.items.map(\.name) == ["TopAlpha.PDF"] && model.visited < 500)
+        model.search(request); model.stop(); wait(model)
+        check("弹窗停止扫描并可重新扫描", model.report.cancelled && !model.isSearching && model.canExpand)
+        model.search(FileSearchRequest(root: root.appendingPathComponent("missing"), query: "x")); wait(model)
+        check("弹窗显示无法读取的范围提示", model.error != nil && model.report.inaccessibleCount == 1)
+        model.search(request); model.close()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        check("关闭弹窗后扫描不回写结果", !model.isSearching && model.report.items.isEmpty && model.visited == 0)
     }
 
     @MainActor

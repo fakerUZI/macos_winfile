@@ -151,6 +151,10 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .winFileOpenFolder)) { _ in
             openFolderPanel()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .winFileSearch)) { notification in
+            guard let manager = notification.object as? TabManager, manager === tabManager else { return }
+            dialog = .advancedSearch
+        }
         .onReceive(NotificationCenter.default.publisher(for: .winFileGetInfo)) { _ in
             if model.isWeChatCleanupView { dialog = .getInfo } else { showInspector = true }
         }
@@ -171,7 +175,7 @@ struct MainView: View {
             case .batchRename(let items):
                 BatchRenameSheet(model: model, items: items)
             case .advancedSearch:
-                AdvancedSearchSheet(model: model)
+                AdvancedSearchSheet(model: model, initialQuery: searchText)
             case .duplicates:
                 DuplicateFilesSheet(model: model)
             case .rename(let item):
@@ -481,7 +485,7 @@ struct MainView: View {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     TextField(WLocalizedString("search.placeholder", comment: "搜索"), text: $searchText)
                         .textFieldStyle(.plain)
-                        .onSubmit { model.search(searchText) }
+                        .onSubmit { dialog = .advancedSearch }
                         .onChange(of: searchText) { newValue in
                             if newValue.isEmpty && !model.searchCriteria.isActive { model.clearSearch() }
                         }
@@ -578,6 +582,11 @@ struct MainView: View {
             .help(L("action.openFolder.help", "选择文件夹并打开（在新页签中）"))
         }
         ToolbarItemGroup(placement: .primaryAction) {
+            Button { dialog = .advancedSearch } label: {
+                Label(L("search.windowTitle", "搜索文件"), systemImage: "doc.text.magnifyingglass")
+            }
+            .help(L("search.windowTitle", "搜索文件") + " (⌘F)")
+            .accessibilityIdentifier("search.open")
             Button { model.openSelection() } label: {
                 Label(WLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
             }

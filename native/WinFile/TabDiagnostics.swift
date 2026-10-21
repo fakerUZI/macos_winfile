@@ -13,6 +13,30 @@ final class TabDiagnostics {
         String(describing: value)
     }
 
+    /// Keep the actionable error chain, without dumping arbitrary userInfo or file contents.
+    nonisolated static func fileErrorDetail(_ error: Error, operation: String, url: URL) -> String {
+        func singleLine(_ text: String) -> String {
+            text.replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\n", with: "\\n")
+        }
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = url.path == home ? "~" : url.path.hasPrefix(home + "/")
+            ? "~" + String(url.path.dropFirst(home.count)) : url.path
+        var parts = ["operation=\(singleLine(operation))", "path=\(singleLine(path))"]
+        var current: NSError? = error as NSError
+        var seen = Set<ObjectIdentifier>()
+        for depth in 0..<8 {
+            guard let entry = current, seen.insert(ObjectIdentifier(entry)).inserted else { break }
+            parts.append("error[\(depth)]=\(singleLine(entry.domain)) code=\(entry.code) message=\(singleLine(entry.localizedDescription))")
+            current = entry.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return parts.joined(separator: " | ")
+    }
+
+    func recordFileError(_ error: Error, operation: String, url: URL) {
+        record("filesystem.error", detail: Self.fileErrorDetail(error, operation: operation, url: url))
+    }
+
     /// 实时落盘的诊断文件（便于"你点几下、我读文件"这种协作排查）
     nonisolated static var liveURL: URL {
         let dir = FileManager.default.homeDirectoryForCurrentUser

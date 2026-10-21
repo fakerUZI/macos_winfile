@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-987%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1037%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,15 +42,17 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.3.1
+## What’s new in v1.3.2
 
-- **Baidu Netdisk downloads:** storage cleanup detects common download folders and supports a saved custom download location.
-- **WeChat attachments in General Cleanup:** reuse attachment detection and custom folders, keeping attachments separate from caches and protecting databases and other persistent data.
-- **Readable app sources:** source filters and rows use consistent application names. Helpers are grouped with their identified parent app; unresolved sources appear under Other Apps.
-- **Faster tab switching:** reuse the three most recent content views, preserve list scroll positions, coalesce refreshes and write diagnostics in the background. Menu commands follow the active tab in the current window.
-- **Inspector control:** the button to show or hide the right inspector now sits at the right of the top window toolbar.
+- **Native file search:** open WinFile’s dedicated search sheet with `⌘F`, the toolbar search button or Advanced Search. Choose the scope inside WinFile and combine name, entry kind, type, extension, size and modification date filters without launching Finder search.
+- **Search results:** stop or expand a limited scan, sort matches, double-click to open, copy paths, or locate a result in a new folder tab. Search reads names and metadata, not file contents.
+- **Symbolic link fixes:** browse directory links inside WinFile, enter them through the address bar and restore linked folder tabs. Links keep separate list identities from their targets; unavailable targets show an error, and copying or renaming still acts on the link itself.
+- **Better diagnostics:** directory-read and link-resolution failures record the operation, path, NSError domain/code and underlying error chain. Startup logs include app/build and macOS versions. Use **Help → Reveal Diagnostics Log** after reproducing an issue, and save a copy before restarting.
+- **Includes the previous cleanup and tab improvements:** Baidu Netdisk downloads, WeChat attachments in General Cleanup, readable application sources, cached tab views and the top-toolbar inspector control.
 
-See the [v1.3.1 release notes](docs/releases/v1.3.1.md) and [v1.3.0 release notes](docs/releases/v1.3.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+Symbolic link regressions pass locally. The original OrbStack failure on macOS 26 still needs confirmation from the reporter and is not claimed as resolved.
+
+See the [v1.3.2 release notes](docs/releases/v1.3.2.md) and [v1.3.1 release notes](docs/releases/v1.3.1.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -62,7 +64,7 @@ See the [v1.3.1 release notes](docs/releases/v1.3.1.md) and [v1.3.0 release note
 | **Path bar** | Breadcrumb of the current path; double-click to type. Supports `~`. Live suggestions while typing: `Tab` to complete, `↑↓` to move, `Enter` to go |
 | **Two views** | Detail table (sortable by name / date / type / size) and a large icon grid |
 | **Categories** | 15 types — images, video, music, documents, spreadsheets, presentations, PDF, archives, code, ebooks, design assets, databases, fonts, disk images, executables — each with a count badge |
-| **Search** | Recursive name search within the current folder |
+| **Search** | Dedicated native search sheet with an in-app scope picker, combined name/type/extension/size/date filters, cancellation and result location in a new tab |
 | **Languages** | Follows system language by default. Choose Simplified Chinese or English in Settings → General → Language; changes apply immediately and persist. Unsupported system languages fall back to English |
 | **Dark mode** | Uses system semantic colors throughout, follows the system automatically |
 
@@ -140,7 +142,7 @@ Drag the sidebar and inspector dividers to resize them; double-click to reset. P
 
 - The tab dropdown handles overflow while keeping the active tab visible. Pin tabs through their context menu or the dropdown. Reopen up to 20 recently closed tabs during the current run with the menu or `⌘⇧T`.
 - Sort order, view mode and hidden-file visibility are independent per tab. Session restore reapplies searches, size/date conditions, WeChat filters and pinned tabs. Up to 30 tabs are saved, including the active tab.
-- The filter button beside search, or **File Organization Tools → Advanced Search**, combines a filename with minimum/maximum sizes and modification dates. The filename is optional; dates include the whole selected day.
+- `⌘F`, the top toolbar search button, the filter button beside folder search, or **File Organization Tools → Advanced Search** opens a dedicated WinFile search sheet. Choose the scope in-app and combine names, entry kinds, categories, extensions, sizes and modification dates. Names are optional when filters are active; date ranges include the whole selected day. Search can be limited to the current level or include subfolders and hidden files. Results support sorting, double-click opening, path copying and location in a new tab without changing the original tab’s filters.
 - Select multiple local items and choose **Batch Rename** to preview replacements, prefixes, suffixes and numbering while preserving file extensions. Conflicts, invalid names and selections containing both folders and their contents are rejected. Existing files are never replaced; external conflicts trigger rollback attempts. Completed batches support `⌘Z` undo.
 - **Find Duplicate Files** groups candidates by size, then hashes their complete contents with SHA-256. Symbolic links, package contents and hard links to the same file are skipped. The initial limit is 200,000 entries; cancellation, limits, unreadable files and changed files are reported. Preview results or open their containing folders in new tabs. Nothing is deleted automatically; redundant size describes logical bytes.
 - WeChat storage cards and common filters remain visible. **Scan Details and Storage Breakdown** shows sources, access problems and type/month distributions. Click a group to filter it; the page also shows the last completed scan time.
@@ -250,7 +252,7 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
 
-v1.3.1 validation: **987 passing, 0 failures** in both the arm64 and x86_64/Rosetta app bundles, using `--skip-device-tests`. Physical Android device read/write tests are excluded. New regressions cover Baidu download folders, WeChat attachments and protected-data boundaries, source display and filtering, coalesced tab refreshes and inactive-model isolation. Native window checks cover table reuse across repeated switches, preserved scroll positions, cache bounds, command targets and the top-toolbar inspector button. See the [v1.3.1 release notes](docs/releases/v1.3.1.md).
+v1.3.2 validation: **1037 passing, 0 failures** in both the arm64 and x86_64/Rosetta app bundles, using `--skip-device-tests`. Physical Android device read/write tests are excluded. New regressions cover native search scopes, filters, cancellation and scan limits; symbolic link identity, navigation, session restoration, watching, copying and renaming; and bounded filesystem error chains without arbitrary userInfo data. Native tab-window regressions and symbolic link UI checks pass. See the [v1.3.2 release notes](docs/releases/v1.3.2.md).
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 
@@ -281,7 +283,9 @@ macos_winfile/
 │   │   ├── FileClipboard.swift         # shared tabs / system clipboard
 │   │   ├── FileTransferService.swift   # transfer progress, cancellation and results
 │   │   ├── FileOperationHistory.swift  # undo rename and move
-│   │   ├── FileSearchCriteria.swift    # size / date search conditions
+│   │   ├── FileSearchCriteria.swift    # type / extension / size / date search filters
+│   │   ├── FileSearchModel.swift       # independent search, progress, cancellation and limits
+│   │   ├── FileSearchSheet.swift       # native search sheet and result actions
 │   │   ├── BatchRenameService.swift    # batch rename preview, rollback and undo
 │   │   ├── DuplicateFileService.swift  # content hashes and duplicate groups
 │   │   ├── OrganizingSheets.swift      # file organizing tool sheets
