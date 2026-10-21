@@ -42,17 +42,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.3.2
+## What’s new in v1.3.3
 
-- **Native file search:** open WinFile’s dedicated search sheet with `⌘F`, the toolbar search button or Advanced Search. Choose the scope inside WinFile and combine name, entry kind, type, extension, size and modification date filters without launching Finder search.
-- **Search results:** stop or expand a limited scan, sort matches, double-click to open, copy paths, or locate a result in a new folder tab. Search reads names and metadata, not file contents.
-- **Symbolic link fixes:** browse directory links inside WinFile, enter them through the address bar and restore linked folder tabs. Links keep separate list identities from their targets; unavailable targets show an error, and copying or renaming still acts on the link itself.
-- **Better diagnostics:** directory-read and link-resolution failures record the operation, path, NSError domain/code and underlying error chain. Startup logs include app/build and macOS versions. Use **Help → Reveal Diagnostics Log** after reproducing an issue, and save a copy before restarting.
-- **Includes the previous cleanup and tab improvements:** Baidu Netdisk downloads, WeChat attachments in General Cleanup, readable application sources, cached tab views and the top-toolbar inspector control.
+- **Trimmed top-right toolbar:** only **Search** and **Sidebar** (show details) remain; the “Open”, “Open With” and “Reveal in Finder” buttons were removed to cut icon crowding and overlapping meaning.
+- **One magnifier, for search only:** the search button previously used document-plus-magnifier, which was hard to distinguish from the neighbouring magnifier; it is now a plain magnifier.
+- Nothing was lost: double-click to open files, right-click for Open and Open With, and use the context menu or inspector for Reveal in Finder.
+- UI-only change with no functional or data differences; settings, favorites, tabs and cleanup history are preserved.
 
-Symbolic link regressions pass locally. The original OrbStack failure on macOS 26 still needs confirmation from the reporter and is not claimed as resolved.
-
-See the [v1.3.2 release notes](docs/releases/v1.3.2.md) and [v1.3.1 release notes](docs/releases/v1.3.1.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.3.3 release notes](docs/releases/v1.3.3.md) and [v1.3.2 release notes](docs/releases/v1.3.2.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
