@@ -583,17 +583,13 @@ struct MainView: View {
         }
         ToolbarItemGroup(placement: .primaryAction) {
             Button { dialog = .advancedSearch } label: {
-                Label(L("search.windowTitle", "搜索文件"), systemImage: "doc.text.magnifyingglass")
+                // 放大镜是「搜索」的通用语义，工具栏上只保留这一处使用它
+                Label(L("search.windowTitle", "搜索文件"), systemImage: "magnifyingglass")
             }
             .help(L("search.windowTitle", "搜索文件") + " (⌘F)")
             .accessibilityIdentifier("search.open")
             Button { model.openSelection() } label: {
                 Label(WLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
-            }
-            .disabled(model.selectedIDs.isEmpty)
-
-            Button { model.revealSelection() } label: {
-                Label(WLocalizedString("action.reveal", comment: "在访达中显示"), systemImage: "magnifyingglass")
             }
             .disabled(model.selectedIDs.isEmpty)
 
