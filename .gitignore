@@ -14,6 +14,9 @@ docs/icon/AppIcon.icns
 # 发布打包产物（native/make_release.sh 生成）
 dist/
 
+# 官网构建产物（网站在 codex/website 分支）
+.site-build/
+
 # ===== 运行时数据 =====
 # 诊断日志等本机状态（不入库）
 *.log
