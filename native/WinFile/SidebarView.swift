@@ -114,6 +114,10 @@ struct SidebarView: View {
                 Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
                     .tag(SidebarSelection.appData)
 
+                Label(L("view.photoLibrary", "照片图库"), systemImage: "photo.on.rectangle")
+                    .foregroundStyle(.purple)
+                    .tag(SidebarSelection.photoLibrary)
+
                 AndroidSidebarSection()
             }
 

@@ -52,7 +52,7 @@ build_arch() {
   local arch="$1"
   /usr/bin/swiftc -swift-version 5 "$OPT" \
     -target "${arch}-apple-macos13.0" \
-    -framework AppKit -framework SwiftUI -framework Security \
+    -framework AppKit -framework SwiftUI -framework Security -framework Photos \
     -F "$SPARKLE_SDK" -framework Sparkle \
     -Xlinker -rpath -Xlinker '@executable_path/../Frameworks' \
     -o "$BUILD/$NAME-$arch" \

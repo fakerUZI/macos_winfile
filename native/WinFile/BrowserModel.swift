@@ -12,6 +12,8 @@ enum SidebarSelection: Hashable {
     case appData
     case weChatCleanup
     case storageCleanup
+    /// 照片图库（经 Photos 框架访问，不直接读图库文件）
+    case photoLibrary
     /// 安卓设备页（显示该设备的存储位置）
     case androidDevice(serial: String)
     case category(FileCategory)
@@ -251,6 +253,7 @@ final class BrowserModel: ObservableObject {
 
     // Keep the destination case for existing saved sessions and navigation history.
     var isWeChatCleanupView: Bool { selection == .weChatCleanup }
+    var isPhotoLibraryView: Bool { selection == .photoLibrary }
     var isCleanupView: Bool { isStorageCleanupView || isWeChatCleanupView }
     var cleanupSection: CleanupSection { isWeChatCleanupView ? .software : .general }
     var sidebarSelection: SidebarSelection? { isCleanupView ? .storageCleanup : selection }
@@ -298,6 +301,7 @@ final class BrowserModel: ObservableObject {
     var showsFileList: Bool {
         !isHomeView && !isThisPCView && !isAppDataView
             && !isAndroidDeviceView && !isApplicationsView && !isWeChatCleanupView && !isStorageCleanupView
+            && !isPhotoLibraryView
     }
 
     var supportsDirectorySearch: Bool {
@@ -367,6 +371,8 @@ final class BrowserModel: ObservableObject {
         case .storageCleanup: return L("cleanup.title", "空间清理")
         case .weChatCleanup:
             return L("cleanup.title", "空间清理")
+        case .photoLibrary:
+            return L("view.photoLibrary", "照片图库")
         case .androidDevice(let serial):
             return AndroidDeviceRegistry.shared.device(serial: serial)?.displayName
                 ?? L("view.androidDevice", "安卓设备")
@@ -425,6 +431,8 @@ final class BrowserModel: ObservableObject {
             loadAppData()
         case .weChatCleanup, .storageCleanup:
             loadCleanupPage()
+        case .photoLibrary:
+            loadPhotoLibraryPage()
         case .androidDevice(let serial):
             loadAndroidDevice(serial: serial)
         case .category(let category):
@@ -449,6 +457,7 @@ final class BrowserModel: ObservableObject {
         case .appData: return "应用数据"
         case .weChatCleanup: return "软件清理"
         case .storageCleanup: return "空间清理"
+        case .photoLibrary: return "照片图库"
         case .androidDevice(let serial): return "安卓设备:\(serial)"
         case .category(let c): return "分类:\(c.rawValue)"
         case .folder(let url): return "文件夹:\(url.lastPathComponent)"
@@ -704,6 +713,25 @@ final class BrowserModel: ObservableObject {
     }
 
     // MARK: - 此电脑（This PC）
+
+    /// 照片图库页：内容由 PhotoLibraryView 自行加载，这里只清理文件列表状态，
+    /// 避免空状态提示或旧目录内容叠加到页面上。
+    private func loadPhotoLibraryPage() {
+        listingTask?.cancel()
+        searchTask?.cancel()
+        categoryTask?.cancel()
+        homeTask?.cancel()
+        categoryFilter = nil
+        categoryResults = []
+        isLoadingCategory = false
+        isSearching = false
+        searchResults = []
+        currentDirectory = nil
+        items = []
+        fileSelectedIDs = []
+        isBusy = false
+        statusMessage = ""
+    }
 
     private func loadCleanupPage() {
         listingTask?.cancel()

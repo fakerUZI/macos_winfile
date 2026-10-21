@@ -32,6 +32,7 @@ final class WinFileTab: ObservableObject, Identifiable {
         case .appData: return "shippingbox.fill"
         case .storageCleanup: return "externaldrive.badge.minus"
         case .weChatCleanup: return "externaldrive.badge.minus"
+        case .photoLibrary: return "photo.on.rectangle"
         case .androidDevice: return "candybarphone"
         case .category(let category): return category.symbol
         case .folder(let url):

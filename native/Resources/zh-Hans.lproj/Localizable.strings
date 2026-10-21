@@ -1045,3 +1045,39 @@
 "search.invalidRange" = "请填写有效的非负大小，并确保起始大小和日期不晚于结束值。";
 
 "error.symlinkTarget" = "链接“%@”的目标不存在或无法访问。";
+
+/* 照片图库 */
+"view.photoLibrary" = "照片图库";
+"photo.albums" = "相册";
+"photo.album.all" = "所有照片";
+"photo.album.favorites" = "个人收藏";
+"photo.album.videos" = "视频";
+"photo.album.screenshots" = "截屏";
+"photo.album.untitled" = "未命名相册";
+"photo.checking" = "正在读取照片图库…";
+"photo.loading" = "正在加载照片…";
+"photo.empty" = "这个相册里没有照片。";
+"photo.count" = "%d 项";
+"photo.summary" = "共 %d 项";
+"photo.selected" = "已选 %d 项";
+"photo.selectAll" = "全选";
+"photo.selectNone" = "取消选择";
+"photo.select" = "选择";
+"photo.open" = "打开";
+"photo.refresh" = "刷新";
+"photo.permission.title" = "允许 WinFile 访问照片";
+"photo.permission.message" = "照片图库由系统统一管理，需要你授权后才能显示相册与照片。WinFile 只读取你选择的项目，不会修改图库。";
+"photo.permission.allow" = "允许访问";
+"photo.permission.deniedTitle" = "无法访问照片图库";
+"photo.permission.deniedMessage" = "请在「系统设置 → 隐私与安全性 → 照片」中允许 WinFile 访问，然后回到这里重新检查。";
+"photo.permission.openSettings" = "打开系统设置";
+"photo.permission.recheck" = "重新检查";
+"photo.export.selected" = "导出所选…";
+"photo.export.choose" = "导出到此处";
+"photo.export.chooseHint" = "选择照片的导出位置";
+"photo.export.progress" = "已导出 %d / %d";
+"photo.export.done" = "已导出 %d 个文件到「%@」";
+"photo.export.partial" = "已导出 %d 个，%d 个失败：%@";
+"photo.error.noResource" = "这个项目没有可导出的原始文件。";
+"photo.error.write" = "导出失败：%@";
+"photo.error.empty" = "写入后文件不存在或为空。";
