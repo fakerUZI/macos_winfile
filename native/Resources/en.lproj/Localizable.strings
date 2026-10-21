@@ -1027,39 +1027,3 @@
 "search.invalidRange" = "Enter valid nonnegative sizes. Minimum size and start date must not exceed their end values.";
 
 "error.symlinkTarget" = "The target of “%@” does not exist or cannot be accessed.";
-
-/* Photo Library */
-"view.photoLibrary" = "Photo Library";
-"photo.albums" = "Albums";
-"photo.album.all" = "All Photos";
-"photo.album.favorites" = "Favorites";
-"photo.album.videos" = "Videos";
-"photo.album.screenshots" = "Screenshots";
-"photo.album.untitled" = "Untitled Album";
-"photo.checking" = "Reading the photo library…";
-"photo.loading" = "Loading photos…";
-"photo.empty" = "No photos in this album.";
-"photo.count" = "%d items";
-"photo.summary" = "%d items";
-"photo.selected" = "%d selected";
-"photo.selectAll" = "Select All";
-"photo.selectNone" = "Deselect";
-"photo.select" = "Select";
-"photo.open" = "Open";
-"photo.refresh" = "Refresh";
-"photo.permission.title" = "Allow WinFile to access your photos";
-"photo.permission.message" = "The photo library is managed by macOS. WinFile needs your permission to show albums and photos. It only reads what you pick and never modifies the library.";
-"photo.permission.allow" = "Allow Access";
-"photo.permission.deniedTitle" = "Can’t access the photo library";
-"photo.permission.deniedMessage" = "Allow WinFile under System Settings → Privacy & Security → Photos, then come back and check again.";
-"photo.permission.openSettings" = "Open System Settings";
-"photo.permission.recheck" = "Check Again";
-"photo.export.selected" = "Export Selected…";
-"photo.export.choose" = "Export Here";
-"photo.export.chooseHint" = "Choose where to export the photos";
-"photo.export.progress" = "Exported %d of %d";
-"photo.export.done" = "Exported %d files to “%@”";
-"photo.export.partial" = "Exported %d, %d failed: %@";
-"photo.error.noResource" = "This item has no exportable original file.";
-"photo.error.write" = "Export failed: %@";
-"photo.error.empty" = "The file is missing or empty after writing.";

@@ -112,7 +112,6 @@ enum NativeTestSuite {
             try testWeChatCleanup(sandbox)
             try testWeChatFileActions(sandbox)
             try testWeChatPagination(sandbox)
-            try testPhotoExportNaming(sandbox)
             testFileErrorDiagnostics()
             try testSymbolicLinkBrowsing(sandbox)
             try testNativeSearch(sandbox)
@@ -1199,53 +1198,7 @@ enum NativeTestSuite {
         check("微信清理页签标题正确", tab.title == L("cleanup.title", "空间清理"))
     }
 
-    /// 照片导出命名：同名不覆盖、无扩展名与空名称的兜底
-    @MainActor
-    private static func testPhotoExportNaming(_ sandbox: URL) throws {
-        print("\n\n[照片导出命名]")
-
-        let directory = sandbox.appendingPathComponent("photo-export")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-
-        let first = PhotoExportNaming.uniqueURL(in: directory, preferredName: "IMG_0001.HEIC")
-        check("无冲突时沿用原始文件名", first.lastPathComponent == "IMG_0001.HEIC",
-              first.lastPathComponent)
-        try Data().write(to: first)
-
-        let second = PhotoExportNaming.uniqueURL(in: directory, preferredName: "IMG_0001.HEIC")
-        check("同名文件追加序号", second.lastPathComponent == "IMG_0001 2.HEIC",
-              second.lastPathComponent)
-        try Data().write(to: second)
-
-        let third = PhotoExportNaming.uniqueURL(in: directory, preferredName: "IMG_0001.HEIC")
-        check("再次冲突继续递增", third.lastPathComponent == "IMG_0001 3.HEIC",
-              third.lastPathComponent)
-
-        let noExtFirst = PhotoExportNaming.uniqueURL(in: directory, preferredName: "README")
-        check("无扩展名时保留原名", noExtFirst.lastPathComponent == "README")
-        try Data().write(to: noExtFirst)
-        let noExtSecond = PhotoExportNaming.uniqueURL(in: directory, preferredName: "README")
-        check("无扩展名冲突追加序号", noExtSecond.lastPathComponent == "README 2",
-              noExtSecond.lastPathComponent)
-
-        let blank = PhotoExportNaming.uniqueURL(in: directory, preferredName: "   ")
-        check("空名称回退为 Photo", blank.lastPathComponent == "Photo", blank.lastPathComponent)
-
-        let dated = PhotoExportNaming.datedName(for: Date(timeIntervalSince1970: 0),
-                                               extension: "jpg", index: 0)
-        let pattern = "^Photo-\\d{8}-\\d{6}\\.jpg$"
-        check("按时间生成名称格式正确",
-              dated.range(of: pattern, options: .regularExpression) != nil, dated)
-
-        let numbered = PhotoExportNaming.datedName(for: Date(timeIntervalSince1970: 0),
-                                                  extension: "mov", index: 2)
-        check("生成名称包含序号", numbered.contains("-3.mov"), numbered)
-
-        // 已有文件不能被覆盖
-        let existing = try String(contentsOf: first, encoding: .utf8)
-        check("原名文件未被后续计算覆盖", existing.isEmpty)
-    }
-
+    /// 微信清理分页：排序全局生效、翻页正确、筛选重置页码、选择跨页保留
     @MainActor
     private static func testWeChatPagination(_ sandbox: URL) throws {
         print("\n\n[微信清理分页]")

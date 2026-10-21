@@ -19,7 +19,6 @@ struct TabContentHost: View {
     static func renderedKind(for model: BrowserModel) -> String {
         if model.isStorageCleanupView { return "storageCleanup" }
         if model.isWeChatCleanupView { return "wechatCleanup" }
-        if model.isPhotoLibraryView { return "photoLibrary" }
         if model.isHomeView { return "home" }
         if model.isThisPCView { return "thisPC" }
         if model.isCategoryView { return "category:\(model.categoryFilter?.rawValue ?? "")" }
@@ -45,8 +44,6 @@ struct TabContentHost: View {
                 HomeView(engine: engine, manager: manager, tabModel: model)
             } else if model.isThisPCView, let manager = model.tabManager {
                 ThisPCView(engine: engine, manager: manager, tabModel: model)
-            } else if model.isPhotoLibraryView {
-                PhotoLibraryView()
             } else if model.isCleanupView {
                 CleanupHubView(model: model, dialog: $dialog)
             } else if model.isAppDataView {

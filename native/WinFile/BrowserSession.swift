@@ -32,7 +32,6 @@ struct SavedBrowserTab: Codable {
         case .applications: kind = "applications"
         case .appData: kind = "appData"
         case .weChatCleanup, .storageCleanup: kind = "storageCleanup"
-        case .photoLibrary: kind = "photoLibrary"
         default: kind = "home"
         }
     }
@@ -64,7 +63,6 @@ struct SavedBrowserTab: Codable {
         case "appData": return .appData
         case "wechat": return .weChatCleanup
         case "storageCleanup": return cleanupSection == .software ? .weChatCleanup : .storageCleanup
-        case "photoLibrary": return .photoLibrary
         default: return .home
         }
     }

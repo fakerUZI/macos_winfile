@@ -166,7 +166,6 @@ enum TabSmokeTest {
             case .appData: view = "应用数据"
             case .storageCleanup: view = "空间清理"
             case .weChatCleanup: view = "软件清理"
-            case .photoLibrary: view = "照片图库"
             case .androidDevice: view = "安卓设备"
             case .category(let c): view = "分类:\(c.rawValue)"
             case .folder(let url): view = "文件夹:\(url.lastPathComponent)"

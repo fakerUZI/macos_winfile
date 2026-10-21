@@ -56,7 +56,7 @@ struct MainView: View {
     /// 三栏布局：侧边栏 / 内容（含页签栏）/ 详细信息
     private var splitLayout: some View {
         GeometryReader { geometry in
-            let inspectorVisible = showInspector && !model.isWeChatCleanupView && !model.isStorageCleanupView && !model.isPhotoLibraryView
+            let inspectorVisible = showInspector && !model.isWeChatCleanupView && !model.isStorageCleanupView
             let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
                                            inspector: inspectorWidth, showsInspector: inspectorVisible)
             HStack(spacing: 0) {
@@ -588,7 +588,7 @@ struct MainView: View {
             }
             .help(L("search.windowTitle", "搜索文件") + " (⌘F)")
             .accessibilityIdentifier("search.open")
-            if !model.isWeChatCleanupView && !model.isStorageCleanupView && !model.isPhotoLibraryView {
+            if !model.isWeChatCleanupView && !model.isStorageCleanupView {
                 Button { showInspector.toggle() } label: {
                     Label(WLocalizedString("action.toggleInspector", comment: "显示详细信息"),
                           systemImage: "sidebar.right")

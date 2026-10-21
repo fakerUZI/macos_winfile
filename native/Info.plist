@@ -36,8 +36,6 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>本地文件管理器，仅在本机运行</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>WinFile 需要访问照片图库，以便显示相册、照片和视频，并在你选择时导出原始文件。</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
