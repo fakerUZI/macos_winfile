@@ -588,18 +588,6 @@ struct MainView: View {
             }
             .help(L("search.windowTitle", "搜索文件") + " (⌘F)")
             .accessibilityIdentifier("search.open")
-            Button { model.openSelection() } label: {
-                Label(WLocalizedString("action.open", comment: "打开"), systemImage: "arrow.up.forward.app")
-            }
-            .disabled(model.selectedIDs.isEmpty)
-
-            Button {
-                if let item = model.selectedItems.first { dialog = .openWith(item) }
-            } label: {
-                Label(WLocalizedString("action.openWith", comment: "打开方式"), systemImage: "square.grid.2x2.fill")
-            }
-            .disabled(model.selectedCount != 1)
-
             if !model.isWeChatCleanupView && !model.isStorageCleanupView {
                 Button { showInspector.toggle() } label: {
                     Label(WLocalizedString("action.toggleInspector", comment: "显示详细信息"),
