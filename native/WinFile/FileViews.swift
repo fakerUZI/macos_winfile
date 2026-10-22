@@ -221,7 +221,7 @@ struct FileTableView: View {
                     guard row >= 0, row < model.displayedItems.count else { return }
                     let item = model.displayedItems[row]
                     model.selectedIDs = [item.id]
-                    // 安卓条目需要用 adb 打开（本地 FileManager 不适用）
+                    // 安卓条目需要用 MTP 打开（本地 FileManager 不适用）
                     if AndroidURL.isAndroid(item.url) {
                         if let entry = model.androidEntries.first(where: { $0.path == item.url.path }) {
                             model.activateAndroid(entry)
@@ -589,7 +589,7 @@ struct FileItemContextMenu: View {
             }
             .disabled(alreadyAdded)
         }
-        if !model.isAndroidPath {
+        if !model.isAndroidPath || !model.selectedAndroidEntries.filter({ !$0.isDirectory }).isEmpty {
             Button(L("action.quickLook", "快速预览")) { model.previewSelection() }
         }
         // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
@@ -650,7 +650,7 @@ struct FileItemContextMenu: View {
             }
         }
         Divider()
-        // 压缩与解压（安卓路径不适用，走 adb 无对应能力）
+        // 压缩与解压（安卓路径不适用，走 MTP 无对应能力）
         if !model.isAndroidPath {
             if model.canExtract {
                 Button(model.currentDirectory == nil ? L("action.extractBeside", "解压到所在文件夹") : L("action.extractHere", "解压到当前文件夹")) { model.extractSelection() }

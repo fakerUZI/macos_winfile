@@ -52,13 +52,15 @@ CORE=(
   "$SRC/LayoutPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"
+  "$ROOT/native/WinFileTests/AndroidProbe.swift"
   $(find "$SRC/Android" -name "*.swift" | sort)
 )
 
 echo "== 1) 命令行测试 =="
+"$ROOT/native/build_mtp_helper.sh" >/dev/null
 /usr/bin/swiftc -swift-version 5 "$OPT" \
   -target arm64-apple-macos13.0 \
-  -framework AppKit -framework SwiftUI \
+  -framework AppKit -framework SwiftUI -framework AVFoundation -framework AVKit \
   -o "$BUILD/WinFileTests" \
   "${CORE[@]}" \
   "$ROOT/native/WinFileTests/NativeTestSuite.swift" \

@@ -1,30 +1,22 @@
-// Android 设备访问（通过 adb）
-//
-// 背景：macOS 不支持原生访问 Android 文件（MTP 无系统支持），
-// 因此安卓相关功能只能通过 adb 命令行工具实现。
-// 这是本项目唯一使用子进程的地方，仅作用于安卓设备，
-// 本地文件仍走纯原生 FileManager/URL 通道。
 import Foundation
+import CryptoKit
 
-/// 一台安卓设备
+/// Identity and storage information supplied exclusively by the MTP session.
 struct AndroidDevice: Identifiable, Hashable {
     let serial: String
     var model: String
-    var product: String
-    var device: String
-    var state: String          // device / unauthorized / offline
-    var androidVersion: String
+    var state: String  // device / locked / unavailable
     var transportID: String
-
+    var storages: [MTPStorage] = []
     var id: String { serial }
-
-    /// 展示名称：优先机型，其次序列号
-    var displayName: String {
-        let name = model.isEmpty ? product : model
-        let cleaned = name.replacingOccurrences(of: "_", with: " ")
-        return cleaned.isEmpty ? serial : cleaned
-    }
-
+    var displayName: String { model.isEmpty ? serial : model }
     var isReady: Bool { state == "device" }
-    var isUnauthorized: Bool { state == "unauthorized" }
+    var needsFileTransfer: Bool { !isReady }
+    var hasTemporaryIdentity: Bool { !isReady && serial == transportID }
+    var diagnosticID: String {
+        SHA256.hash(data: Data(serial.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+    }
+    var diagnosticSummary: String {
+        "id=\(diagnosticID) usb=\(transportID) state=\(state) storages=\(storages.map { String($0.id) }.joined(separator: ","))"
+    }
 }

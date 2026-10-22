@@ -224,12 +224,8 @@ struct AndroidSidebarSection: View {
 
     private func subtitle(for device: AndroidDevice) -> String {
         if !device.isReady {
-            return device.isUnauthorized
-                ? L("android.state.unauthorized", "待授权")
-                : device.state
+            return L("android.mtp.waiting", "等待文件传输就绪")
         }
-        return device.androidVersion.isEmpty
-            ? device.serial
-            : "Android \(device.androidVersion)"
+        return "MTP"
     }
 }

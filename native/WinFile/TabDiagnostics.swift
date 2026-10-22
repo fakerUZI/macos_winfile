@@ -39,8 +39,9 @@ final class TabDiagnostics {
 
     /// 实时落盘的诊断文件（便于"你点几下、我读文件"这种协作排查）
     nonisolated static var liveURL: URL {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".winfile-mac")
+        let dir = CommandLine.arguments.contains("--run-tests")
+            ? FileManager.default.temporaryDirectory.appendingPathComponent("WinFileTests-\(ProcessInfo.processInfo.processIdentifier)")
+            : FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".winfile-mac")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("tab-diagnostics.log")
     }
@@ -48,9 +49,33 @@ final class TabDiagnostics {
     private var entries: [String] = []
     private let formatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
         return f
     }()
+
+    /// Keep bounded history so restarting during diagnosis does not erase the failure.
+    nonisolated static func rotateLog(at url: URL, historyCount: Int = 3) {
+        guard historyCount > 0 else { return }
+        let fm = FileManager.default
+        func archive(_ index: Int) -> URL {
+            url.deletingPathExtension().appendingPathExtension("\(index).log")
+        }
+        for index in stride(from: historyCount, through: 1, by: -1) {
+            let source = index == 1 ? url : archive(index - 1)
+            guard fm.fileExists(atPath: source.path) else { continue }
+            let target = archive(index)
+            try? fm.removeItem(at: target)
+            try? fm.moveItem(at: source, to: target)
+        }
+    }
+
+    func beginSession() {
+        Self.diskQueue.sync { Self.rotateLog(at: Self.liveURL) }
+    }
+
+    nonisolated static func recordTransport(_ event: String, detail: String) {
+        Task { @MainActor in shared.record(event, detail: detail) }
+    }
 
     func record(_ event: String, detail: String = "") {
         let line = "[\(formatter.string(from: Date()))] \(event)\(detail.isEmpty ? "" : " | \(detail)")"
@@ -66,6 +91,8 @@ final class TabDiagnostics {
     private nonisolated static func appendLineToDisk(_ line: String) {
         let url = TabDiagnostics.liveURL
         guard let data = (line + "\n").data(using: .utf8) else { return }
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+        if size >= 2 * 1024 * 1024 { rotateLog(at: url) }
         if let handle = try? FileHandle(forWritingTo: url) {
             handle.seekToEndOfFile()
             handle.write(data)
@@ -84,7 +111,13 @@ final class TabDiagnostics {
 
     func clearPersistedLog() {
         entries.removeAll()
-        Self.diskQueue.async { try? FileManager.default.removeItem(at: Self.liveURL) }
+        Self.diskQueue.async {
+            let url = Self.liveURL
+            try? FileManager.default.removeItem(at: url)
+            for index in 1...3 {
+                try? FileManager.default.removeItem(at: url.deletingPathExtension().appendingPathExtension("\(index).log"))
+            }
+        }
         record("diagnostics.cleared")
     }
 

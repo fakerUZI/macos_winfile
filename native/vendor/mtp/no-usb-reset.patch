@@ -1,0 +1,14 @@
+--- a/src/libusb1-glue.c
++++ b/src/libusb1-glue.c
+@@ -2099,7 +2099,10 @@
+     clear_stall(ptp_usb);
+     libusb_release_interface(ptp_usb->handle, (int) ptp_usb->interface);
+   }
+-  if (FLAG_FORCE_RESET_ON_CLOSE(ptp_usb)) {
++  /* WinFile modification, 2026-10-22: closing a short-lived file session
++   * must not reset the entire composite USB device. CloseSession and
++   * release_interface above still run. */
++  if (0 && FLAG_FORCE_RESET_ON_CLOSE(ptp_usb)) {
+     /*
+      * Some devices really love to get reset after being
+      * disconnected. Again, since Windows never disconnects

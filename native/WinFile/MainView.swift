@@ -138,7 +138,9 @@ struct MainView: View {
             }
 
             // 后台扫描安卓设备（不阻塞界面，检测到后侧边栏自动出现入口）
-            Task { await AndroidDeviceRegistry.shared.refresh() }
+            if !CommandLine.arguments.contains("--skip-device-tests") {
+                AndroidDeviceRegistry.shared.startMonitoring()
+            }
 
             guard !skipAutoNavigation else { return }
             let current = model

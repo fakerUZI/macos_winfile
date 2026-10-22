@@ -6,6 +6,7 @@
 import AppKit
 import Combine
 import Foundation
+import AVFoundation
 
 @MainActor
 final class TestReporter {
@@ -89,6 +90,8 @@ enum NativeTestSuite {
             try testNewTabUsable()
             testRowAreaRightClick()
             testAndroidParsing()
+            try testAndroidLiveAndOpening(sandbox)
+            try testAndroidStreaming(sandbox)
             testAndroidDevice()
             testAndroidBrowsing()
             testCustomPagesNotReportedEmpty()
@@ -1503,10 +1506,6 @@ enum NativeTestSuite {
         let partial = FileSystemService.directorySize(sizes, limit: 1)
         check("目录大小达到上限标注部分统计", !partial.isComplete && partial.files == 1)
         check("目录统计可取消", !FileSystemService.directorySize(sizes, cancelled: { true }).isComplete)
-        let malformed = AndroidEntry.parseListOutput("-rw-r--r-- 1 user 1 2026-10-18", parent: "/tmp")
-        check("安卓异常列数不会越界崩溃", malformed.isEmpty)
-        let short = AndroidEntry.parseListOutput("-rw-r--r-- 1 user 1 2026-10-18 12:00 note.txt", parent: "/tmp")
-        check("安卓缺失用户组列仍可解析", short.first?.name == "note.txt")
         check("本地删除菜单准确描述废纸篓", a.deleteActionTitle == L("action.moveToTrash", "移到废纸篓"))
     }
 
@@ -2628,51 +2627,468 @@ enum NativeTestSuite {
     // MARK: - 安卓目录解析
 
     @MainActor
+    static func testAndroidLiveAndOpening(_ sandbox: URL) throws {
+        print("\n== 安卓热插拔、传输取消与本机打开缓存 ==")
+        let ready = AndroidDevice(serial: "TEST", model: "Test Phone", state: "device", transportID: "1")
+        var locked = ready
+        locked.state = "locked"
+        let registry = AndroidDeviceRegistry()
+        registry.applySnapshot([ready])
+        check("插入 MTP 设备发布就绪状态", registry.devices.first?.isReady == true)
+        registry.applySnapshot([locked])
+        check("锁屏或文件传输未允许状态更新", registry.devices.first?.needsFileTransfer == true)
+        registry.applySnapshot([])
+        check("拔出设备清除侧栏设备与存储", registry.devices.isEmpty && registry.storageRoots.isEmpty)
+        registry.applySnapshot([ready, ready])
+        check("重复序列号只产生一个设备入口", registry.devices.count == 1)
+        check("连接提示要求文件传输", !BrowserModel.androidConnectionMessage(locked).isEmpty)
+
+        let pendingRegistry = AndroidDeviceRegistry()
+        let pending = AndroidDevice(serial: "usb-A", model: "USB device", state: "unavailable", transportID: "usb-A")
+        let resolved = AndroidDevice(serial: "ACTUAL-A", model: "Tablet A", state: "device", transportID: "usb-A")
+        pendingRegistry.applySnapshot([pending])
+        let pendingPage = BrowserModel(engine: FSEngine(), startDirectory: nil, androidRegistry: pendingRegistry)
+        pendingPage.navigate(to: .androidDevice(serial: pending.serial))
+        pendingRegistry.applySnapshot([resolved])
+        check("首次未就绪设备读到真实序列号后更新当前设备页",
+              pendingPage.selection == .androidDevice(serial: resolved.serial))
+        check("临时设备身份升级不生成文件目录或传输",
+              pendingPage.currentDirectory == nil && pendingPage.transferProgress == nil)
+        let replacement = AndroidDevice(serial: "ACTUAL-B", model: "Tablet B", state: "device", transportID: "usb-A")
+        pendingRegistry.applySnapshot([replacement])
+        check("更换设备即使复用 USB 地址也不重定向旧设备页",
+              pendingPage.selection == .androidDevice(serial: resolved.serial))
+        pendingRegistry.applySnapshot([pending])
+        pendingPage.navigate(to: .androidDevice(serial: pending.serial))
+        var otherAttachment = replacement
+        otherAttachment.transportID = "usb-B"
+        pendingRegistry.applySnapshot([otherAttachment])
+        check("临时身份不绑定到另一条 USB 连接",
+              pendingPage.selection == .androidDevice(serial: pending.serial))
+        check("诊断设备标识不暴露原始序列号",
+              resolved.diagnosticID.count == 12 && !resolved.diagnosticSummary.contains(resolved.serial))
+
+        var readRequests: [String] = []
+        _ = try MTPRunner.reconnectingRead(operation: "list", transport: "old", refresh: { "new" }) { transport in
+            readRequests.append(transport)
+            if transport == "old" { throw MTPError.operation("noDevice") }
+            return MTPResult()
+        }
+        check("重连后元数据读取重新发现同序列号设备并只重试一次", readRequests == ["old", "new"])
+        for operation in ["list", "stat", "pull", "push", "rename", "move", "mkdir", "touch", "delete"] {
+            var requests = 0
+            var refreshed = false
+            do {
+                _ = try MTPRunner.reconnectingRead(operation: operation, transport: "old", refresh: {
+                    refreshed = true
+                    return nil // The original device was replaced by another serial.
+                }) { _ in
+                    requests += 1
+                    throw MTPError.operation("deviceChanged")
+                }
+                check("\(operation) 换设备后必须失败", false)
+            } catch {
+                check("\(operation) 不重定向到新设备，也不重放写入",
+                      requests == 1 && refreshed == ["list", "stat"].contains(operation))
+            }
+        }
+        for code in ["noDevice", "locked", "notFound"] {
+            var requests = 0
+            var refreshes = 0
+            do {
+                _ = try MTPRunner.reconnectingRead(operation: "stat", transport: "same", refresh: {
+                    refreshes += 1
+                    return "same"
+                }) { _ in
+                    requests += 1
+                    throw MTPError.operation(code)
+                }
+            } catch {}
+            check("\(code) 不盲目循环重试",
+                  requests == 1 && refreshes == (code == "noDevice" ? 1 : 0))
+        }
+        var retryFailures = 0
+        do {
+            _ = try MTPRunner.reconnectingRead(operation: "list", transport: "old", refresh: { "new" }) { _ in
+                retryFailures += 1
+                throw MTPError.operation("noDevice")
+            }
+        } catch {}
+        check("重新发现后仍失败最多执行两次读取", retryFailures == 2)
+
+        let rotationRoot = sandbox.appendingPathComponent("diagnostic-history")
+        try FileManager.default.createDirectory(at: rotationRoot, withIntermediateDirectories: true)
+        let rotationLog = rotationRoot.appendingPathComponent("tab-diagnostics.log")
+        for session in 1...5 {
+            try Data("session-\(session)".utf8).write(to: rotationLog)
+            TabDiagnostics.rotateLog(at: rotationLog)
+        }
+        let history = try FileManager.default.contentsOfDirectory(at: rotationRoot, includingPropertiesForKeys: nil)
+        check("诊断日志保留三个历史文件且自动淘汰最早记录", history.count == 3)
+        check("诊断重启历史保留最近一次失败上下文",
+              try String(contentsOf: rotationRoot.appendingPathComponent("tab-diagnostics.1.log")) == "session-5")
+        check("诊断轮换按会话顺序保留历史",
+              try String(contentsOf: rotationRoot.appendingPathComponent("tab-diagnostics.3.log")) == "session-3")
+
+        let libraryDiagnostics = MTPDiagnosticCodes()
+        libraryDiagnostics.append(Data("private-filename.jpg PTP Layer err".utf8))
+        libraryDiagnostics.append(Data("or 2002: Could not send object. libusb_claim_interface() = -3".utf8))
+        check("MTP 库诊断保留跨分块协议码和 USB 错误码",
+              libraryDiagnostics.summary.contains("ptp:2002") && libraryDiagnostics.summary.contains("claim:-3"))
+        check("MTP 库诊断不保留原始文件名或错误全文",
+              !libraryDiagnostics.summary.contains("private-filename") && !libraryDiagnostics.summary.contains("send object"))
+        libraryDiagnostics.append(Data("libusb_claim_interface() reports device is busy".utf8))
+        libraryDiagnostics.append(Data("Could not open session! (Return code 8194)".utf8))
+        check("MTP 库诊断区分设备占用和会话错误",
+              libraryDiagnostics.summary.contains("usbBusy") && libraryDiagnostics.summary.contains("session:8194"))
+        for value in 0..<100 { libraryDiagnostics.append(Data(String(format: "PTP Layer error %04x\n", value).utf8)) }
+        check("MTP 库错误码记录有数量上限", libraryDiagnostics.summary.split(separator: ",").count <= 18)
+
+        let events = MTPMonitorFixture(ready)
+        let watcher = AndroidDeviceMonitor(
+            onSnapshot: { events.record($0) }, onFailure: { _ in },
+            presence: { events.presence() }, scan: { events.scan() }, interval: 0.03, refreshInterval: 0.05)
+        watcher.start()
+        var eventDeadline = Date().addingTimeInterval(3)
+        while !events.last.contains(where: \.isReady) && Date() < eventDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        check("MTP 监听发现插入设备", events.last.first?.serial == ready.serial)
+        events.setConnected(false)
+        eventDeadline = Date().addingTimeInterval(3)
+        while !events.last.isEmpty && Date() < eventDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        check("MTP 拔出事件清除旧设备", events.last.isEmpty)
+        events.setConnected(true)
+        eventDeadline = Date().addingTimeInterval(3)
+        while events.last.isEmpty && Date() < eventDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        check("MTP 重连无需重启监听", events.last.first?.isReady == true)
+        var swapped = replacement
+        swapped.transportID = ready.transportID
+        events.setDevice(swapped)
+        eventDeadline = Date().addingTimeInterval(3)
+        while events.last.first?.serial != swapped.serial && Date() < eventDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        check("换设备复用同一 USB 地址也会重新读取序列号", events.last.map(\.serial) == [swapped.serial])
+        swapped.transportID = "new-usb-address"
+        events.setDevice(swapped)
+        eventDeadline = Date().addingTimeInterval(3)
+        while events.last.first?.transportID != swapped.transportID && Date() < eventDeadline { Thread.sleep(forTimeInterval: 0.01) }
+        check("换设备产生新 USB 地址时移除旧设备快照", events.last == [swapped])
+        watcher.stop()
+
+        var percentages: [Double?] = []
+        let records = MTPRecords(onProgress: { percentages.append($0) })
+        records.append(Data("{\"progr".utf8))
+
+        records.append(Data("ess\":0.45}\n{\"progress\":1}\n{\"result\":{}}\n".utf8))
+        check("分块 MTP JSON 进度立即交付", percentages.compactMap { $0 } == [0.45, 1] && records.response != nil)
+        records.append(Data("{\"progress\":5}\n".utf8))
+        check("非法传输百分比被忽略", percentages.count == 2)
+        let progressToken = ScanCancellation(), progressStarted = Date()
+        do {
+            _ = try MTPRunner.execute(
+                executable: URL(fileURLWithPath: "/usr/bin/python3"),
+                arguments: [
+                    "-c", "import sys,time;sys.stdout.write('{\"progress\":0.45}\\n');sys.stdout.flush();time.sleep(5)",
+                ],
+                timeout: 3, cancellation: progressToken, onProgress: { _ in progressToken.cancel() })
+            check("MTP 短进度消息即时送达", false)
+        } catch is CancellationError { check("MTP 短进度消息即时送达", Date().timeIntervalSince(progressStarted) < 2) } catch {
+            check("MTP 短进度消息即时送达", false, error.localizedDescription)
+        }
+        let response = try MTPRunner.execute(
+            executable: URL(fileURLWithPath: "/usr/bin/python3"),
+            arguments: ["-c", "import sys;sys.stderr.write('e'*200000);sys.stdout.write('{\"result\":{}}\\n')"],
+            timeout: 5)
+        check("MTP 错误管道大量输出不阻塞正常响应", String(decoding: response, as: UTF8.self) == "{\"result\":{}}")
+        let token = ScanCancellation()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.15) { token.cancel() }
+        let started = Date()
+        do {
+            _ = try MTPRunner.execute(
+                executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["5"], timeout: 10, cancellation: token)
+            check("取消可终止没有输出的 MTP 子进程", false)
+        } catch is CancellationError { check("取消可终止没有输出的 MTP 子进程", Date().timeIntervalSince(started) < 3) } catch {
+            check("取消可终止没有输出的 MTP 子进程", false, error.localizedDescription)
+        }
+        do {
+            _ = try MTPRunner.execute(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["5"], timeout: 0.15)
+            check("MTP 超时真正终止子进程", false)
+        } catch MTPError.timeout { check("MTP 超时真正终止子进程", true) } catch {
+            check("MTP 超时真正终止子进程", false, error.localizedDescription)
+        }
+
+        let root = sandbox.appendingPathComponent("android-open-cache")
+        let data = Data("hello".utf8)
+        var downloads = 0
+        var version = AndroidFileRevision(size: 5, modified: 1)
+        let service = AndroidOpenService(
+            root: root, revision: { _ in version },
+            download: { _, target, _, progress in
+                downloads += 1
+                try data.write(to: target)
+                progress(1)
+            })
+        var entry = AndroidEntry(
+            name: "文件 ' 100%.txt", path: "/sdcard/文件 ' 100%.txt", isDirectory: false,
+            size: 0, modified: nil, serial: "TEST")
+        let cached = try service.prepare(entry, cancellation: ScanCancellation())
+        check(
+            "安卓文件完整下载为保留原文件名的本机 URL",
+            cached.isFileURL && cached.lastPathComponent == entry.name && (try? Data(contentsOf: cached)) == data)
+        let repeatURL = try service.prepare(entry, cancellation: ScanCancellation())
+        check("相同设备路径与版本重复打开复用缓存", repeatURL == cached && downloads == 1)
+        let permissions =
+            (try FileManager.default.attributesOfItem(atPath: cached.path)[.posixPermissions] as? NSNumber)?.intValue
+            ?? 0
+        check("打开缓存副本只读", permissions & 0o222 == 0)
+        entry.serial = "SECOND"
+        let other = try service.prepare(entry, cancellation: ScanCancellation())
+        check("不同设备同路径不共享副本", other != cached && downloads == 2)
+        entry.serial = "TEST"
+        version = AndroidFileRevision(size: 5, modified: 2)
+        let changed = try service.prepare(entry, cancellation: ScanCancellation())
+        check(
+            "远端修改后重新下载且保留已打开的旧副本",
+            changed != cached && downloads == 3 && FileManager.default.fileExists(atPath: cached.path))
+        var malicious = entry
+
+        malicious = AndroidEntry(
+            name: "../escape", path: "/sdcard/escape", isDirectory: false,
+            size: 5, modified: nil, serial: "TEST")
+        check("缓存拒绝越界或不一致的文件名", !AndroidOpenService.valid(malicious))
+        let cancelled = ScanCancellation()
+        cancelled.cancel()
+        do {
+            _ = try service.prepare(entry, cancellation: cancelled)
+            check("取消后不读取缓存或发起下载", false)
+        } catch is CancellationError { check("取消后不读取缓存或发起下载", downloads == 3) }
+
+        for scenario in ["partial", "changed", "cancelled", "failed"] {
+            let brokenRoot = sandbox.appendingPathComponent("android-open-" + scenario)
+            var reads = 0
+            let broken = AndroidOpenService(
+                root: brokenRoot,
+                revision: { _ in
+                    reads += 1
+                    return AndroidFileRevision(size: 5, modified: scenario == "changed" && reads > 1 ? 2 : 1)
+                },
+                download: { _, destination, cancellation, _ in
+                    try (scenario == "partial" ? Data("hi".utf8) : data).write(to: destination)
+                    if scenario == "cancelled" { cancellation.cancel() }
+                    if scenario == "failed" { throw MTPError.noDevice }
+                })
+            do {
+                _ = try broken.prepare(entry, cancellation: ScanCancellation())
+                check("\(scenario) 不提交不完整缓存", false)
+            } catch {
+                let remains =
+                    (try? FileManager.default.contentsOfDirectory(at: brokenRoot, includingPropertiesForKeys: nil))
+                    ?? []
+                check("\(scenario) 不提交不完整缓存并清理暂存", remains.isEmpty)
+            }
+        }
+
+        func spin(_ done: () -> Bool) {
+            let until = Date().addingTimeInterval(5)
+            while !done() && Date() < until { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        var opened: [URL] = []
+        var wasPreview = false
+        let model = BrowserModel(
+            engine: FSEngine(), startDirectory: nil, androidRegistry: registry, androidOpenService: service,
+            androidOpenHandler: { urls, preview in
+                opened = urls
+                wasPreview = preview
+            })
+        model.activateAndroid(entry)
+        check("双击安卓文件立即显示可取消下载状态", model.isOpeningAndroidFile && model.transferProgress?.direction == .open)
+        spin { !model.isOpeningAndroidFile }
+        check("双击最终仅向打开器交付本机文件", opened == [changed] && model.errorMessage == nil)
+        opened = []
+        model.openAndroidFiles([entry], preview: true)
+        spin { !model.isOpeningAndroidFile }
+        check("安卓空格预览复用下载流程", opened == [changed] && wasPreview)
+        opened = []
+        model.openAndroidFiles([entry])
+        registry.applySnapshot([])
+        spin { !model.isOpeningAndroidFile }
+        check("下载过程中断开设备不打开副本且释放进度", opened.isEmpty && model.transferProgress == nil)
+        version.identity = "attachment:65537:999"
+        let recreated = try service.prepare(entry, cancellation: ScanCancellation())
+        check("MTP 同名同大小同时间对象替换后不复用旧缓存", recreated != changed)
+        version = AndroidFileRevision(size: version.size, modified: 0, identity: version.identity)
+        let undated = try service.prepare(entry, cancellation: ScanCancellation())
+        let undatedAgain = try service.prepare(entry, cancellation: ScanCancellation())
+        check("设备不提供修改时间时不复用可能过期的缓存", undated != undatedAgain)
+    }
+
+    @MainActor
+    static func testAndroidStreaming(_ sandbox: URL) throws {
+        print("\n== MTP 视频按需读取与有界内存 ==")
+        let block = AndroidMediaReader.blockSize
+        let buffer = AndroidMediaBuffer(budget: block * 2)
+        var reads: [(Int64, Int)] = []
+        let size = Int64(6) * 1024 * 1024 * 1024
+        let reader = AndroidMediaReader(size: size, buffer: buffer) { offset, count, _ in
+            reads.append((offset, count))
+            return Data(repeating: UInt8((offset / Int64(block)) % 251), count: count)
+        }
+        let first = try reader.read(offset: 3, count: 11)
+        check("打开大视频只读取首个数据块", first == Data(repeating: 0, count: 11) && reads.count == 1 && reads[0].1 == block)
+        _ = try reader.read(offset: 20, count: 10)
+        check("重复读取复用内存，不重新传输", reads.count == 1)
+        let far = Int64(5) * 1024 * 1024 * 1024 + 7
+        let sought = try reader.read(offset: far, count: 13)
+        check("拖动进度支持超过 4 GiB 的 64 位偏移", reads.last?.0 == far - 7 && sought.count == 13)
+        let crossing = try reader.read(offset: Int64(block - 2), count: 4)
+        check("跨块读取返回准确字节", crossing == Data([0, 0, 1, 1]))
+        check("多个跳转后共享缓存不超过预算", buffer.byteCount <= block * 2)
+        let eof = try reader.read(offset: size - 3, count: 20)
+        check("末尾读取截断到实际文件长度", eof.count == 3)
+        check("EOF 不再访问设备", try reader.read(offset: size, count: 10).isEmpty)
+        for (offset, length) in [(Int64(-1), 1), (size + 1, 1), (Int64(0), block + 1), (Int64(0), -1)] {
+            let previous = reads.count
+            do { _ = try reader.read(offset: offset, count: length); check("无效范围被拒绝", false) }
+            catch { check("无效范围不发起设备传输", reads.count == previous) }
+        }
+        let other = AndroidMediaReader(size: size, buffer: buffer) { _, count, _ in Data(repeating: 99, count: count) }
+        check("同路径不同播放实例不混用内存数据", try other.read(offset: 0, count: 2) == Data([99, 99]))
+        reader.cancel()
+        check("关闭一个播放实例不删除另一个实例的缓存", buffer.byteCount == block)
+        other.cancel()
+        check("关闭全部播放后释放共享缓存", buffer.byteCount == 0)
+        do { _ = try reader.read(offset: 0, count: 1); check("关闭后不能继续读取", false) }
+        catch is CancellationError { check("关闭后不能继续读取", true) }
+
+        var shortReads = 0
+        let short = AndroidMediaReader(size: 100, buffer: buffer) { _, count, _ in
+            shortReads += 1
+            return Data(repeating: 7, count: min(count, 13))
+        }
+        check("设备返回短块时补齐数据", try short.read(offset: 0, count: 100) == Data(repeating: 7, count: 100) && shortReads == 8)
+        short.cancel()
+        let broken = AndroidMediaReader(size: 100, buffer: buffer) { _, _, _ in Data() }
+        do { _ = try broken.read(offset: 0, count: 10); check("异常空数据不能视为完整视频", false) }
+        catch { check("异常空数据不写入缓存", buffer.byteCount == 0) }
+        let cancelled = AndroidMediaReader(size: 100, buffer: buffer) { _, count, token in
+            token.cancel()
+            return Data(repeating: 1, count: count)
+        }
+        do { _ = try cancelled.read(offset: 0, count: 1); check("中途取消不发布数据", false) }
+        catch { check("中途取消不发布数据", buffer.byteCount == 0) }
+        let entered = DispatchSemaphore(value: 0), ended = DispatchSemaphore(value: 0)
+        let active = AndroidMediaReader(size: 100, buffer: buffer) { _, _, token in
+            entered.signal()
+            let deadline = Date().addingTimeInterval(2)
+            while !token.isCancelled && Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            throw CancellationError()
+        }
+        DispatchQueue.global().async {
+            _ = try? active.read(offset: 0, count: 1, requestCancellation: ScanCancellation())
+            ended.signal()
+        }
+        let started = entered.wait(timeout: .now() + 2) == .success
+        active.cancel()
+        check("关闭播放器向运行中的 MTP 读取传播取消", started && ended.wait(timeout: .now() + 1) == .success)
+        let requestToken = ScanCancellation()
+        requestToken.cancel()
+        let seekable = AndroidMediaReader(size: 100, buffer: buffer) { _, count, _ in Data(repeating: 8, count: count) }
+        _ = try? seekable.read(offset: 0, count: 1, requestCancellation: requestToken)
+        check("取消旧进度请求后新进度仍可读取", try seekable.read(offset: 20, count: 1) == Data([8]))
+        seekable.cancel()
+
+        let cacheRoot = sandbox.appendingPathComponent("video-must-not-download")
+        var downloads = 0, probes = 0
+        let oldCache = AndroidOpenService(root: cacheRoot, revision: { _ in probes += 1; throw AndroidOpenError.invalidFile }, download: { _, _, _, _ in downloads += 1 })
+        var calls: [Bool] = []
+        var unsupported = false
+        let registry = AndroidDeviceRegistry()
+        let video = AndroidEntry(name: "movie.MP4", path: "/storage-65537/movie.MP4", isDirectory: false, size: 100, modified: nil, serial: "TEST")
+        let model = BrowserModel(engine: FSEngine(), startDirectory: nil, androidRegistry: registry, androidOpenService: oldCache, androidVideoHandler: { _, preview, _ in
+            calls.append(preview)
+            if unsupported { throw MTPError.operation("unsupportedRead") }
+        })
+        func spin() {
+            let until = Date().addingTimeInterval(2)
+            while model.isOpeningAndroidFile && Date() < until { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+        }
+        model.activateAndroid(video)
+        check("双击视频显示准备播放而非下载", model.transferProgress?.direction == .stream)
+        spin()
+        model.openAndroidFiles([video], preview: true)
+        spin()
+        check("双击和空格视频预览统一使用流式路径", calls == [false, true])
+        unsupported = true
+        model.activateAndroid(video)
+        spin()
+        check("不支持流式播放时明确报错且不下载", model.errorMessage != nil && probes == 0 && downloads == 0)
+        check("视频打开不创建旧磁盘缓存目录", !FileManager.default.fileExists(atPath: cacheRoot.path))
+        let before = calls.count
+        model.openAndroidFiles([video, video])
+        spin()
+        check("批量视频不隐式改为完整下载", calls.count == before && probes == 0 && downloads == 0)
+
+        if !CommandLine.arguments.contains("--skip-device-tests"),
+           let fixturePath = ProcessInfo.processInfo.environment["WINFILE_MTP_STREAM_FIXTURE"] {
+            let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: fixturePath))) as! [String: String]
+            _ = try MTPRunner.scan()
+            let service = AndroidFileService(serial: fixture["serial"]!)
+            guard let entry = try service.stat(fixture["path"]!) else { throw MTPError.noDevice }
+            let descriptor = try AndroidMediaDescriptor.load(entry, cancellation: ScanCancellation())
+            let stats = MTPVideoReadStats()
+            let realReader = AndroidMediaReader(size: entry.size) { offset, count, token in
+                let bytes = try descriptor.read(offset: offset, count: count, cancellation: token)
+                stats.record(offset: offset, count: bytes.count)
+                return bytes
+            }
+            let resource = AndroidVideoResourceLoader(reader: realReader, filename: entry.name)
+            let asset = AVURLAsset(url: URL(string: "winfile-mtp-video://test/video.mp4")!)
+            asset.resourceLoader.setDelegate(resource, queue: resource.queue)
+            let item = AVPlayerItem(asset: asset)
+            item.preferredForwardBufferDuration = 2
+            let player = AVPlayer(playerItem: item)
+            func wait(_ done: () -> Bool, seconds: Double = 20) {
+                let until = Date().addingTimeInterval(seconds)
+                while !done() && Date() < until { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+            }
+            wait { item.status != .unknown }
+            check("真实 MTP 流式视频加载成功", item.status == .readyToPlay, item.error?.localizedDescription ?? "status=\(item.status.rawValue)")
+            player.play()
+            wait { player.currentTime().seconds > 0.5 || item.status == .failed }
+            check("完整视频未落盘即可开始播放", player.currentTime().seconds > 0.5, item.error?.localizedDescription ?? "time=\(player.currentTime().seconds)")
+            player.pause()
+            player.seek(to: CMTime(seconds: 8, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            wait { player.currentTime().seconds >= 7.9 || item.status == .failed }
+            check("真实 MTP 视频可拖动进度", player.currentTime().seconds >= 7.9)
+            check("分段读取没有传输整个填充视频", stats.bytes < entry.size && stats.bytes > 0 && stats.maxOffset > 32 * 1024 * 1024, "read=\(stats.bytes) file=\(entry.size) maxOffset=\(stats.maxOffset)")
+            print("  MTP 视频读取：\(stats.bytes) / \(entry.size) 字节，最远偏移 \(stats.maxOffset)，RAM 缓存 \(AndroidMediaBuffer.shared.byteCount) 字节")
+            check("真实播放共享 RAM 缓存遵守上限", AndroidMediaBuffer.shared.byteCount <= AndroidMediaBuffer.shared.budget)
+            player.pause()
+            resource.invalidate(error: MTPError.noDevice)
+            asset.cancelLoading()
+            player.replaceCurrentItem(with: nil)
+            check("停止真实流式视频立即释放缓存", AndroidMediaBuffer.shared.byteCount == 0)
+        }
+    }
+
+    @MainActor
     static func testAndroidParsing() {
         print("\n[安卓目录解析]")
 
-        // 真实 toybox ls -la 输出（含目录、文件、符号链接、含空格文件名、中文名）
-        let sample = """
-        total 42
-        drwxrwx--x   4 root   sdcard_rw    4096 2024-05-01 12:00 Download
-        -rw-rw----   1 u0_a123 sdcard_rw  12345 2024-05-01 12:00 note.txt
-        lrwxrwxrwx   1 root   root           21 2024-05-01 12:00 sdcard -> /storage/self/primary
-        drwxrwx--x   2 root   sdcard_rw    4096 2024-05-01 12:00 My Documents
-        -rw-rw----   1 u0_a123 sdcard_rw    1024 2024-05-01 12:00 微信文件.txt
-        drwxrwx--x   3 root   sdcard_rw    4096 2024-05-01 12:00 Android
-        """
-
-        let entries = AndroidEntry.parseListOutput(sample, parent: "/sdcard")
-        check("解析出全部条目（跳过 total 行）", entries.count == 6, "\(entries.count) 项")
-
-        let download = entries.first { $0.name == "Download" }
-        check("目录被识别为目录", download?.isDirectory == true)
-        check("目录路径拼接正确", download?.path == "/sdcard/Download", download?.path ?? "无")
-
-        let note = entries.first { $0.name == "note.txt" }
-        check("文件被识别为文件", note?.isDirectory == false)
-        check("文件大小解析正确", note?.size == 12345, "\(note?.size ?? -1)")
-        check("文件路径正确", note?.path == "/sdcard/note.txt", note?.path ?? "无")
-
-        let link = entries.first { $0.name == "sdcard" }
-        check("符号链接被识别", link?.isSymlink == true)
-        check("符号链接名去掉了箭头目标", link?.name == "sdcard", link?.name ?? "无")
-
-        let spaced = entries.first { $0.name == "My Documents" }
-        let allNames = entries.map { $0.name }.joined(separator: "/")
-        check("含空格的文件名解析正确", spaced != nil, allNames)
-
-        let chinese = entries.first { $0.name == "微信文件.txt" }
-        check("中文文件名解析正确", chinese != nil, allNames)
-
-        // 日期解析
-        check("日期解析成功", note?.modified != nil)
-
-        // 大小格式化
-        check("大小格式化 B", AndroidEntry.formatSize(512) == "512 B", AndroidEntry.formatSize(512))
-        check("大小格式化 KB", AndroidEntry.formatSize(2048) == "2.0 KB", AndroidEntry.formatSize(2048))
-        check("大小格式化 MB", AndroidEntry.formatSize(5 * 1024 * 1024) == "5.0 MB",
-              AndroidEntry.formatSize(5 * 1024 * 1024))
+        let object = MTPObject(
+            name: "微信文件 ' 100% #?.txt", path: "/storage-65537/微信文件 ' 100% #?.txt", objectID: 42, storageID: 65537,
+            isDirectory: false, size: 5_000_000_000, modified: 123456)
+        let entry = try? object.entry(serial: "TestSerial")
+        check("MTP 对象保留 64 位文件大小", entry?.size == 5_000_000_000)
+        check("MTP 保留存储 ID 和对象 ID", entry?.objectID == 42 && entry?.storageID == 65537)
+        check("MTP 中文和特殊文件名可往返", entry.flatMap { AndroidURL.split($0.url) }?.path == object.path)
+        check("MTP 序列号可保留大小写", entry.flatMap { AndroidURL.split($0.url) }?.serial == "TestSerial")
+        let invalid = MTPObject(
+            name: "../escape", path: "/storage-65537/escape", objectID: 1, storageID: 65537, isDirectory: false,
+            size: 1, modified: 0)
+        check("MTP 拒绝越界文件名", (try? invalid.entry(serial: "T")) == nil)
+        let folder = MTPObject(
+            name: "Download", path: "/storage-65537/Download", objectID: 1, storageID: 65537, isDirectory: true,
+            size: 0, modified: 0)
+        check("MTP 文件夹可以复用本机列表模型", (try? folder.entry(serial: "T").asFileItem().isDirectory) == true)
 
         // 虚拟地址
         let url = AndroidURL.make(serial: "ABC123", path: "/sdcard/Download")
@@ -2682,26 +3098,46 @@ enum NativeTestSuite {
         check("虚拟地址可拆回路径", split?.path == "/sdcard/Download", split?.path ?? "无")
         check("本地地址不被识别为安卓", !AndroidURL.isAndroid(URL(fileURLWithPath: "/tmp")))
 
-        // 序列号必须保留大小写（adb 区分大小写，URLComponents 会转小写）
+        let mtpDirectory = AndroidURL.make(serial: "TestSerial", path: "/storage-65537/Download")
+        let mtpParent = mtpDirectory.deletingLastPathComponent()
+        check("安卓返回上级去掉 URL 自动添加的末尾斜杠",
+              AndroidURL.split(mtpParent)?.path == "/storage-65537")
+        check("安卓返回上级仍保留设备序列号", AndroidURL.split(mtpParent)?.serial == "TestSerial")
+        check("安卓存储根返回设备根", AndroidURL.split(mtpParent.deletingLastPathComponent())?.path == "/")
+        check("创建安卓目录 URL 使用规范分隔符",
+              AndroidURL.make(serial: "S1", path: "//storage-65537//Download///").absoluteString
+                  == "android://S1/storage-65537/Download")
+        check("规范化路径不折叠穿越组件，交由 MTP 拒绝",
+              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/storage-65537/../Download/"))?.path
+                  == "/storage-65537/../Download")
+        check("返回上级后的面包屑不包含空文件夹",
+              AndroidURL.ancestors(mtpParent).compactMap { AndroidURL.split($0)?.path }
+                  == ["/", "/storage-65537"])
+
+        // 序列号必须保留大小写（设备序列号区分大小写，URLComponents 会转小写）
         let mixedCase = AndroidURL.make(serial: "HA2B7QSF", path: "/storage/emulated/0")
         let roundTrip = AndroidURL.split(mixedCase)
         check("序列号大小写被保留", roundTrip?.serial == "HA2B7QSF", roundTrip?.serial ?? "无")
-        check("嵌套路径可往返",
-              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/b/c"))?.path == "/a/b/c")
-        check("含空格路径可往返",
-              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path == "/a/My Documents",
-              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path ?? "无")
-        check("含中文路径可往返",
-              AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/文档"))?.path == "/a/文档")
+        check(
+            "嵌套路径可往返",
+            AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/b/c"))?.path == "/a/b/c")
+        check(
+            "含空格路径可往返",
+            AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path == "/a/My Documents",
+            AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/My Documents"))?.path ?? "无")
+        check(
+            "含中文路径可往返",
+            AndroidURL.split(AndroidURL.make(serial: "S1", path: "/a/文档"))?.path == "/a/文档")
 
         let crumbs = AndroidURL.ancestors(AndroidURL.make(serial: "HA2B7QSF", path: "/storage/我的文件"))
-        check("安卓面包屑包含根目录和逐层路径", crumbs.compactMap { AndroidURL.split($0)?.path } == ["/", "/storage", "/storage/我的文件"])
-        check("安卓面包屑保留设备序列号且不产生本地 URL", crumbs.allSatisfy { !$0.isFileURL && AndroidURL.split($0)?.serial == "HA2B7QSF" })
+        check(
+            "安卓面包屑包含根目录和逐层路径", crumbs.compactMap { AndroidURL.split($0)?.path } == ["/", "/storage", "/storage/我的文件"])
+        check(
+            "安卓面包屑保留设备序列号且不产生本地 URL", crumbs.allSatisfy { !$0.isFileURL && AndroidURL.split($0)?.serial == "HA2B7QSF" })
         check("安卓根路径只生成一个面包屑", AndroidURL.ancestors(AndroidURL.make(serial: "S1", path: "/")).count == 1)
         check("本地路径不生成安卓面包屑", AndroidURL.ancestors(URL(fileURLWithPath: "/tmp")).isEmpty)
 
-        // adb 可用性（本机已安装）
-        check("检测到 adb", AdbRunner.isAvailable, AdbRunner.adbPath() ?? "未找到")
+        check("内置 MTP 辅助程序可用", MTPRunner.isAvailable)
     }
 
     // MARK: - 安卓设备实连（有设备时才跑）
@@ -2710,35 +3146,34 @@ enum NativeTestSuite {
     static func testAndroidDevice() {
         print("\n[安卓设备实连]")
 
-        let probe = AndroidProbe.run()
-        print("  探测结果: \(probe.summary)")
-        check("检测到 adb", probe.adbAvailable, probe.adbPath ?? "未找到")
-
         guard !CommandLine.arguments.contains("--skip-device-tests") else {
             print("  本次跳过真实设备文件操作（--skip-device-tests）")
             return
         }
 
+        let probe = AndroidProbe.run()
+        print("  探测结果: \(probe.summary)")
+        check("内置 MTP 可用", probe.mtpAvailable)
         guard probe.isUsable, let serial = probe.readySerials.first,
-              let root = probe.storageRoot else {
+            let root = probe.storageRoot
+        else {
             print("  跳过实连测试（\(probe.summary)）")
             return
         }
         print("  设备序号: \(serial)  存储根: \(root)")
 
         let service = AndroidFileService(serial: serial)
-        let sandbox = root + "/WinFileAutoTest"
-
-        // 清理可能的残留
-        try? service.remove(sandbox)
+        let testName = "WinFileAutoTest-" + UUID().uuidString
+        let sandbox = root + "/" + testName
 
         do {
             // 创建目录
             try service.createFolder(at: sandbox)
             let entriesAfterCreate = try service.list(root)
-            check("能在设备上创建文件夹",
-                  entriesAfterCreate.contains { $0.name == "WinFileAutoTest" },
-                  "\(entriesAfterCreate.count) 项")
+            check(
+                "能在设备上创建文件夹",
+                entriesAfterCreate.contains { $0.name == testName },
+                "\(entriesAfterCreate.count) 项")
 
             // 上传
             let localFile = FileManager.default.temporaryDirectory
@@ -2750,17 +3185,19 @@ enum NativeTestSuite {
             try service.push(local: localFile, to: sandbox)
             let listed = try service.list(sandbox)
             check("上传后设备上能看到文件", listed.count == 1, "\(listed.count) 项")
-            check("上传的文件大小正确",
-                  listed.first?.size == Int64(content.utf8.count),
-                  "\(listed.first?.size ?? -1) vs \(content.utf8.count)")
+            check(
+                "上传的文件大小正确",
+                listed.first?.size == Int64(content.utf8.count),
+                "\(listed.first?.size ?? -1) vs \(content.utf8.count)")
 
             // 重命名
             if let uploaded = listed.first {
                 try service.rename(uploaded.path, to: "renamed-by-test.txt")
                 let afterRename = try service.list(sandbox)
-                check("重命名生效",
-                      afterRename.first?.name == "renamed-by-test.txt",
-                      afterRename.first?.name ?? "无")
+                check(
+                    "重命名生效",
+                    afterRename.first?.name == "renamed-by-test.txt",
+                    afterRename.first?.name ?? "无")
 
                 // 下载回本地并比对内容
                 let backURL = FileManager.default.temporaryDirectory
@@ -2768,8 +3205,9 @@ enum NativeTestSuite {
                 defer { try? FileManager.default.removeItem(at: backURL) }
                 try service.pull(remote: afterRename.first?.path ?? "", to: backURL)
                 let readBack = (try? String(contentsOf: backURL, encoding: .utf8)) ?? ""
-                check("下载内容与上传一致", readBack == content,
-                      "长度 \(readBack.count) vs \(content.count)")
+                check(
+                    "下载内容与上传一致", readBack == content,
+                    "长度 \(readBack.count) vs \(content.count)")
 
                 // 复制
                 try service.copy(afterRename.first?.path ?? "", to: sandbox)
@@ -2787,8 +3225,9 @@ enum NativeTestSuite {
             // 递归删除整个测试目录
             try service.remove(sandbox)
             let finalEntries = try service.list(root)
-            check("递归删除测试目录",
-                  !finalEntries.contains { $0.name == "WinFileAutoTest" })
+            check(
+                "递归删除测试目录",
+                !finalEntries.contains { $0.name == testName })
         } catch {
             check("安卓文件操作无异常", false, error.localizedDescription)
             try? service.remove(sandbox)
@@ -3848,31 +4287,12 @@ enum NativeTestSuite {
                   model.errorMessage == nil, model.errorMessage ?? "无错误")
         }
 
-        // 上级目录：路径回退（用户报告此处弹系统对话框）
-        let parentURL = AndroidURL.make(serial: serial, path: "/storage/emulated")
-        let parentEntries = (try? AndroidFileService(serial: serial).list("/storage/emulated")) ?? []
-        print("  诊断: /storage/emulated 列出 \(parentEntries.count) 项: \(parentEntries.map { $0.name })")
-        check("能列出 /storage/emulated（含 0 与 obb）",
-              parentEntries.contains { $0.name == "0" },
-              parentEntries.map { $0.name }.joined(separator: "/"))
-
-        model.selectFolder(parentURL)
-        let deadline3 = Date().addingTimeInterval(25)
-        while model.isLoadingAndroid && Date() < deadline3 {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        print("  诊断: 回退后 items=\(model.items.count) 错误=\(model.errorMessage ?? "无")")
-        check("回退到上级目录后能列出内容", !model.items.isEmpty, "\(model.items.count) 项")
-        check("回退后没有报错", model.errorMessage == nil, model.errorMessage ?? "无")
-
-        // 从上级再回退（/storage）：不应崩溃或误报
-        model.selectFolder(AndroidURL.make(serial: serial, path: "/storage"))
-        let deadline4 = Date().addingTimeInterval(25)
-        while model.isLoadingAndroid && Date() < deadline4 {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        print("  诊断: /storage items=\(model.items.count) 错误=\(model.errorMessage ?? "无")")
-        check("回退到 /storage 不报错", model.errorMessage == nil, model.errorMessage ?? "无")
+        // MTP 设备根只列举公开的存储位置。
+        model.selectFolder(AndroidURL.make(serial: serial, path: "/"))
+        let parentDeadline = Date().addingTimeInterval(30)
+        while model.isLoadingAndroid && Date() < parentDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
+        check("MTP 上级目录展示存储位置", model.androidEntries.contains { $0.path == root && $0.isDirectory })
+        check("MTP 根目录无报错", model.errorMessage == nil, model.errorMessage ?? "")
 
         // 回到存储根，继续后续断言
         model.selectFolder(dirURL)
@@ -3897,20 +4317,8 @@ enum NativeTestSuite {
             check("安卓复制不写入本机剪贴板", model.clipboard == nil)
         }
 
-        // 安卓上的文件不能直接打开，应给出提示
-        if let file = model.androidEntries.first(where: { !$0.isDirectory }) {
-            model.errorMessage = nil
-            model.activateAndroid(file)
-            check("安卓文件提示需先下载", model.errorMessage != nil,
-                  model.errorMessage ?? "无提示")
-
-            // 通过 activate 走同一保护（不得交给 NSWorkspace，否则会弹出系统"未设定打开方式"对话框）
-            model.errorMessage = nil
-            let item = file.asFileItem()
-            model.activate(item)
-            check("activate 对安卓文件同样只给提示（不调用 NSWorkspace）",
-                  model.errorMessage != nil, model.errorMessage ?? "无提示")
-        }
+        // Opening uses generated files and an injected opener in testAndroidLiveAndOpening;
+        // never automatically launch an arbitrary personal file from the attached device.
 
         // 在访达中显示：安卓条目应提示而非报错
         if let first = model.items.first {
@@ -4555,5 +4963,63 @@ private actor ThumbnailTestProbe {
                                    bytesPerRow: 64, bitsPerPixel: 32)!
         let image = NSImage(size: NSSize(width: 16, height: 16)); image.addRepresentation(rep)
         return ImageBox(image: image)
+    }
+}
+
+private final class MTPVideoReadStats: @unchecked Sendable {
+    private let lock = NSLock()
+    private var total: Int64 = 0
+    private var furthest: Int64 = 0
+    func record(offset: Int64, count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        total += Int64(count)
+        furthest = max(furthest, offset)
+    }
+    var bytes: Int64 { lock.lock(); defer { lock.unlock() }; return total }
+    var maxOffset: Int64 { lock.lock(); defer { lock.unlock() }; return furthest }
+}
+
+private final class MTPMonitorFixture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var device: AndroidDevice
+    private var connected = true
+    private var latest: [AndroidDevice] = []
+
+    init(_ device: AndroidDevice) { self.device = device }
+
+    func setDevice(_ value: AndroidDevice) {
+        lock.lock()
+        device = value
+        lock.unlock()
+    }
+
+    func setConnected(_ value: Bool) {
+        lock.lock()
+        connected = value
+        lock.unlock()
+    }
+
+    func presence() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return connected ? [device.transportID] : []
+    }
+
+    func scan() -> [AndroidDevice]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return connected ? [device] : []
+    }
+
+    func record(_ list: [AndroidDevice]) {
+        lock.lock()
+        latest = list
+        lock.unlock()
+    }
+
+    var last: [AndroidDevice] {
+        lock.lock()
+        defer { lock.unlock() }
+        return latest
     }
 }

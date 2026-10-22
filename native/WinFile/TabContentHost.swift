@@ -37,6 +37,11 @@ struct TabContentHost: View {
     /// 内容区当前渲染的类型（供诊断输出）
     var currentRenderedKind: String { Self.renderedKind(for: model) }
 
+    private var androidTransferCancellation: (() -> Void)? {
+        guard model.transferProgress != nil else { return nil }
+        return { model.cancelAndroidTransfer() }
+    }
+
     var body: some View {
         let _ = logRender()
         ZStack {
@@ -49,7 +54,7 @@ struct TabContentHost: View {
             } else if model.isAppDataView {
                 AppDataView(engine: engine, model: model)
             } else if case .androidDevice(let serial) = model.selection {
-                AndroidDeviceView(engine: engine, model: model, serial: serial)
+                AndroidDeviceView(model: model, serial: serial)
             } else if model.layout == .details {
                 FileTableView(engine: engine, model: model, dialog: $dialog)
             } else {
@@ -107,7 +112,7 @@ struct TabContentHost: View {
                     FileTransferBanner(progress: progress, cancel: { model.cancelFileTransfer() })
                 }
                 if let progress = model.transferProgress {
-                    AndroidTransferBanner(progress: progress)
+                    AndroidTransferBanner(progress: progress, cancel: androidTransferCancellation)
                 }
                 if let progress = model.archiveProgress {
                     ArchiveProgressBanner(progress: progress, cancel: model.cancelArchiveExtraction)

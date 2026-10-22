@@ -26,6 +26,7 @@ for arg in "$@"; do
   esac
 done
 SPARKLE_SDK="$("$ROOT/native/prepare_sparkle.sh")"
+MTP_SDK="$("$ROOT/native/build_mtp_helper.sh")"
 
 echo "== 1/6 生成应用图标 =="
 python3 "$ROOT/tools/make_icon.py" >/dev/null
@@ -41,6 +42,7 @@ while IFS= read -r file; do
   SRC_FILES+=("$file")
 done < <(find "$SRC/Android" -name "*.swift" 2>/dev/null | sort)
 SRC_FILES+=(
+  "$ROOT/native/WinFileTests/AndroidProbe.swift"
   "$ROOT/native/WinFileTests/NativeTestSuite.swift"
   "$ROOT/native/WinFileTests/SnapshotRenderer.swift"
   "$ROOT/native/WinFileTests/ViewTreeDumper.swift"
@@ -52,7 +54,7 @@ build_arch() {
   local arch="$1"
   /usr/bin/swiftc -swift-version 5 "$OPT" \
     -target "${arch}-apple-macos13.0" \
-    -framework AppKit -framework SwiftUI -framework Security \
+    -framework AppKit -framework SwiftUI -framework Security -framework AVFoundation -framework AVKit \
     -F "$SPARKLE_SDK" -framework Sparkle \
     -Xlinker -rpath -Xlinker '@executable_path/../Frameworks' \
     -o "$BUILD/$NAME-$arch" \
@@ -85,6 +87,12 @@ EXPECTED_HELPER_SHA="36ea959367d8f9ac51d47a56dc1f20bfb851f1cd22d6f206e85cb5cbc6a
 [[ "$(shasum -a 256 "$HELPER" | awk '{print $1}')" == "$EXPECTED_HELPER_SHA" ]] || { echo "7-Zip engine checksum mismatch"; exit 1; }
 mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Resources/ThirdParty/7zip" "$APP/Contents/Resources/TestFixtures"
 cp "$HELPER" "$APP/Contents/Helpers/7zz"
+cp "$MTP_SDK/WinFileMTP" "$APP/Contents/Helpers/WinFileMTP"
+cp "$MTP_SDK/"*.dylib "$APP/Contents/Frameworks/"
+mkdir -p "$APP/Contents/Resources/ThirdParty/MTP"
+cp "$ROOT/native/vendor/mtp/"* "$ROOT/native/prepare_mtp.sh" "$ROOT/native/build_mtp_helper.sh" "$APP/Contents/Resources/ThirdParty/MTP/"
+cp "$ROOT/native/native-build/dependencies/mtp-source/libmtp-1.1.23/COPYING" "$APP/Contents/Resources/ThirdParty/MTP/libmtp-COPYING"
+cp "$ROOT/native/native-build/dependencies/mtp-source/libusb-1.0.30/COPYING" "$APP/Contents/Resources/ThirdParty/MTP/libusb-COPYING"
 chmod +x "$APP/Contents/Helpers/7zz"
 cp "$ROOT/native/vendor/7zip/License.txt" "$ROOT/native/vendor/7zip/LGPL-2.1.txt" "$ROOT/native/vendor/7zip/PROVENANCE.md" "$APP/Contents/Resources/ThirdParty/7zip/"
 cp "$ROOT/native/WinFileTests/Fixtures/"* "$APP/Contents/Resources/TestFixtures/"
@@ -121,6 +129,9 @@ IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
 if [ -n "$IDENTITY" ]; then
   echo "   使用身份：$IDENTITY"
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Helpers/7zz"
+  for binary in "$APP/Contents/Frameworks/"*.dylib "$APP/Contents/Helpers/WinFileMTP"; do
+    /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$binary"
+  done
   SPARKLE_FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
   for nested in "$SPARKLE_FRAMEWORK"/XPCServices/*.xpc "$SPARKLE_FRAMEWORK/Updater.app" "$SPARKLE_FRAMEWORK/Autoupdate"; do
     /usr/bin/codesign --force --options runtime --timestamp --preserve-metadata=entitlements --sign "$IDENTITY" "$nested"
@@ -130,6 +141,9 @@ if [ -n "$IDENTITY" ]; then
 else
   echo "   未找到签名身份，使用 ad-hoc 签名（本机可正常运行）"
   /usr/bin/codesign --force --sign - "$APP/Contents/Helpers/7zz"
+  for binary in "$APP/Contents/Frameworks/"*.dylib "$APP/Contents/Helpers/WinFileMTP"; do
+    /usr/bin/codesign --force --sign - "$binary"
+  done
   /usr/bin/codesign --force --sign - "$APP"
 fi
 

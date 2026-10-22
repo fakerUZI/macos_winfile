@@ -102,7 +102,7 @@ final class BrowserModel: ObservableObject {
     @Published private(set) var appDataItems: [AppDataItem] = []
     @Published private(set) var isLoadingAppData = false
     @Published private(set) var needsFullDiskAccess = false
-    /// 安卓目录条目（保留原始信息用于 adb 操作）
+    /// 安卓目录条目（保留原始信息用于 MTP 操作）
     @Published private(set) var androidEntries: [AndroidEntry] = []
     @Published private(set) var isLoadingAndroid = false
     /// 传输进度（上传/下载时非空）
@@ -112,6 +112,19 @@ final class BrowserModel: ObservableObject {
     private var archiveCancellation: ScanCancellation?
     private var archiveID = UUID()
     private var transferTask: Task<Void, Never>?
+    private var transferCancellation: ScanCancellation?
+    private var transferSerial: String?
+    @Published private(set) var isOpeningAndroidFile = false
+    private var androidOpenTask: Task<Void, Never>?
+    private var androidOpenCancellation: ScanCancellation?
+    private var androidOpenID = UUID()
+    private var androidOpenSerial: String?
+    private var androidConnectionIdentity: String?
+    private var androidDevicesSubscription: AnyCancellable?
+    private let androidRegistry: AndroidDeviceRegistry
+    private let androidOpenService: AndroidOpenService
+    private let androidOpenHandler: (([URL], Bool) -> Void)?
+    private let androidVideoHandler: ((AndroidEntry, Bool, ScanCancellation) async throws -> Void)?
     @Published private(set) var fileTransferProgress: FileTransferProgress?
     @Published var lastTransferOutcome: FileTransferOutcome?
     private var fileTransferCancellation: ScanCancellation?
@@ -131,9 +144,9 @@ final class BrowserModel: ObservableObject {
     // 剪贴板
     let clipboardStore: FileClipboard
     var clipboard: ClipboardPayload? { clipboardStore.localPayload }
-    var canPaste: Bool { !isCategoryView && !isBusy && archiveProgress == nil && fileTransferProgress == nil && currentDirectory != nil && (clipboard != nil || (isAndroidPath && androidClipboard != nil)) }
+    var canPaste: Bool { !isCategoryView && !isBusy && archiveProgress == nil && fileTransferProgress == nil && transferProgress == nil && currentDirectory != nil && (clipboard != nil || (isAndroidPath && androidClipboard != nil)) }
     var canMutateFiles: Bool {
-        !isBusy && !FileOperationHistory.shared.isBusy && fileTransferProgress == nil && archiveProgress == nil
+        !isBusy && !FileOperationHistory.shared.isBusy && fileTransferProgress == nil && archiveProgress == nil && transferProgress == nil
             && (!isWeChatAttachmentsView || (!weChatCleanup.isScanning && !weChatCleanup.isCleaning))
             && (activeStorageCleanup?.busy != true)
     }
@@ -186,12 +199,19 @@ final class BrowserModel: ObservableObject {
     private var cleanupSubscription: AnyCancellable?
     private var clipboardSubscription: AnyCancellable?
 
-    init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, storageCleanupModel: StorageCleanupModel? = nil, softwareCleanupModel: StorageCleanupModel? = nil, clipboardStore: FileClipboard? = nil) {
+    init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, storageCleanupModel: StorageCleanupModel? = nil, softwareCleanupModel: StorageCleanupModel? = nil, clipboardStore: FileClipboard? = nil, androidRegistry: AndroidDeviceRegistry? = nil, androidOpenService: AndroidOpenService? = nil, androidOpenHandler: (([URL], Bool) -> Void)? = nil, androidVideoHandler: ((AndroidEntry, Bool, ScanCancellation) async throws -> Void)? = nil) {
         self.engine = engine
+        self.androidRegistry = androidRegistry ?? .shared
+        self.androidOpenService = androidOpenService ?? .shared
+        self.androidOpenHandler = androidOpenHandler
+        self.androidVideoHandler = androidVideoHandler
         self.clipboardStore = clipboardStore ?? .shared
         self.cleanupBacking = cleanupModel
         self.storageBacking = storageCleanupModel
         self.softwareBacking = softwareCleanupModel
+        androidDevicesSubscription = self.androidRegistry.$devices.dropFirst().sink { [weak self] devices in
+            self?.androidConnectionsChanged(devices)
+        }
         filesChangedSubscription = NotificationCenter.default.publisher(for: .winFileFilesChanged)
             .receive(on: RunLoop.main).sink { [weak self] _ in
                 guard let self, !self.isSuspended, !self.isBusy, self.showsFileList || self.isCleanupView else { return }
@@ -212,6 +232,10 @@ final class BrowserModel: ObservableObject {
     }
 
     deinit {
+        transferCancellation?.cancel()
+        transferTask?.cancel()
+        androidOpenCancellation?.cancel()
+        androidOpenTask?.cancel()
         archiveCancellation?.cancel()
         searchCancellation?.cancel()
         categoryCancellation?.cancel()
@@ -334,7 +358,7 @@ final class BrowserModel: ObservableObject {
         showsFileList && currentDirectory != nil && !isCategoryView
     }
 
-    /// 当前是否为安卓路径（安卓目录浏览由 adb 提供，与本地文件区分处理）
+    /// 当前是否为安卓路径（安卓目录浏览由 MTP 提供，与本地文件区分处理）
     var isAndroidPath: Bool {
         guard let dir = currentDirectory else { return false }
         return AndroidURL.isAndroid(dir)
@@ -399,6 +423,11 @@ final class BrowserModel: ObservableObject {
         case .category(let category):
             return category.localizedName
         case .folder(let url):
+            if let (serial, path) = AndroidURL.split(url) {
+                if path == "/" { return androidRegistry.device(serial: serial)?.displayName ?? L("view.androidDevice", "安卓设备") }
+                if let root = androidRegistry.roots(for: serial).first(where: { $0.path == path }) { return root.label }
+                return url.lastPathComponent
+            }
             // 根目录的 lastPathComponent 为空，直接显示磁盘名
             return url.path == "/"
                 ? WLocalizedString("place.macintoshHD", comment: "启动磁盘")
@@ -558,7 +587,7 @@ final class BrowserModel: ObservableObject {
     private func load(directory: URL, resetCategory: Bool = true) {
         directoryReadError = nil
         beginPageLoad()
-        // 安卓路径走 adb 列目录（本地 FileManager 无法访问设备文件）
+        // 安卓路径走 MTP 列目录（本地 FileManager 无法访问设备文件）
         if AndroidURL.isAndroid(directory) {
             loadAndroidDirectory(directory)
             return
@@ -851,7 +880,7 @@ final class BrowserModel: ObservableObject {
     /// 载入「安卓设备」页：列出该设备的存储位置
     // MARK: - 安卓文件浏览
 
-    /// 载入安卓目录（经 adb 列目录）
+    /// 载入安卓目录（经 MTP 列目录）
     func loadAndroidDirectory(_ url: URL) {
         beginPageLoad()
         guard let (serial, path) = AndroidURL.split(url) else {
@@ -859,6 +888,7 @@ final class BrowserModel: ObservableObject {
             return
         }
         homeTask?.cancel()
+        androidConnectionIdentity = androidRegistry.device(serial: serial).flatMap { $0.isReady ? $0.serial + "|" + $0.transportID : nil }
         categoryFilter = nil
         categoryResults = []
         isSearching = false
@@ -900,7 +930,9 @@ final class BrowserModel: ObservableObject {
                 self.items = []
                 self.isLoadingAndroid = false
                 self.isBusy = false
+                TabDiagnostics.shared.recordFileError(error, operation: "MTP.list", url: url)
                 self.errorMessage = error.localizedDescription
+                self.directoryReadError = error.localizedDescription
                 self.statusMessage = L("status.androidFailed", "读取失败")
             }
         }
@@ -1137,12 +1169,12 @@ final class BrowserModel: ObservableObject {
     func downloadSelectedToLocalFolder() {
         let entries = selectedAndroidEntries
         guard !entries.isEmpty else { return }
-        folderPickerRequest = FolderPickerRequest(title: L("android.chooseSaveFolder", "下载到此文件夹"),
-                                                 initialDirectory: FileSystemService.realHomeDirectory().appendingPathComponent("Downloads")) { [weak self] target in
+        folderPickerRequest = FolderPickerRequest(
+            title: L("android.chooseSaveFolder", "下载到此文件夹"),
+            initialDirectory: FileSystemService.realHomeDirectory().appendingPathComponent("Downloads")
+        ) { [weak self] target in
             guard let self else { return }
-            for (index, entry) in entries.enumerated() {
-                self.downloadFromAndroid(entry, to: target, announce: index == entries.count - 1)
-            }
+            self.downloadFromAndroid(entries, to: target)
         }
     }
 
@@ -1152,7 +1184,8 @@ final class BrowserModel: ObservableObject {
     /// - 剪贴板是安卓文件 → 设备内复制/移动
     func pasteIntoAndroid() {
         guard let directory = currentDirectory,
-              let (serial, remotePath) = AndroidURL.split(directory) else { return }
+            let (serial, remotePath) = AndroidURL.split(directory)
+        else { return }
 
         // 情况一：本机文件 → 上传
         let localURLs = (clipboard?.urls ?? []).filter { !AndroidURL.isAndroid($0) }
@@ -1169,8 +1202,12 @@ final class BrowserModel: ObservableObject {
         }
         let clipboardGeneration = clipboardStore.changeCount
         let move = payload.isCut
-        transferProgress = AndroidTransferProgress(name: payload.entry.name,
-                                                   direction: .upload)
+        transferProgress = AndroidTransferProgress(
+            name: payload.entry.name,
+            direction: .upload)
+        let token = ScanCancellation()
+        transferCancellation = token
+        transferSerial = serial
         transferTask = Task { [weak self] in
             let error: Error? = await withCheckedContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
@@ -1179,7 +1216,7 @@ final class BrowserModel: ObservableObject {
                         if move {
                             try service.move(payload.entry.path, to: remotePath)
                         } else {
-                            try service.copy(payload.entry.path, to: remotePath)
+                            try service.copy(payload.entry.path, to: remotePath, cancellation: token)
                         }
                         continuation.resume(returning: nil)
                     } catch {
@@ -1189,11 +1226,14 @@ final class BrowserModel: ObservableObject {
             }
             guard let self else { return }
             self.transferProgress = nil
+            self.transferCancellation = nil
+            self.transferSerial = nil
             if let error {
-                self.errorMessage = error.localizedDescription
+                if !token.isCancelled { self.errorMessage = error.localizedDescription }
                 self.statusMessage = L("status.pasteFailed", "粘贴失败")
             } else {
-                self.statusMessage = move
+                self.statusMessage =
+                    move
                     ? L("status.moved", "已移动")
                     : L("status.copied", "已复制")
                 if move { self.clipboardStore.clear(ifGeneration: clipboardGeneration) }
@@ -1203,10 +1243,13 @@ final class BrowserModel: ObservableObject {
     }
 
     /// 在后台执行一次安卓操作，完成后刷新目录
-    private func runAndroidOperation(_ title: String,
-                                     _ body: @escaping (AndroidFileService) throws -> Void) {
+    private func runAndroidOperation(
+        _ title: String,
+        _ body: @escaping (AndroidFileService) throws -> Void
+    ) {
         guard let directory = currentDirectory,
-              let (serial, _) = AndroidURL.split(directory) else { return }
+            let (serial, _) = AndroidURL.split(directory)
+        else { return }
         statusMessage = title
         transferTask?.cancel()
         transferTask = Task { [weak self] in
@@ -1242,84 +1285,234 @@ final class BrowserModel: ObservableObject {
         return androidEntries.filter { paths.contains($0.path) }
     }
 
-    func activateAndroid(_ entry: AndroidEntry) {
-        if entry.isDirectory {
-            selectFolder(entry.url)
-        } else {
-            errorMessage = L("android.hint.downloadFirst",
-                             "安卓上的文件需要先下载到本机才能打开。请复制到本地目录后再打开。")
+    private func androidConnectionsChanged(_ devices: [AndroidDevice]) {
+        // An initially busy USB device has no MTP serial yet. Upgrade only its
+        // empty device page; never redirect another phone's directory or transfer.
+        if case .androidDevice(let serial) = selection,
+           let previous = androidRegistry.device(serial: serial), previous.hasTemporaryIdentity,
+           let resolved = devices.first(where: { $0.transportID == previous.transportID && $0.isReady }),
+           resolved.serial != serial {
+            TabDiagnostics.shared.record("mtp.page.identityResolved", detail: resolved.diagnosticSummary)
+            loadAndroidDevice(serial: resolved.serial)
+        }
+        if let serial = transferSerial, !devices.contains(where: { $0.serial == serial && $0.isReady }) {
+            transferCancellation?.cancel()
+        }
+        if let serial = androidOpenSerial, !devices.contains(where: { $0.serial == serial && $0.isReady }) {
+            cancelAndroidOpen()
+        }
+        guard let directory = currentDirectory, let (serial, _) = AndroidURL.split(directory) else { return }
+        let device = devices.first { $0.serial == serial }
+        let identity = device.flatMap { $0.isReady ? $0.serial + "|" + $0.transportID : nil }
+        if let identity {
+            if androidConnectionIdentity != identity {
+                loadAndroidDirectory(directory)
+                androidConnectionIdentity = identity
+            }
+        } else if androidConnectionIdentity != nil || directoryReadError == nil {
+            androidConnectionIdentity = nil
+            homeTask?.cancel()
+            navigationID = UUID()
+            androidEntries = []
+            items = []
+            selectedIDs = []
+            isLoadingAndroid = false
+            isBusy = false
+            let message = Self.androidConnectionMessage(device)
+            directoryReadError = message
+            errorMessage = nil
+            statusMessage = message
         }
     }
 
-    /// 把安卓文件/目录下载到本地目录（带进度）
-    func downloadFromAndroid(_ entry: AndroidEntry, to localDirectory: URL,
-                             announce: Bool = true) {
-        guard let (serial, _) = AndroidURL.split(entry.url) else { return }
-        transferProgress = AndroidTransferProgress(name: entry.name, direction: .download)
-        let service = AndroidFileService(serial: serial)
-        transferTask = Task { [weak self] in
-            let error: Error? = await withCheckedContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    do {
-                        try service.pull(remote: entry.path, to: localDirectory) { fraction in
-                            Task { @MainActor in self?.transferProgress?.fraction = fraction }
-                        }
-                        continuation.resume(returning: nil)
-                    } catch {
-                        continuation.resume(returning: error)
-                    }
+    static func androidConnectionMessage(_ device: AndroidDevice?) -> String {
+        if device?.state == "unavailable" {
+            return L("android.connection.busy", "无法建立 MTP 会话。设备可能仍在切换 USB 模式，或被其他传输软件占用；WinFile 会自动重试。")
+        }
+        if device?.needsFileTransfer == true {
+            return L("android.connection.notReady", "请解锁安卓设备，选择 USB「文件传输」，并关闭其他占用设备的传输软件；就绪后将自动恢复。")
+        }
+        return L("android.connection.disconnected", "安卓设备已断开。重新连接并选择「文件传输」后，将自动恢复此目录。")
+    }
+
+    func activateAndroid(_ entry: AndroidEntry) {
+        if entry.isDirectory { selectFolder(entry.url) } else { openAndroidFiles([entry]) }
+    }
+
+    /// Videos use MTP/RAM playback; external document applications need verified local copies.
+    func openAndroidFiles(_ entries: [AndroidEntry], preview: Bool = false) {
+        guard transferProgress == nil else { return }
+        let files = entries.filter { !$0.isDirectory }
+        guard let first = files.first, files.allSatisfy(AndroidOpenService.valid) else {
+            errorMessage = AndroidOpenError.invalidFile.localizedDescription
+            return
+        }
+        let streaming = files.contains(where: AndroidVideoPlayer.handles)
+        if streaming && files.count != 1 {
+            errorMessage = L("android.stream.single", "请选择一个视频进行流式播放。批量保存请使用「下载」。")
+            return
+        }
+        let id = UUID(), token = ScanCancellation(), service = androidOpenService
+        androidOpenID = id
+        androidOpenCancellation = token
+        androidOpenSerial = first.serial
+        isOpeningAndroidFile = true
+        transferProgress = AndroidTransferProgress(name: first.name, direction: streaming ? .stream : .open)
+        errorMessage = nil
+        androidOpenTask = Task { [weak self] in
+            defer {
+                if let self, self.androidOpenID == id {
+                    self.transferProgress = nil
+                    self.isOpeningAndroidFile = false
+                    self.androidOpenCancellation = nil
+                    self.androidOpenSerial = nil
+                    self.androidOpenTask = nil
                 }
             }
-            guard let self else { return }
-            self.transferProgress = nil
-            if let error {
-                self.errorMessage = error.localizedDescription
-                self.statusMessage = L("status.downloadFailed", "下载失败")
-            } else {
-                self.statusMessage = L("status.downloaded", "已下载：%@", entry.name)
-                if announce { self.reload() }
+            var urls: [URL] = []
+            do {
+                if streaming {
+                    if let handler = self?.androidVideoHandler { try await handler(first, preview, token) }
+                    else { try await AndroidVideoPlayer.shared.open(first, preview: preview, cancellation: token) }
+                    guard let self, self.androidOpenID == id, !token.isCancelled else { throw CancellationError() }
+                    self.statusMessage = L("android.stream.opened", "视频已通过 MTP 在内存中打开，未创建完整本机副本。")
+                    return
+                }
+                for entry in files {
+                    if token.isCancelled { throw CancellationError() }
+                    self?.transferProgress = AndroidTransferProgress(name: entry.name, direction: .open)
+                    let url = try await Task.detached(priority: .userInitiated) {
+                        try service.prepare(entry, cancellation: token) { fraction in
+                            Task { @MainActor [weak self] in
+                                guard let self, self.androidOpenID == id, !token.isCancelled,
+                                    self.transferProgress?.name == entry.name
+                                else { return }
+                                if let fraction {
+                                    self.transferProgress?.fraction = max(
+                                        self.transferProgress?.fraction ?? 0, fraction)
+                                }
+                            }
+                        }
+                    }.value
+                    urls.append(url)
+                }
+                guard let self, self.androidOpenID == id, !token.isCancelled, !Task.isCancelled else {
+                    throw CancellationError()
+                }
+                if let handler = self.androidOpenHandler {
+                    handler(urls, preview)
+                } else if preview {
+                    QuickLookService.shared.show(urls)
+                } else {
+                    for url in urls {
+                        if let application = FileAssociations.shared.application(for: url) {
+                            self.open([url], with: application)
+                        } else if !NSWorkspace.shared.open(url) {
+                            self.errorMessage = L("error.openFailed", "无法打开")
+                        }
+                    }
+                }
+                self.statusMessage = L("android.open.complete", "已打开 %d 个本机缓存副本；修改不会回传到安卓设备。", urls.count)
+            } catch {
+                guard let self, self.androidOpenID == id else { return }
+                if token.isCancelled || error is CancellationError {
+                    self.statusMessage = streaming ? L("android.stream.cancelled", "已取消流式播放。") : L("android.open.cancelled", "已取消下载并打开。")
+                } else {
+                    self.errorMessage = error.localizedDescription
+                    self.statusMessage = streaming ? L("android.stream.stopped", "流式播放未完成，未自动下载视频。") : L("status.downloadFailed", "下载失败")
+                }
             }
         }
     }
 
-    /// 把本地文件/目录上传到安卓目录（带进度）
+    func cancelAndroidOpen() {
+        androidOpenCancellation?.cancel()
+        androidOpenTask?.cancel()
+    }
+
+    func cancelAndroidTransfer() {
+        if isOpeningAndroidFile { cancelAndroidOpen() } else { transferCancellation?.cancel() }
+    }
+
+    /// Download all selected items in order; do not silently skip later items while the first runs.
+    func downloadFromAndroid(_ entries: [AndroidEntry], to localDirectory: URL) {
+        guard transferProgress == nil, let first = entries.first else { return }
+        let token = ScanCancellation()
+        transferCancellation = token
+        transferSerial = first.serial
+        transferProgress = AndroidTransferProgress(name: first.name, direction: .download)
+        transferTask = Task { [weak self] in
+            var completed = 0
+            do {
+                for entry in entries {
+                    if token.isCancelled { throw CancellationError() }
+                    self?.transferProgress = AndroidTransferProgress(name: entry.name, direction: .download)
+                    try await Task.detached(priority: .userInitiated) {
+                        try AndroidFileService(serial: entry.serial).pull(
+                            remote: entry.path, to: localDirectory, cancellation: token
+                        ) { fraction in
+                            Task { @MainActor [weak self] in
+                                if let self, self.transferCancellation === token, !token.isCancelled {
+                                    self.transferProgress?.fraction = fraction
+                                }
+                            }
+                        }
+                    }.value
+                    completed += 1
+                }
+                self?.statusMessage = L("android.mtp.downloaded", "已下载 %d 项", completed)
+            } catch {
+                if !token.isCancelled { self?.errorMessage = error.localizedDescription }
+                self?.statusMessage = L("android.mtp.finished", "已完成 %d 项；其余项目未完成。", completed)
+            }
+            self?.transferProgress = nil
+            self?.transferCancellation = nil
+            self?.transferSerial = nil
+        }
+    }
+
     func uploadToAndroid(_ urls: [URL], to androidDirectory: URL) {
-        guard let (serial, remotePath) = AndroidURL.split(androidDirectory) else { return }
-        let service = AndroidFileService(serial: serial)
+        guard transferProgress == nil, let (serial, remotePath) = AndroidURL.split(androidDirectory) else { return }
+        let token = ScanCancellation()
+        transferCancellation = token
+        transferSerial = serial
         transferProgress = AndroidTransferProgress(
             name: urls.map(\.lastPathComponent).joined(separator: "、"), direction: .upload)
         transferTask = Task { [weak self] in
-            var failed: Error?
-            for url in urls {
-                let error: Error? = await withCheckedContinuation { continuation in
-                    DispatchQueue.global(qos: .userInitiated).async {
-                        do {
-                            try service.push(local: url, to: remotePath) { fraction in
-                                Task { @MainActor in self?.transferProgress?.fraction = fraction }
+            var completed = 0
+            do {
+                for url in urls {
+                    if token.isCancelled { throw CancellationError() }
+                    self?.transferProgress = AndroidTransferProgress(name: url.lastPathComponent, direction: .upload)
+                    try await Task.detached(priority: .userInitiated) {
+                        try AndroidFileService(serial: serial).push(local: url, to: remotePath, cancellation: token) {
+                            fraction in
+                            Task { @MainActor [weak self] in
+                                if let self, self.transferCancellation === token, !token.isCancelled {
+                                    self.transferProgress?.fraction = fraction
+                                }
                             }
-                            continuation.resume(returning: nil)
-                        } catch {
-                            continuation.resume(returning: error)
                         }
-                    }
+                    }.value
+                    completed += 1
                 }
-                if let error { failed = error; break }
+                self?.statusMessage = L("status.uploaded", "已上传 %d 项", completed)
+            } catch {
+                if !token.isCancelled { self?.errorMessage = error.localizedDescription }
+                self?.statusMessage = L("android.mtp.finished", "已完成 %d 项；其余项目未完成。", completed)
             }
-            guard let self else { return }
-            self.transferProgress = nil
-            if let failed {
-                self.errorMessage = failed.localizedDescription
-                self.statusMessage = L("status.uploadFailed", "上传失败")
-            } else {
-                self.statusMessage = L("status.uploaded", "已上传 %d 项", urls.count)
-                self.loadAndroidDirectory(androidDirectory)
-            }
+            self?.transferProgress = nil
+            self?.transferCancellation = nil
+            self?.transferSerial = nil
+            if self?.currentDirectory == androidDirectory { self?.loadAndroidDirectory(androidDirectory) }
         }
     }
 
     func loadAndroidDevice(serial: String) {
+        beginPageLoad()
         homeTask?.cancel()
-        if case .androidDevice = selection {} else { selection = .androidDevice(serial: serial) }
+        let destination = SidebarSelection.androidDevice(serial: serial)
+        if selection != destination { selection = destination }
         categoryFilter = nil
         categoryResults = []
         isSearching = false
@@ -1582,15 +1775,19 @@ final class BrowserModel: ObservableObject {
     }
 
     func previewSelection() {
-        guard !isAndroidPath else {
-            errorMessage = L("android.hint.downloadFirst", "请先下载到本机后预览。")
+        if isAndroidPath {
+            openAndroidFiles(selectedAndroidEntries, preview: true)
             return
         }
         QuickLookService.shared.show(selectedItems.map(\.url))
     }
 
     func openSelection() {
-        for item in selectedItems { activate(item) }
+        if isAndroidPath {
+            let entries = selectedAndroidEntries
+            if entries.count == 1, let entry = entries.first { activateAndroid(entry) }
+            else { openAndroidFiles(entries) }
+        } else { for item in selectedItems { activate(item) } }
     }
 
     func openSelection(withApplicationAt appURL: URL) {
@@ -1662,7 +1859,7 @@ final class BrowserModel: ObservableObject {
 
     func paste() {
         guard canMutateFiles else { return }
-        // 目标是安卓目录时走 adb（上传或设备内复制/移动）
+        // 目标是安卓目录时走 MTP（上传或设备内复制/移动）
         if isAndroidPath {
             pasteIntoAndroid()
             return
@@ -1746,7 +1943,7 @@ final class BrowserModel: ObservableObject {
         }
         let items = selectedItems
         guard !items.isEmpty else { return }
-        // 安卓条目走 adb 删除（本地 FileManager 不适用）
+        // 安卓条目走 MTP 删除（本地 FileManager 不适用）
         if isAndroidPath {
             deleteAndroidSelection()
             return
@@ -1823,7 +2020,7 @@ final class BrowserModel: ObservableObject {
 
     func rename(_ item: FileItem, to newName: String) {
         guard canMutateFiles else { return }
-        // 安卓条目走 adb 重命名
+        // 安卓条目走 MTP 重命名
         if AndroidURL.isAndroid(item.url),
            let entry = androidEntries.first(where: { $0.path == item.url.path }) {
             renameAndroid(entry, to: newName)

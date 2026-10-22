@@ -112,7 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { WindowBridge.shared.tabManager?.persistNow() }
+        MainActor.assumeIsolated {
+            WindowBridge.shared.tabManager?.persistNow()
+            AndroidDeviceRegistry.shared.stopMonitoring()
+            AndroidVideoPlayer.shared.close()
+            MTPRunner.stopAll()
+        }
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -151,8 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 每次启动重置页签交互日志（便于"你操作、我读日志"）
-        try? FileManager.default.removeItem(at: TabDiagnostics.liveURL)
+        // Preserve the previous session, including device failures before a restart.
+        TabDiagnostics.shared.beginSession()
         TabDiagnostics.shared.record("app.launch", detail: "版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?")) | \(ProcessInfo.processInfo.operatingSystemVersionString)")
         // 界面快照：必须在应用启动完成后执行，否则 SF Symbols 无法解析
         if let index = CommandLine.arguments.firstIndex(of: "--render-snapshot") {

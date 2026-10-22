@@ -53,7 +53,6 @@
 "action.copy" = "Copy";
 "action.cut" = "Cut";
 "action.paste" = "Paste";
-"action.pasteInto" = "Paste Into";
 "action.copyAs" = "Copy As";
 "action.copyPath" = "Full Path";
 "action.copyName" = "File Name";
@@ -62,7 +61,6 @@
 "action.renameEllipsis" = "Rename…";
 "action.delete" = "Delete";
 "action.moveToTrash" = "Move to Trash";
-"action.getInfo" = "Get Info";
 "action.reload" = "Reload";
 "action.toggleHidden" = "Show/Hide Hidden Files";
 "action.toggleSortOrder" = "Toggle Sort Order";
@@ -171,7 +169,6 @@
 "empty.folder" = "This folder is empty";
 "empty.noSearchResult" = "No matching items";
 "empty.needAuthorization" = "No folder authorized yet";
-"empty.authorize.hint" = "For your security the app can only access folders you explicitly authorize. Click below to choose a folder.";
 "empty.hint" = "This folder has no items.";
 "panel.authorize" = "Authorize";
 "panel.authorize.message" = "Choose a folder to browse in this app";
@@ -223,7 +220,6 @@
 "error.bookmarkFailed" = "Could not save authorization for that folder";
 
 /* Sandbox authorization guidance */
-"sidebar.needAuth" = "Sandboxed: authorize folders to browse.";
 "empty.authorize.hint" = "For your security WinFile can only access folders you explicitly authorize. Click below to choose folders (multiple selection allowed, e.g. Desktop, Documents, Downloads). Authorizations are remembered across launches.";
 
 "sidebar.needAuth" = "Sandboxed: only the container and Applications are available. Click + to authorize more folders.";
@@ -336,21 +332,13 @@
 "view.androidDevice" = "Android Device";
 "sidebar.android" = "Android Devices";
 "android.storage.title" = "Storage";
-"android.storage.internal" = "Internal Storage";
-"android.storage.sd" = "SD Card (%@)";
-"android.storage.removable" = "Removable (%@)";
 "android.storage.loading" = "Reading device storage…";
 "android.storage.empty" = "No accessible storage found.";
-"android.storage.unavailable" = "Cannot read storage. Make sure the device is unlocked and USB debugging is authorized.";
-"android.device.detail" = "Serial %@ · Android %@ · %@";
-"android.state.unauthorized" = "Unauthorized";
+"android.storage.unavailable" = "Cannot read storage. Unlock the phone and select USB File Transfer.";
 "android.retry" = "Retry";
-"android.hint.downloadFirst" = "Files on Android must be downloaded before opening. Copy them to a local folder first.";
 "android.transfer.uploading" = "Uploading to device";
 "android.transfer.downloading" = "Downloading to this Mac";
 "android.transfer.working" = "Transferring…";
-"android.type.folder" = "Folder";
-"android.type.file" = "File";
 "status.androidDevice" = "Reading device storage…";
 "status.androidLoading" = "Reading device folder…";
 "status.androidCount" = "%d items";
@@ -363,12 +351,7 @@
 "status.renaming" = "Renaming…";
 "status.creating" = "Creating…";
 "status.pasteFailed" = "Paste failed";
-"android.error.noAdb" = "adb not found. Install it with: brew install android-platform-tools";
-"android.error.timeout" = "Command timed out: %@";
-"android.error.failed" = "adb failed (%d): %@";
 "android.error.noDevice" = "No Android device available";
-"android.probe.noAdb" = "adb not installed";
-"android.probe.unauthorized" = "Device unauthorized: tap Allow USB debugging on the tablet";
 "android.probe.noDevice" = "No Android device detected";
 "android.probe.noStorage" = "Cannot read device storage";
 "android.probe.ready" = "%d device(s) connected";
@@ -1039,3 +1022,46 @@
 "wechat.partialScan" = "Partial results: storage totals do not include all files. Increase the limit to scan again.";
 "wechat.expandScan" = "Increase Limit and Rescan";
 "error.volumeUnavailable" = "This disk is disconnected or unmounted. Reconnect it and try again.";
+
+/* Android device changes and local opening */
+"android.open.invalid" = "Cannot open this Android file. Refresh the folder and try again.";
+"android.open.changed" = "The file on the device changed during download. Please try again.";
+"android.open.incomplete" = "The download is incomplete; the file was not opened. Check the device connection and try again.";
+"android.open.noSpace" = "There is not enough free space on the local cache volume to download this file.";
+"android.connection.notReady" = "Unlock the Android device, select USB File Transfer and close other apps using the device. This folder will recover automatically when ready.";
+"android.connection.busy" = "Unable to start an MTP session. The device may still be changing USB modes or in use by another transfer app. WinFile will retry automatically.";
+"android.connection.disconnected" = "The Android device is disconnected. Reconnect and select File Transfer to recover this folder automatically.";
+"android.open.complete" = "Opened %d local cached copies. Changes are not sent back to the Android device.";
+"android.open.cancelled" = "Download and open cancelled.";
+"android.open.downloading" = "Downloading to open…";
+
+"android.mtp.missing" = "The MTP component is missing. Please reinstall WinFile.";
+"android.mtp.timeout" = "The device timed out. Check the connection, unlock the phone and select File Transfer, then retry.";
+"android.mtp.protocol" = "Cannot read the MTP response. Please retry.";
+"android.mtp.connect" = "Unlock the phone, select USB File Transfer and close other transfer apps using the device, then retry.";
+"android.mtp.exists" = "A file or folder with this name already exists. Nothing was overwritten.";
+"android.mtp.notFound" = "This item no longer exists on the device. Refresh the folder.";
+"android.mtp.moveUnsupported" = "This device does not support moving files through MTP. Copy first, verify the copy, then delete the original.";
+"android.mtp.invalid" = "The name, path or operation is invalid. No files were changed.";
+"android.mtp.local" = "Cannot read or write the local file. Check permissions, free space and the destination name. Uploading symbolic links is not supported.";
+"android.mtp.transfer" = "The transfer did not finish. Check the device connection and retry.";
+"android.mtp.failed" = "The MTP operation failed. Check that the phone permits access to this location, then retry.";
+"android.mtp.waiting" = "Waiting for File Transfer";
+"android.mtp.detail" = "Serial %@ · MTP";
+"android.mtp.space" = "%@ available / %@ total";
+
+
+"android.mtp.downloaded" = "Downloaded %d items";
+"android.mtp.finished" = "Completed %d items; remaining items did not finish.";
+
+/* MTP memory video playback */
+"android.stream.unsupported" = "The device could not read this video in ranges. Playback stopped without downloading a full copy. Download manually if needed.";
+"android.stream.changed" = "The video on the device changed. Playback stopped. Please reopen it.";
+"android.stream.memory" = "MTP streaming · Shared RAM cache up to 32 MiB · No full video copy saved";
+"android.stream.failed" = "Unable to stream this video. Its encoding or device reads may be unsupported. No automatic download. Download manually for an external player.";
+"android.stream.disconnected" = "The device connection changed. Playback stopped and the RAM cache was released. Reopen the video from the sidebar.";
+"android.stream.single" = "Select one video for streaming. Use Download to save multiple files.";
+"android.stream.opened" = "Video opened over MTP in memory without creating a full local copy.";
+"android.stream.stopped" = "Streaming did not complete. The video was not downloaded automatically.";
+"android.stream.preparing" = "Preparing MTP streaming…";
+"android.stream.cancelled" = "Streaming cancelled.";

@@ -4,17 +4,19 @@ import SwiftUI
 
 struct AndroidDeviceView: View {
     @ObservedObject private var localization = Localization.shared
-    @ObservedObject var engine: FSEngine
+    @ObservedObject private var registry = AndroidDeviceRegistry.shared
     @ObservedObject var model: BrowserModel
     let serial: String
 
     private let columns = [GridItem(.adaptive(minimum: 260, maximum: 380), spacing: 14)]
 
-    @State private var storages: [AndroidDeviceRegistry.AndroidStorage] = []
-    @State private var isLoading = true
-    @State private var errorText: String?
-
-    private var device: AndroidDevice? { AndroidDeviceRegistry.shared.device(serial: serial) }
+    private var storages: [AndroidDeviceRegistry.AndroidStorage] { registry.roots(for: serial) }
+    private var device: AndroidDevice? { registry.device(serial: serial) }
+    private var isLoading: Bool { device?.isReady == true && registry.isRefreshing && storages.isEmpty }
+    private var errorText: String? {
+        guard device?.isReady == true else { return BrowserModel.androidConnectionMessage(device) }
+        return storages.isEmpty && !isLoading ? L("android.storage.unavailable", "无法读取存储位置，请解锁手机并选择 USB「文件传输」。") : nil
+    }
 
     var body: some View {
         ScrollView {
@@ -27,7 +29,7 @@ struct AndroidDeviceView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .task {
-            await loadStorages()
+            await registry.refresh()
         }
     }
 
@@ -41,10 +43,7 @@ struct AndroidDeviceView: View {
                 if isLoading { ProgressView().controlSize(.small) }
             }
             if let device {
-                Text(L("android.device.detail", "序列号 %@ · Android %@ · %@",
-                       device.serial,
-                       device.androidVersion.isEmpty ? "?" : device.androidVersion,
-                       device.state))
+                Text(L("android.mtp.detail", "序列号 %@ · MTP", device.serial))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -63,7 +62,7 @@ struct AndroidDeviceView: View {
                 Label(errorText, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.orange)
                 Button(L("android.retry", "重试")) {
-                    Task { await loadStorages() }
+                    Task { await registry.refresh() }
                 }
             }
         } else if storages.isEmpty {
@@ -81,22 +80,6 @@ struct AndroidDeviceView: View {
                     }
                 }
             }
-        }
-    }
-
-    private func loadStorages() async {
-        isLoading = true
-        errorText = nil
-        let found = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(
-                    returning: AndroidDeviceRegistry.detectStorage(serial: serial))
-            }
-        }
-        storages = found
-        isLoading = false
-        if found.isEmpty {
-            errorText = L("android.storage.unavailable", "无法读取存储位置，请确认设备已解锁并授权 USB 调试。")
         }
     }
 }
@@ -118,11 +101,17 @@ struct StorageCard: View {
                     .frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(storage.label).fontWeight(.medium)
-                    Text(storage.path)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text(
+                        L(
+                            "android.mtp.space", "可用 %@ / 共 %@",
+                            ByteCountFormatter.string(fromByteCount: Int64(clamping: storage.free), countStyle: .file),
+                            ByteCountFormatter.string(
+                                fromByteCount: Int64(clamping: storage.capacity), countStyle: .file))
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
             }
@@ -130,8 +119,11 @@ struct StorageCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: hovering ? .selectedContentBackgroundColor.withAlphaComponent(0.12)
-                                                  : .controlBackgroundColor))
+                    .fill(
+                        Color(
+                            nsColor: hovering
+                                ? .selectedContentBackgroundColor.withAlphaComponent(0.12)
+                                : .controlBackgroundColor))
             )
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
             .contentShape(Rectangle())
@@ -145,6 +137,7 @@ struct StorageCard: View {
 struct AndroidTransferBanner: View {
     @ObservedObject private var localization = Localization.shared
     let progress: AndroidTransferProgress
+    var cancel: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -159,6 +152,7 @@ struct AndroidTransferBanner: View {
                 Text(progress.percentText)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                if let cancel { Button(L("button.cancel", "取消"), action: cancel) }
             }
             if let fraction = progress.fraction {
                 ProgressView(value: fraction)

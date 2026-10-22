@@ -57,7 +57,6 @@
 "action.copy" = "复制";
 "action.cut" = "剪切";
 "action.paste" = "粘贴";
-"action.pasteInto" = "粘贴到此处";
 "action.copyAs" = "复制为";
 "action.copyPath" = "复制完整路径";
 "action.copyName" = "复制文件名";
@@ -66,7 +65,6 @@
 "action.renameEllipsis" = "重命名…";
 "action.delete" = "删除";
 "action.moveToTrash" = "移到废纸篓";
-"action.getInfo" = "显示简介";
 "action.reload" = "重新载入";
 "action.toggleHidden" = "显示/隐藏隐藏文件";
 "action.toggleSortOrder" = "切换升序/降序";
@@ -182,7 +180,6 @@
 "empty.folder" = "此文件夹为空";
 "empty.noSearchResult" = "没有匹配的项目";
 "empty.needAuthorization" = "尚未授权任何文件夹";
-"empty.authorize.hint" = "出于安全考虑，应用只能访问你明确授权的文件夹。点击下方按钮选择要浏览的文件夹。";
 "empty.hint" = "这个文件夹里没有内容。";
 "panel.authorize" = "授权访问";
 "panel.authorize.message" = "选择要在此应用中浏览的文件夹";
@@ -239,7 +236,6 @@
 "error.bookmarkFailed" = "无法保存对该文件夹的授权";
 
 /* 沙盒授权引导 */
-"sidebar.needAuth" = "沙盒模式：请先授权要浏览的文件夹。";
 "empty.authorize.hint" = "出于安全考虑，WinFile 只能访问你明确授权的文件夹。点击下方按钮选择要浏览的文件夹（可多选，例如桌面、文稿、下载）。授权会被记住，下次启动仍然有效。";
 
 /* 沙盒默认目录说明 */
@@ -353,21 +349,13 @@
 "view.androidDevice" = "安卓设备";
 "sidebar.android" = "安卓设备";
 "android.storage.title" = "存储位置";
-"android.storage.internal" = "内部存储";
-"android.storage.sd" = "SD 卡（%@）";
-"android.storage.removable" = "外部存储（%@）";
 "android.storage.loading" = "正在读取设备存储…";
 "android.storage.empty" = "未发现可访问的存储位置。";
-"android.storage.unavailable" = "无法读取存储位置，请确认设备已解锁并授权 USB 调试。";
-"android.device.detail" = "序列号 %@ · Android %@ · %@";
-"android.state.unauthorized" = "待授权";
+"android.storage.unavailable" = "无法读取存储位置，请解锁手机并选择 USB「文件传输」。";
 "android.retry" = "重试";
-"android.hint.downloadFirst" = "安卓上的文件需要先下载到本机才能打开。请复制到本地目录后再打开。";
 "android.transfer.uploading" = "正在上传到设备";
 "android.transfer.downloading" = "正在下载到本机";
 "android.transfer.working" = "传输中…";
-"android.type.folder" = "文件夹";
-"android.type.file" = "文件";
 "status.androidDevice" = "正在读取设备存储…";
 "status.androidLoading" = "正在读取设备目录…";
 "status.androidCount" = "%d 个项目";
@@ -380,12 +368,7 @@
 "status.renaming" = "正在重命名…";
 "status.creating" = "正在创建…";
 "status.pasteFailed" = "粘贴失败";
-"android.error.noAdb" = "未找到 adb。请先安装：brew install android-platform-tools";
-"android.error.timeout" = "命令超时：%@";
-"android.error.failed" = "adb 执行失败（%d）：%@";
 "android.error.noDevice" = "没有可用的安卓设备";
-"android.probe.noAdb" = "未安装 adb";
-"android.probe.unauthorized" = "设备待授权：请在平板上点「允许 USB 调试」";
 "android.probe.noDevice" = "未检测到安卓设备";
 "android.probe.noStorage" = "无法读取设备存储";
 "android.probe.ready" = "已连接 %d 台设备";
@@ -1057,3 +1040,46 @@
 "wechat.partialScan" = "当前仅显示部分扫描结果，占用统计并非全部文件；可提高上限重新扫描。";
 "wechat.expandScan" = "提高上限重新扫描";
 "error.volumeUnavailable" = "此磁盘当前未连接或未挂载。请连接后重试。";
+
+/* Android device changes and local opening */
+"android.open.invalid" = "无法打开此安卓文件，请重新读取目录后重试。";
+"android.open.changed" = "设备上的文件在下载期间发生变化，请重试。";
+"android.open.incomplete" = "下载不完整，未打开文件。请检查设备连接后重试。";
+"android.open.noSpace" = "本机缓存所在磁盘的可用空间不足，无法下载此文件。";
+"android.connection.notReady" = "请解锁安卓设备，选择 USB「文件传输」，并关闭其他占用设备的传输软件；就绪后将自动恢复。";
+"android.connection.busy" = "无法建立 MTP 会话。设备可能仍在切换 USB 模式，或被其他传输软件占用；WinFile 会自动重试。";
+"android.connection.disconnected" = "安卓设备已断开。重新连接并选择「文件传输」后，将自动恢复此目录。";
+"android.open.complete" = "已打开 %d 个本机缓存副本；修改不会回传到安卓设备。";
+"android.open.cancelled" = "已取消下载并打开。";
+"android.open.downloading" = "正在下载以打开…";
+
+"android.mtp.missing" = "MTP 组件缺失，请重新安装 WinFile。";
+"android.mtp.timeout" = "设备响应超时，请检查连接、解锁手机并选择「文件传输」后重试。";
+"android.mtp.protocol" = "无法读取 MTP 响应，请重试。";
+"android.mtp.connect" = "请解锁手机并选择 USB「文件传输」，关闭其他占用设备的传输软件后重试。";
+"android.mtp.exists" = "目标已存在同名文件或文件夹，未覆盖。";
+"android.mtp.notFound" = "设备上的项目已不存在，请刷新目录。";
+"android.mtp.moveUnsupported" = "此设备不支持 MTP 内部移动。请先复制，确认完成后再删除原文件。";
+"android.mtp.invalid" = "此文件名、路径或操作无效，未修改文件。";
+"android.mtp.local" = "无法读写本机文件，请检查权限、剩余空间和目标名称。符号链接不支持上传。";
+"android.mtp.transfer" = "传输未完成，请检查设备连接后重试。";
+"android.mtp.failed" = "MTP 操作失败，请确认手机允许访问该位置后重试。";
+"android.mtp.waiting" = "等待文件传输就绪";
+"android.mtp.detail" = "序列号 %@ · MTP";
+"android.mtp.space" = "可用 %@ / 共 %@";
+
+
+"android.mtp.downloaded" = "已下载 %d 项";
+"android.mtp.finished" = "已完成 %d 项；其余项目未完成。";
+
+/* MTP memory video playback */
+"android.stream.unsupported" = "设备无法完成分段读取，已停止播放。未自动下载完整视频；如需本机播放，请手动下载。";
+"android.stream.changed" = "设备上的视频已变化，已停止播放。请重新打开。";
+"android.stream.memory" = "MTP 流式播放 · 共享内存缓存上限 32 MiB · 不保存完整视频副本";
+"android.stream.failed" = "无法流式播放此视频，可能是编码或设备读取不兼容。未自动下载；如需外部播放器，请手动下载。";
+"android.stream.disconnected" = "设备连接已变化，已停止播放并释放内存缓存。请从侧边栏重新打开视频。";
+"android.stream.single" = "请选择一个视频进行流式播放。批量保存请使用「下载」。";
+"android.stream.opened" = "视频已通过 MTP 在内存中打开，未创建完整本机副本。";
+"android.stream.stopped" = "流式播放未完成，未自动下载视频。";
+"android.stream.preparing" = "正在准备 MTP 流式播放…";
+"android.stream.cancelled" = "已取消流式播放。";

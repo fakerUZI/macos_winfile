@@ -385,22 +385,22 @@ struct FileItem: Identifiable, Hashable {
     /// 由安卓条目构造。
     ///
     /// 安卓路径用 `android://` 虚拟地址表示，本地 FileManager 不参与，
-    /// 因此这里不做资源属性读取，直接用 adb 已取得的信息填充。
+    /// 因此这里不做资源属性读取，直接用 MTP 已取得的信息填充。
     init(androidEntry entry: AndroidEntry) {
         self.id = entry.url.absoluteString   // 安卓：虚拟地址本身即唯一标识
         self.url = entry.url
-        self.name = entry.name
+        self.name = entry.displayName ?? entry.name
         self.isDirectory = entry.isDirectory
-        self.isSymlink = entry.isSymlink
+        self.isSymlink = false
         self.isBundle = false
         self.isHidden = entry.name.hasPrefix(".")
-        self.isReadable = entry.isReadable
+        self.isReadable = true
         self.size = entry.isDirectory ? nil : entry.size
         self.modified = entry.modified
         self.created = nil
         // 复用类型库，保证安卓条目与本地条目的类型/分类判定一致
         let info = FileTypeDB.info(name: entry.name, isDirectory: entry.isDirectory,
-                                   isSymlink: entry.isSymlink, isBundle: false)
+                                   isSymlink: false, isBundle: false)
         self.category = info.category
     }
     let id: String              // 使用完整路径作为稳定标识

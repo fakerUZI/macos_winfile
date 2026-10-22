@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1075%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1184%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,14 +42,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.3.4
+## What’s new in v1.4.0
 
-- **In-app folder selection:** multi-select folders and open each in a new tab. Favorites, startup folders, extraction, Android downloads, WeChat directories and duplicate scans use the same picker.
-- **Lower large-folder memory use:** render visible icon rows, bound thumbnail caching and concurrency, and load cleanup modules on demand. Reclaim reloadable data in idle tabs.
-- **More reliable navigation:** resolve and complete paths off the main thread, scroll to located files, prevent offscreen double-click interception, and retry directory read errors.
-- **Sidebar and scan improvements:** collapse the left sidebar independently; WeChat scans explicitly mark partial results and let you raise scan limits.
+- **Android uses MTP exclusively:** select File Transfer over USB. No USB debugging, ADB, Homebrew or extra drivers. Browse, upload, download, copy, rename and delete device files.
+- **Automatic connection updates:** insertion, removal and device changes refresh without restarting. Fix reconnect identity changes and parent-folder navigation while keeping old tabs pinned to their original device.
+- **Video plays from memory:** double-click for the built-in player or press Space to preview. Seeking reads the needed MTP ranges, with a shared video-data cache capped at 32 MiB and no full video file on disk. Unsupported reads or codecs report an error; downloading remains an explicit choice.
+- **Other file opening and diagnostics:** reuse verified read-only local document copies, cancel stalled transfers, and retain timestamped, rotating diagnostic logs.
 
-See the [v1.3.4 release notes](docs/releases/v1.3.4.md) and [v1.3.3 release notes](docs/releases/v1.3.3.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.4.0 release notes](docs/releases/v1.4.0.md) and [v1.3.4 release notes](docs/releases/v1.3.4.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -84,7 +84,7 @@ See the [v1.3.4 release notes](docs/releases/v1.3.4.md) and [v1.3.3 release note
 | **Applications** | Aggregates `/Applications` and `/System/Applications` with real system icons |
 | **Storage cleanup** | One entry with General cleanup and Software cleanup for caches, logs, installers, large files and WeChat chat attachments; general cleanup and other apps’ caches support undo, while WeChat attachments can be recovered from Trash |
 | **App Data** | Scans app data containers so you can jump straight into another app's files (e.g. WeChat). Empty shell containers are filtered out and UUID-only entries get their real app name |
-| **Android device** | Browse an Android device over adb: list, upload, download, create, rename, copy / move, delete; multiple devices are distinguished by serial number |
+| **Android device** | Browse an Android device over built-in MTP: list, upload, download, create, rename, copy / move, delete; multiple devices are distinguished by serial number |
 
 ### Extraction
 
@@ -186,7 +186,7 @@ Before each move, WinFile rechecks file and parent identities, metadata, running
 | --- | --- |
 | OS | macOS 13 (Ventura) or later |
 | Architecture | Apple Silicon or Intel (universal binary) |
-| Android (optional) | `brew install android-platform-tools` |
+| Android | Bundled MTP; select USB File Transfer on the phone |
 | Building from source (optional) | Xcode Command Line Tools — `xcode-select --install` |
 
 A full Xcode install is not required, and neither is a paid Apple Developer account.
@@ -199,7 +199,7 @@ Quit WinFile and paste this into Terminal:
 curl -fsSL https://raw.githubusercontent.com/fakerUZI/macos_winfile/main/install.sh | /bin/bash
 ```
 
-Downloads the latest universal release for Apple Silicon and Intel; no Xcode or Homebrew required. The [installer](install.sh) checks SHA-256 and the bundle signature, installs into `/Applications`, preserves the previous app and leaves preferences intact. Failed replacement rolls back. If that directory is not writable, download the script and run `bash install.sh --dir "$HOME/Applications"`. Use `--no-open` to install without launching. Android browsing additionally requires adb.
+Downloads the latest universal release for Apple Silicon and Intel; no Xcode or Homebrew required. The [installer](install.sh) checks SHA-256 and the bundle signature, installs into `/Applications`, preserves the previous app and leaves preferences intact. Failed replacement rolls back. If that directory is not writable, download the script and run `bash install.sh --dir "$HOME/Applications"`. Use `--no-open` to install without launching. Android uses bundled MTP; no extra tools or USB debugging are required.
 
 See the [v1.1.0 release notes](docs/releases/v1.1.0.md) for WeChat Cleanup, Android browsing, RAR/7Z extraction and other improvements.
 
@@ -235,19 +235,29 @@ Users on v1.1.0 or earlier must upgrade to v1.2.0 (or later) manually once. See 
 
 ![Android public storage browsing](docs/screenshots/android-files.png)
 
-```bash
-brew install android-platform-tools
-```
+1. Unlock the phone and connect it to the Mac with a USB data cable.
+2. Select **File Transfer / Android Auto** in the phone’s USB settings and allow file access if prompted.
+3. WinFile automatically shows the device and its exposed storage. Reconnecting does not require restarting WinFile.
 
-On the tablet, enable "Developer options → USB debugging", connect the cable, and tap "Allow" in the prompt. The app scans for devices on launch and shows an "Android device" entry in the sidebar.
+The app bundles dynamically linked libmtp 1.1.23 and libusb 1.0.30 in both architectures. It uses MTP exclusively, without ADB, Homebrew or USB debugging. A separate helper isolates USB operations and enforces timeouts. Close other MTP applications if they have claimed the device.
 
-> macOS has no system-level MTP support, so Android access goes through adb — device operations run in subprocesses. Archive operations use system commands and the bundled 7-Zip engine; other local file operations use native APIs.
+Browsing, creation, renaming, upload, download, copying and deletion are supported. Moving within the phone requires device support; unsupported moves report an error without deleting the source. Copies download through a temporary Mac folder and upload through MTP, requiring local disk space. Uploads and downloads refuse to overwrite existing names; uploads do not follow symbolic links.
+
+Only files exposed by the phone are visible. App-private data, `Android/data` and system folders may be restricted. This does not mount the complete Android filesystem.
 
 ### Adding sidebar favorites
 
 Drag folders from WinFile’s detail list, icon view, or Finder into the sidebar. The highlighted area adds shortcuts without copying or moving the originals. Existing folders are deduplicated; regular files and application bundles are rejected.
 
-The Add Folder actions in the sidebar, its context menu, Manage Sidebar, and Settings now use WinFile’s own folder picker. Double-click to browse, enter a path (including `~`), go up, show hidden folders, filter the current directory, or select multiple sibling folders with ⌘. Cancelling leaves the browsing tab unchanged.
+The Add Folder actions in the sidebar, its context menu, Manage Sidebar, and Settings use WinFile’s own folder picker. Double-click to browse, enter a path (including `~`), go up, show hidden folders, filter the current directory, or select multiple sibling folders with ⌘. Cancelling leaves the browsing tab unchanged.
+
+### Android connection updates and opening files
+
+Device insertion, removal and File Transfer readiness update automatically. A disconnected folder remains in its tab and reloads after reconnection and selecting File Transfer.
+
+Videos open in the built-in player using MTP range reads and a shared RAM cache capped at 32 MiB. Double-click or choose Open to play; Space previews the video. Seeking reads the required ranges without creating a full video file on disk. Closing the player or changing the device connection cancels reads and releases the cache. Unsupported device reads or video encodings report an error without automatically downloading the file. Select one video at a time; use Download explicitly for external players.
+
+Other files download a verified, read-only local copy for the default Mac application or Quick Look, with progress and cancellation. These copies are cached by device, path, MTP object identity, size and modification time; edits are never uploaded to Android. Save As or download to a normal folder for editing. This disk cache targets 2 GiB and removes copies older than seven days when preparing files. Copies opened in the current WinFile session are retained for external applications and may exceed that target. Files manually downloaded to a chosen folder are never automatically removed.
 
 ## Testing
 
@@ -257,9 +267,9 @@ The Add Folder actions in the sidebar, its context menu, Manage Sidebar, and Set
 
 Add `--skip-device-tests` to skip real-device file operations and browsing when an Android device is connected.
 
-Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
+Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
 
-v1.3.4 validation: **1070 CLI checks passed** and **1075 passing, 0 failures** in each arm64 and x86_64/Rosetta app bundle (`--skip-device-tests`; physical Android transfers excluded). Real-window tab regressions, multi-folder picking, large-grid scrolling and file location, double-clicks, context menus and directory-error recovery passed. See the [v1.3.4 release notes](docs/releases/v1.3.4.md).
+v1.4.0 feature validation: **1,149 logic checks**, **1,179 connected-device checks**, and **1,184 app-bundle checks including real video playback**, all passing; **53 independent MTP helper protocol checks** passed on retry. Real-window checks covered playback, seeking, paused Space previews, unsupported-video feedback and device file operations. Physical files over 4 GiB and every device brand were not covered. See the [v1.4.0 release notes](docs/releases/v1.4.0.md) and [MTP video QA record](docs/qa/2026-10-22-mtp-streaming.md).
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 
@@ -317,7 +327,7 @@ macos_winfile/
 │   │   ├── WeChatCleanupModel.swift    # filters and scan state
 │   │   ├── WeChatCleanupView.swift     # WeChat cleanup page
 │   │   ├── BrowserModel.swift          #   browsing state (navigation / sort / selection / clipboard)
-│   │   └── Android/                    #   Android device support (adb wrapper)
+│   │   └── Android/                    #   Android device support (MTP)
 │   ├── WinFileTests/                   # logic tests, UI snapshots and smoke tests
 │   ├── Resources/                      # Chinese / English localizations
 │   ├── Info.plist                      # app metadata
@@ -341,7 +351,7 @@ Build artifacts (`WinFile.app/`) and release packages (`dist/`) are not committe
 | Compression | System `zip` / `ditto` and bundled universal `7zz` |
 | Thumbnails | QuickLook (`QLThumbnailGenerator`) for images, video posters, and PDF first pages |
 | Icons | `NSWorkspace.icon(forFile:)`, preserving system icons including those inside Assets.car |
-| Android | `adb` subprocess |
+| Android | libmtp + libusb through a separate MTP helper |
 | Localization | `Localizable.strings` (Simplified Chinese / English) with inline fallbacks in code |
 | Build | Direct `swiftc` invocation, no Xcode project; `lipo` produces the universal binary |
 
@@ -355,9 +365,9 @@ The app has no Apple Developer signature and isn't notarized, so macOS blocks it
 
 The App Store requires the App Sandbox, which would **permanently block** reading other apps' data containers — one of this project's core features. Publishing would also require a paid developer account (USD 99/year). So WinFile targets local use.
 
-**Why adb instead of MTP for Android?**
+**Does Android access require USB debugging?**
 
-macOS has no built-in MTP file browser. WinFile currently uses adb, which requires authorized USB debugging. Access depends on the device OS and adb permissions; directories such as `Android/data` may still be restricted.
+No. Version 1.4.0 and later use MTP exclusively. Select File Transfer on the phone; installing ADB is unnecessary.
 
 **Why do some system folders show "no permission"?**
 
@@ -372,7 +382,7 @@ No. Defaults set inside WinFile are stored only in WinFile's own preferences and
 | Item | Notes |
 | --- | --- |
 | First-launch block | Ad-hoc signed, not notarized; browser downloads may need approval through macOS settings |
-| Android | Requires adb and USB debugging enabled on the device |
+| Android | Unlock the phone and select USB File Transfer; visible content depends on the device |
 | System folders | A few TCC-protected directories stay unreadable |
 | Not implemented | Tag colors, network locations (SMB/FTP) |
 
