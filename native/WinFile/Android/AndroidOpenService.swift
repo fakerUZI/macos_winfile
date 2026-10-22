@@ -55,6 +55,17 @@ final class AndroidOpenService: @unchecked Sendable {
             && !entry.name.contains("/") && !entry.name.contains("\0")
     }
 
+    /// Preview.app starts Image Capture's camera browser even for a local copy.
+    /// That browser can exclusively claim the same USB interface used by MTP.
+    /// Keep Android images and PDFs in Quick Look; local file associations stay unchanged.
+    static func prefersInAppPreview(_ entry: AndroidEntry) -> Bool {
+        guard !entry.isDirectory else { return false }
+        let category = FileTypeDB.info(
+            name: entry.name, isDirectory: false, isSymlink: false, isBundle: false
+        ).category
+        return category == .image || category == .pdf
+    }
+
     private func check(_ token: ScanCancellation) throws { if token.isCancelled { throw CancellationError() } }
 
     func prepare(

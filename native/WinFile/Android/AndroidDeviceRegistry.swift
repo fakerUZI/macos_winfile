@@ -73,7 +73,20 @@ final class AndroidDeviceRegistry: ObservableObject {
     func applySnapshot(_ found: [AndroidDevice]) {
         revision += 1
         var seen = Set<String>()
-        let unique = found.filter { seen.insert($0.serial).inserted }
+        let identified = found.map { device -> AndroidDevice in
+            // A failed session exposes only a USB address, not a new device identity.
+            // Retain presentation identity while this same attachment remains present.
+            // Never retain readiness/storage or infer identity across a disconnect.
+            guard device.hasTemporaryIdentity,
+                let previous = devices.first(where: {
+                    !$0.hasTemporaryIdentity && $0.transportID == device.transportID
+                })
+            else { return device }
+            return AndroidDevice(
+                serial: previous.serial, model: previous.model, state: device.state,
+                transportID: device.transportID, storages: [])
+        }
+        let unique = identified.filter { seen.insert($0.serial).inserted }
         let roots = Dictionary(
             unique.filter(\.isReady).map { device in
                 (

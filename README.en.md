@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1184%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1167%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,14 +42,13 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.4.0
+## What’s new in v1.4.1
 
-- **Android uses MTP exclusively:** select File Transfer over USB. No USB debugging, ADB, Homebrew or extra drivers. Browse, upload, download, copy, rename and delete device files.
-- **Automatic connection updates:** insertion, removal and device changes refresh without restarting. Fix reconnect identity changes and parent-folder navigation while keeping old tabs pinned to their original device.
-- **Video plays from memory:** double-click for the built-in player or press Space to preview. Seeking reads the needed MTP ranges, with a shared video-data cache capped at 32 MiB and no full video file on disk. Unsupported reads or codecs report an error; downloading remains an explicit choice.
-- **Other file opening and diagnostics:** reuse verified read-only local document copies, cancel stalled transfers, and retain timestamped, rotating diagnostic logs.
+- **Fix Android access after closing an image:** images and PDFs open in WinFile’s Quick Look panel by default, avoiding an automatic launch of Preview and its camera importer, which can claim the MTP USB interface.
+- **Clearer connection status:** retain a known device name while the same USB attachment is temporarily unavailable, clear accessible storage and explain how to quit an app holding the device. Recover automatically when access is released instead of staying on “Reading device storage.”
+- **Keep existing file workflows:** other documents still use their default app, local file associations stay unchanged, and Android videos continue to play from bounded memory without a full disk copy. Download images/PDFs explicitly to use external apps.
 
-See the [v1.4.0 release notes](docs/releases/v1.4.0.md) and [v1.3.4 release notes](docs/releases/v1.3.4.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.4.1 release notes](docs/releases/v1.4.1.md) and [v1.4.0 release notes](docs/releases/v1.4.0.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -257,7 +256,9 @@ Device insertion, removal and File Transfer readiness update automatically. A di
 
 Videos open in the built-in player using MTP range reads and a shared RAM cache capped at 32 MiB. Double-click or choose Open to play; Space previews the video. Seeking reads the required ranges without creating a full video file on disk. Closing the player or changing the device connection cancels reads and releases the cache. Unsupported device reads or video encodings report an error without automatically downloading the file. Select one video at a time; use Download explicitly for external players.
 
-Other files download a verified, read-only local copy for the default Mac application or Quick Look, with progress and cancellation. These copies are cached by device, path, MTP object identity, size and modification time; edits are never uploaded to Android. Save As or download to a normal folder for editing. This disk cache targets 2 GiB and removes copies older than seven days when preparing files. Copies opened in the current WinFile session are retained for external applications and may exceed that target. Files manually downloaded to a chosen folder are never automatically removed.
+Images and PDFs open in WinFile’s Quick Look panel by default: launching Preview can start a camera importer that exclusively claims the USB interface used by MTP. Other documents use their default Mac application; download explicitly for external image/PDF apps. Local file associations are unchanged.
+
+Non-video files download a verified, read-only local copy with progress and cancellation. These copies are cached by device, path, MTP object identity, size and modification time; edits are never uploaded to Android. Save As or download to a normal folder for editing. This disk cache targets 2 GiB and removes copies older than seven days when preparing files. Copies opened in the current WinFile session are retained for external applications and may exceed that target. Files manually downloaded to a chosen folder are never automatically removed.
 
 ## Testing
 
@@ -269,7 +270,7 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
 
-v1.4.0 feature validation: **1,149 logic checks**, **1,179 connected-device checks**, and **1,184 app-bundle checks including real video playback**, all passing; **53 independent MTP helper protocol checks** passed on retry. Real-window checks covered playback, seeking, paused Space previews, unsupported-video feedback and device file operations. Physical files over 4 GiB and every device brand were not covered. See the [v1.4.0 release notes](docs/releases/v1.4.0.md) and [MTP video QA record](docs/qa/2026-10-22-mtp-streaming.md).
+v1.4.1 fix validation: **1,162 logic checks**, **1,191 arm64 app-bundle checks with a physical Lenovo tablet**, and **1,167 Intel/Rosetta app-bundle checks** (physical-device operations excluded), all passing. Real-window checks covered repeated image opens/closes, PDF viewing and directory refresh; the fixed session logged no MTP library or directory-read errors. These feature checks used the same-source fix before the version bump. See the [v1.4.1 release notes](docs/releases/v1.4.1.md) for final release validation and the [image-preview QA record](docs/qa/2026-10-23-android-image-preview.md).
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 

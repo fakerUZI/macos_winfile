@@ -1295,6 +1295,9 @@ final class BrowserModel: ObservableObject {
             TabDiagnostics.shared.record("mtp.page.identityResolved", detail: resolved.diagnosticSummary)
             loadAndroidDevice(serial: resolved.serial)
         }
+        if case .androidDevice(let serial) = selection {
+            statusMessage = Self.androidDeviceStatus(devices.first { $0.serial == serial })
+        }
         if let serial = transferSerial, !devices.contains(where: { $0.serial == serial && $0.isReady }) {
             transferCancellation?.cancel()
         }
@@ -1325,9 +1328,15 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    static func androidDeviceStatus(_ device: AndroidDevice?) -> String {
+        device?.isReady == true
+            ? L("android.connection.ready", "设备已连接，请选择存储位置。")
+            : androidConnectionMessage(device)
+    }
+
     static func androidConnectionMessage(_ device: AndroidDevice?) -> String {
         if device?.state == "unavailable" {
-            return L("android.connection.busy", "无法建立 MTP 会话。设备可能仍在切换 USB 模式，或被其他传输软件占用；WinFile 会自动重试。")
+            return L("android.connection.busy", "无法建立 MTP 会话。设备可能被「预览」「照片」「图像捕捉」或其他传输软件占用；请完全退出占用的应用，仅关闭窗口可能不会释放设备。若刚切换 USB 模式，请稍候，WinFile 会自动重试。")
         }
         if device?.needsFileTransfer == true {
             return L("android.connection.notReady", "请解锁安卓设备，选择 USB「文件传输」，并关闭其他占用设备的传输软件；就绪后将自动恢复。")
@@ -1399,12 +1408,19 @@ final class BrowserModel: ObservableObject {
                 guard let self, self.androidOpenID == id, !token.isCancelled, !Task.isCancelled else {
                     throw CancellationError()
                 }
+                // Closing Preview.app's document window leaves its camera browser alive.
+                // Route Android pictures/PDFs to our Quick Look panel to avoid claiming USB.
+                let inAppURLs = zip(files, urls).filter { preview || AndroidOpenService.prefersInAppPreview($0.0) }.map { $0.1 }
+                let externalURLs = zip(files, urls).filter { !preview && !AndroidOpenService.prefersInAppPreview($0.0) }.map { $0.1 }
+                TabDiagnostics.shared.record("android.open.route", detail: "inApp=\(inAppURLs.count) external=\(externalURLs.count)")
+                if !inAppURLs.isEmpty {
+                    if let handler = self.androidOpenHandler { handler(inAppURLs, true) }
+                    else { QuickLookService.shared.show(inAppURLs) }
+                }
                 if let handler = self.androidOpenHandler {
-                    handler(urls, preview)
-                } else if preview {
-                    QuickLookService.shared.show(urls)
+                    if !externalURLs.isEmpty { handler(externalURLs, false) }
                 } else {
-                    for url in urls {
+                    for url in externalURLs {
                         if let application = FileAssociations.shared.application(for: url) {
                             self.open([url], with: application)
                         } else if !NSWorkspace.shared.open(url) {
@@ -1521,7 +1537,7 @@ final class BrowserModel: ObservableObject {
         items = []
         selectedIDs = []
         isBusy = false
-        statusMessage = L("status.androidDevice", "正在读取设备存储…")
+        statusMessage = Self.androidDeviceStatus(androidRegistry.device(serial: serial))
     }
 
     func loadThisPC() {

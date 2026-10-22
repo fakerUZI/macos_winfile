@@ -1029,7 +1029,7 @@
 "android.open.incomplete" = "The download is incomplete; the file was not opened. Check the device connection and try again.";
 "android.open.noSpace" = "There is not enough free space on the local cache volume to download this file.";
 "android.connection.notReady" = "Unlock the Android device, select USB File Transfer and close other apps using the device. This folder will recover automatically when ready.";
-"android.connection.busy" = "Unable to start an MTP session. The device may still be changing USB modes or in use by another transfer app. WinFile will retry automatically.";
+"android.connection.busy" = "Unable to start an MTP session. Preview, Photos, Image Capture or another transfer app may be using the device. Quit that app completely; closing its window may not release USB access. After changing USB modes, wait briefly. WinFile will retry automatically.";
 "android.connection.disconnected" = "The Android device is disconnected. Reconnect and select File Transfer to recover this folder automatically.";
 "android.open.complete" = "Opened %d local cached copies. Changes are not sent back to the Android device.";
 "android.open.cancelled" = "Download and open cancelled.";
@@ -1065,3 +1065,5 @@
 "android.stream.stopped" = "Streaming did not complete. The video was not downloaded automatically.";
 "android.stream.preparing" = "Preparing MTP streaming…";
 "android.stream.cancelled" = "Streaming cancelled.";
+
+"android.connection.ready" = "Device connected. Choose a storage location.";

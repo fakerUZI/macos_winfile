@@ -2668,6 +2668,38 @@ enum NativeTestSuite {
         check("诊断设备标识不暴露原始序列号",
               resolved.diagnosticID.count == 12 && !resolved.diagnosticSummary.contains(resolved.serial))
 
+        let busyRegistry = AndroidDeviceRegistry()
+        var known = resolved
+        known.storages = [MTPStorage(id: 1, path: "/storage-1", label: "Shared", isRemovable: false, capacity: 100, free: 50)]
+        busyRegistry.applySnapshot([known])
+        let busyPage = BrowserModel(engine: FSEngine(), startDirectory: nil, androidRegistry: busyRegistry)
+        busyPage.navigate(to: .androidDevice(serial: known.serial))
+        busyRegistry.applySnapshot([pending])
+        check("临时会话占用保留同一 USB 连接的已知名称和序列号",
+              busyRegistry.devices.first?.serial == known.serial && busyRegistry.devices.first?.model == known.model)
+        check("占用期间不保留就绪状态或可用存储",
+              busyRegistry.devices.first?.isReady == false && busyRegistry.storageRoots.isEmpty && busyRegistry.devices.first?.storages.isEmpty == true)
+        check("占用期间原设备页不改成 USB 临时身份且不假装持续读取",
+              busyPage.selection == .androidDevice(serial: known.serial) && !busyPage.isBusy
+              && busyPage.statusMessage == BrowserModel.androidConnectionMessage(busyRegistry.devices.first))
+        busyRegistry.applySnapshot([pending])
+        check("重复扫描失败仍保留已知设备名称", busyRegistry.devices.first?.displayName == known.model)
+        busyRegistry.applySnapshot([known])
+        check("释放占用后同一设备自动恢复存储和状态",
+              busyRegistry.roots(for: known.serial).count == 1 && busyRegistry.devices.first?.isReady == true
+              && busyPage.statusMessage == BrowserModel.androidDeviceStatus(known))
+        busyRegistry.applySnapshot([replacement])
+        check("占用恢复时识别到新设备不会重定向旧设备页",
+              busyRegistry.devices.first?.serial == replacement.serial && busyPage.selection == .androidDevice(serial: known.serial))
+        busyRegistry.applySnapshot([])
+        busyRegistry.applySnapshot([pending])
+        check("断开后复用 USB 地址不继承上一台设备身份", busyRegistry.devices.first?.hasTemporaryIdentity == true)
+        busyRegistry.applySnapshot([known])
+        var unknown = pending
+        unknown.transportID = "another-usb"
+        busyRegistry.applySnapshot([unknown])
+        check("另一条 USB 连接不继承设备身份", busyRegistry.devices.first?.serial == unknown.serial)
+
         var readRequests: [String] = []
         _ = try MTPRunner.reconnectingRead(operation: "list", transport: "old", refresh: { "new" }) { transport in
             readRequests.append(transport)
@@ -2906,6 +2938,40 @@ enum NativeTestSuite {
         model.openAndroidFiles([entry], preview: true)
         spin { !model.isOpeningAndroidFile }
         check("安卓空格预览复用下载流程", opened == [changed] && wasPreview)
+        var routed: [([URL], Bool)] = []
+        let imageModel = BrowserModel(
+            engine: FSEngine(), startDirectory: nil, androidRegistry: registry, androidOpenService: service,
+            androidOpenHandler: { routed.append(($0, $1)) })
+        let image = AndroidEntry(name: "sample.PNG", path: "/storage-1/sample.PNG", isDirectory: false,
+                                 size: 5, modified: nil, serial: "TEST")
+        imageModel.activateAndroid(image)
+        spin { !imageModel.isOpeningAndroidFile }
+        check("安卓图片双击在应用内预览，不交给外部预览应用",
+              routed.count == 1 && routed[0].1 && routed[0].0.first?.isFileURL == true && imageModel.errorMessage == nil)
+        let cachedImage = routed.first?.0.first
+        let imageDownloads = downloads
+        routed = []
+        imageModel.activateAndroid(image)
+        spin { !imageModel.isOpeningAndroidFile }
+        check("再次打开图片复用只读副本，仍使用应用内预览",
+              routed.count == 1 && routed[0].1 && routed[0].0.first == cachedImage && downloads == imageDownloads)
+        let pdf = AndroidEntry(name: "sample.pdf", path: "/storage-1/sample.pdf", isDirectory: false,
+                               size: 5, modified: nil, serial: "TEST")
+        routed = []
+        imageModel.openAndroidFiles([pdf])
+        spin { !imageModel.isOpeningAndroidFile }
+        check("安卓 PDF 不自动启动可能占用 MTP 的预览应用", routed.count == 1 && routed[0].1)
+        routed = []
+        imageModel.openAndroidFiles([image, entry])
+        spin { !imageModel.isOpeningAndroidFile }
+        check("混合选择图片与文档按需分流，不把图片交给外部应用",
+              routed.count == 2 && routed[0].1 && routed[0].0.map(\.lastPathComponent) == [image.name]
+              && !routed[1].1 && routed[1].0.map(\.lastPathComponent) == [entry.name])
+        routed = []
+        imageModel.openAndroidFiles([image, entry], preview: true)
+        spin { !imageModel.isOpeningAndroidFile }
+        check("显式快速预览仍统一在应用内显示所有选中项", routed.count == 1 && routed[0].1 && routed[0].0.count == 2)
+
         opened = []
         model.openAndroidFiles([entry])
         registry.applySnapshot([])
