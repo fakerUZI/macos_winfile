@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f7f0">
   <title>WinFile — 让 Mac 文件管理更顺手</title>
-  <meta name="description" content="WinFile v{{VERSION}}：原生 macOS 文件管理器，支持 MTP 安卓文件管理、视频内存播放、空间清理、微信附件整理与 RAR / 7Z 解压，免费开源。">
+  <meta name="description" content="WinFile v{{VERSION}}：原生 macOS 文件管理器，支持安卓图片与 PDF 内置预览、MTP 文件管理、视频内存播放、空间清理与 RAR / 7Z 解压，免费开源。">
   <meta property="og:type" content="website">
   <meta property="og:title" content="WinFile — 文件归位，一切顺手。">
-  <meta property="og:description" content="v{{VERSION}} 已发布：安卓统一使用 MTP，插拔自动刷新，视频按需读取、内存播放。原生 macOS 文件管理，免费开源。">
+  <meta property="og:description" content="v{{VERSION}} 已发布：修复安卓图片关闭后设备不可用，图片与 PDF 内置预览，设备占用状态更清楚。原生 macOS 文件管理，免费开源。">
   <meta property="og:url" content="https://fakeruzi.github.io/macos_winfile/">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:image" content="https://fakeruzi.github.io/macos_winfile/assets/main-window.png">
@@ -68,12 +68,12 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">安卓文件，<br>连上就顺手。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">看完图片，<br>接着整理文件。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <div class="release-grid">
-        <article class="release-card release-card-video"><span class="release-number">01 / 视频按需播放</span><h3>从手机读视频，<br>不用先存一整份。</h3><p>双击使用内置播放器，空格先预览，拖动进度按需读取。共享视频数据缓存上限 32 MiB，不创建完整视频磁盘副本。</p><button class="release-preview screenshot-button" data-image="./assets/android-video-memory.png" data-caption="1.4.0 视频播放功能 · 真实设备生成样例，非私人视频" aria-label="放大查看 MTP 视频内存播放"><img src="./assets/android-video-memory.png" width="1800" height="1176" alt="WinFile 内置播放器显示生成的彩色视频，底部注明 MTP 流式播放和 32 MiB 缓存上限" loading="lazy"><span>查看真实播放器界面 ↗</span></button><p class="release-note">32 MiB 仅指视频数据缓存。编码与分段读取取决于系统和设备；不兼容时提示错误，由你决定是否手动下载。</p></article>
-        <article class="release-card"><span class="release-number">02 / 安卓统一使用 MTP</span><h3>插上数据线，<br>选择文件传输。</h3><p>无需 USB 调试、ADB 或额外安装工具。应用内置 MTP 组件，浏览手机和平板允许访问的存储，上传、下载和整理文件。</p><p class="release-note">支持新建、重命名、复制和删除；设备内移动取决于手机能力。复制会使用本机临时空间，删除前需确认。</p></article>
-        <article class="release-card"><span class="release-number">03 / 插拔与重连自动更新</span><h3>拔插设备，<br>不用重启软件。</h3><p>侧边栏自动更新设备状态；断开后保留原目录，重新连接并选择文件传输后恢复。旧页签始终绑定原设备，避免换机后误操作。</p><p class="release-note">修复重连时身份变化、USB 地址过期和返回上级目录问题。诊断日志保留时间与历史，便于排查偶发连接失败。</p></article>
+        <article class="release-card"><span class="release-number">01 / 图片与 PDF 内置预览</span><h3>打开图片，<br>看完接着整理。</h3><p>安卓图片和 PDF 双击即可在 WinFile 的 Quick Look 面板中预览。关闭后继续浏览设备，也可用空格预览、多张图片切换查看。</p><div class="format-tags" aria-label="内置预览的文件示例"><span>JPG</span><span>PNG</span><span>PDF</span></div><p class="release-note">1.4.1 修复打开图片后关闭窗口，设备仍被外部「预览」占用的问题。图片与 PDF 使用只读本机副本；需要外部应用编辑时，请手动下载。</p></article>
+        <article class="release-card"><span class="release-number">02 / 设备状态更清楚</span><h3>暂时忙碌，<br>也知道该怎么恢复。</h3><p>同一 USB 连接暂时不可用时，保留已识别的设备名称，显示当前占用状态。原目录保留，释放占用后自动恢复。</p><p class="release-note">如提示占用，可完全退出「预览」「照片」「图像捕捉」或其他传输软件；仅关闭窗口可能仍占用设备。WinFile 会自动重试。</p></article>
+        <article class="release-card release-card-video"><span class="release-number">03 / MTP 视频按需播放</span><h3>从手机读视频，<br>不用先存一整份。</h3><p>双击使用内置播放器，空格先预览，拖动进度按需读取。共享视频数据缓存上限 32 MiB，不创建完整视频磁盘副本。</p><button class="release-preview screenshot-button" data-image="./assets/android-video-memory.png" data-caption="1.4.0 视频播放功能 · 真实设备生成样例，非私人视频" aria-label="放大查看 MTP 视频内存播放"><img src="./assets/android-video-memory.png" width="1800" height="1176" alt="WinFile 内置播放器显示生成的彩色视频，底部注明 MTP 流式播放和 32 MiB 缓存上限" loading="lazy"><span>查看真实播放器界面 ↗</span></button><p class="release-note">32 MiB 仅指视频数据缓存。编码与分段读取取决于系统和设备；不兼容时提示错误，由你决定是否手动下载。</p></article>
       </div>
     </section>
 
@@ -94,7 +94,7 @@
         <figure class="feature-figure"><button class="screenshot-button" data-image="./assets/wechat-cleanup.jpg" data-caption="v{{SCREENSHOT_VERSION}} 软件清理中的微信 · 示例附件，不含真实聊天内容" aria-label="放大查看微信文件清理截图"><img src="./assets/wechat-cleanup.jpg" width="2160" height="1456" alt="在空间清理的软件选择器中选择微信，显示示例附件和占用统计" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v{{SCREENSHOT_VERSION}} 真实应用界面 · 示例附件</figcaption></figure>
       </div>
       <div class="feature-panel" id="panel-android" role="tabpanel" aria-labelledby="tab-android">
-        <div class="feature-copy"><span class="feature-kicker">ANDROID FILES</span><h3>安卓连上 Mac，<br>文件也就连上了。</h3><p>用 USB 连接手机或平板，选择「文件传输」，在熟悉的列表里浏览 MTP 共享存储。相片、下载和文档，各在其位。</p><ul class="check-list"><li>插拔自动刷新，从侧边栏进入设备</li><li>上传、下载，双向传输文件</li><li>新建、重命名和复制；移动需设备支持</li><li>视频内置播放，支持预览与拖动进度</li></ul><p class="feature-footnote">无需 USB 调试或 ADB。视频按需读入内存，其它文档使用只读本机副本；私有目录可能不可见，编码与分段读取需系统和设备支持。</p></div>
+        <div class="feature-copy"><span class="feature-kicker">ANDROID FILES</span><h3>安卓连上 Mac，<br>文件也就连上了。</h3><p>用 USB 连接手机或平板，选择「文件传输」，在熟悉的列表里浏览 MTP 共享存储。相片、下载和文档，各在其位。</p><ul class="check-list"><li>插拔自动刷新，从侧边栏进入设备</li><li>上传、下载，双向传输文件</li><li>新建、重命名和复制；移动需设备支持</li><li>视频内置播放，支持预览与拖动进度</li></ul><p class="feature-footnote">无需 USB 调试或 ADB。图片与 PDF 在应用内预览，其它文档交给默认应用，均使用只读本机副本；视频按需读入内存。私有目录、编码与分段读取受系统和设备限制。</p></div>
         <figure class="feature-figure"><button class="screenshot-button" data-image="./assets/android-files.png" data-caption="MTP 安卓文件管理 · 真实设备生成样例" aria-label="放大查看安卓文件管理截图"><img src="./assets/android-files.png" width="2198" height="1814" alt="WinFile 通过 MTP 浏览安卓设备的生成样例目录，包含文本、视频和图片" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> 真实设备 · MTP 示例文件</figcaption></figure>
       </div>
       <div class="feature-panel" id="panel-archive" role="tabpanel" aria-labelledby="tab-archive">
@@ -121,7 +121,8 @@
       <details><summary>为什么有些软件没有出现在软件清理列表？<span aria-hidden="true">+</span></summary><p>列表根据本机可读取的清理目录生成，不是所有已安装软件的清单。辅助、更新和扩展子程序不会单独列出。微信扫描本机附件；百度网盘还支持实际下载目录，可手动指定并保存。其他软件仅扫描已识别的缓存和日志，保留账号资料、配置、数据库及离线内容。新增目录后可点击「刷新软件列表」。</p></details>
       <details><summary>百度网盘的下载文件没找到怎么办？<span aria-hidden="true">+</span></summary><p>进入「空间清理 → 软件清理」，选择百度网盘后指定实际下载目录。常见位置会自动识别，自定义目录会保存。通用清理也会使用这个目录；只扫描已下载到本机的文件，执行清理前请先核对需要保留的内容。</p></details>
       <details><summary>微信清理能看到所有聊天文件吗？会删除聊天记录吗？<span aria-hidden="true">+</span></summary><p>只扫描已下载到这台 Mac 的附件及可识别缓存，不读取或解密聊天数据库。手机独有、尚未下载到 Mac 的文件不会显示。可添加自定义附件目录；文件时间筛选依据修改时间。请先预览和核对需要保留的附件，确认清理后所选文件会移到废纸篓。</p></details>
-      <details><summary>连接安卓设备，需要先做什么？<span aria-hidden="true">+</span></summary><p>解锁手机或平板，用支持数据传输的 USB 线连接，选择「文件传输」，按提示允许访问。无需 USB 调试、ADB 或额外工具；WinFile 会自动识别插拔。其它 MTP 软件可能独占设备，请先退出。可见范围由设备决定，Android/data 和应用私有目录可能不可见。<a href="https://github.com/fakerUZI/macos_winfile#安卓功能准备">查看连接说明 ↗</a></p></details>
+      <details><summary>连接安卓设备，需要先做什么？<span aria-hidden="true">+</span></summary><p>解锁手机或平板，用支持数据传输的 USB 线连接，选择「文件传输」，按提示允许访问。无需 USB 调试、ADB 或额外工具；WinFile 会自动识别插拔。可见范围由设备决定，Android/data 和应用私有目录可能不可见。如果设备提示被占用，请完全退出「预览」「照片」「图像捕捉」或其他传输软件，仅关闭窗口可能不会释放 USB 接口；WinFile 会自动重试。<a href="https://github.com/fakerUZI/macos_winfile#安卓功能准备">查看连接说明 ↗</a></p></details>
+      <details><summary>安卓图片和 PDF 怎样打开？<span aria-hidden="true">+</span></summary><p>从 1.4.1 起，双击或右键打开安卓图片和 PDF，默认使用 WinFile 内置 Quick Look；空格也可预览。文件经校验后使用可复用的只读本机副本，修改不会自动回传到设备。需要用外部应用打开或编辑，请先手动下载。</p><p>这次修复避免自动启动外部「预览」及相机导入进程后占用 MTP 的 USB 接口。若你主动打开了外部相机导入或传输应用，仍可能发生设备独占；完全退出占用应用后，WinFile 会自动恢复。</p></details>
       <details><summary>打开安卓视频，会先下载完整文件吗？<span aria-hidden="true">+</span></summary><p>不会。内置播放器按需从 MTP 读取字节范围，使用上限 32 MiB 的共享视频数据缓存，不保存完整视频文件。关闭或断连时取消读取并释放缓存；这不是应用总内存上限，也不代表系统交换内存完全不写盘。编码或设备不兼容时明确报错，不自动下载回退。</p><p>其它文档仍需只读本机副本，缓存目标为 2 GiB / 7 天，在准备文件时清理；当前会话打开过的副本会保留给外部应用，可能超过目标。外部播放器或不支持的格式，请手动下载；手动下载的文件不会自动删除。</p></details>
       <details><summary>支持哪些解压格式？会覆盖已有文件吗？<span aria-hidden="true">+</span></summary><p>支持 ZIP、RAR（含 RAR5）、7Z、TAR，以及 GZip、BZip2、XZ 单文件和 TAR 组合格式，并支持密码和分卷。解压先在暂存目录完成，同名冲突会自动另存，不覆盖已有文件。创建压缩包目前支持 ZIP。</p></details>
       <details><summary>以后怎样更新？<span aria-hidden="true">+</span></summary><p>从 v1.2.0 起，WinFile 支持启动时检查更新。你可以安装、跳过某个版本或下次再说；也可以在应用中手动检查。更新包与更新源经过 Ed25519 签名校验。更早版本请先从 GitHub 手动升级一次。</p></details>
