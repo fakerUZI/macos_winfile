@@ -8,7 +8,7 @@
   <meta name="description" content="WinFile v{{VERSION}}：原生 macOS 文件管理器，支持空间清理、按软件清理、微信附件整理、安卓文件管理与 RAR / 7Z 解压，免费开源。">
   <meta property="og:type" content="website">
   <meta property="og:title" content="WinFile — 文件归位，一切顺手。">
-  <meta property="og:description" content="v{{VERSION}} 更新预览：更完整的微信附件与网盘下载识别，更顺手的页签切换。原生 macOS 文件管理，免费开源。">
+  <meta property="og:description" content="v{{VERSION}} 已发布：内置文件夹选择器、大目录内存优化、更可靠的文件定位。原生 macOS 文件管理，免费开源。">
   <meta property="og:url" content="https://fakeruzi.github.io/macos_winfile/">
   <meta property="og:locale" content="zh_CN">
   <meta property="og:image" content="https://fakeruzi.github.io/macos_winfile/assets/main-window.png">
@@ -47,7 +47,7 @@
   <main id="main">
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <a class="version-pill" href="#whats-new"><span class="status-dot"></span> v{{VERSION}} 更新预览 · 看看新变化 <span aria-hidden="true">↗</span></a>
+        <a class="version-pill" href="#whats-new"><span class="status-dot"></span> v{{VERSION}} 已发布 · 看看新变化 <span aria-hidden="true">↗</span></a>
         <h1 id="hero-title">文件归位，<br><span>一切顺手。</span><svg class="sprout" viewBox="0 0 80 80" aria-hidden="true"><path d="M37 68c5-28 3-43 19-52M39 48C15 50 13 31 13 26c19-2 30 3 26 22ZM43 36C40 13 60 8 70 9c1 18-6 28-27 27Z"/></svg></h1>
         <p class="hero-intro">原生 macOS 文件管理，让日常整理更顺手。<br class="desktop-break">从应用缓存、微信附件，到安卓文件和压缩包，<br class="desktop-break">在一个清爽的原生窗口里，理得明明白白。</p>
         <div class="hero-actions"><a class="button primary" href="https://github.com/fakerUZI/macos_winfile/releases/latest/download/WinFile.zip"><svg class="icon"><use href="#download-icon"/></svg> 下载 WinFile</a><a class="text-link" href="#features">探索功能 <svg class="icon"><use href="#arrow"/></svg></a></div>
@@ -68,12 +68,12 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">这次，<br>整理得更准，切换更顺。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
-      <p class="release-status">更新预览 v{{VERSION}} · 当前正式下载 v{{DOWNLOAD_VERSION}}</p>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">打开更顺手，<br>浏览更轻快。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <div class="release-grid">
-        <article class="release-card"><span class="release-number">01 / 文件识别更完整</span><h3>微信与网盘，<br>这次一起看清楚。</h3><p>通用清理补齐微信附件与百度网盘下载文件。常见下载目录自动识别，也可手动指定并保存实际下载位置。</p><a class="text-link" href="#features">看看空间清理 <span aria-hidden="true">↗</span></a></article>
-        <article class="release-card release-card-software"><span class="release-number">02 / 应用来源更清楚</span><h3>看到应用名称，<br>就知道文件来自哪里。</h3><p>来源筛选与列表统一显示应用名称。辅助组件归入已识别的主应用，无法识别的来源显示为「其他应用」。</p><button class="release-preview screenshot-button" data-image="./assets/software-cleanup.jpg" data-caption="v{{SCREENSHOT_VERSION}} 软件清理 · VS Code 示例缓存" aria-label="放大查看按软件清理截图"><img src="./assets/software-cleanup.jpg" width="2160" height="1456" alt="软件清理中选择 Visual Studio Code，仅展示该软件的示例缓存" loading="lazy"><span>查看软件清理界面 ↗</span></button></article>
-        <article class="release-card"><span class="release-number">03 / 页签切换更顺手</span><h3>切回来，<br>接着刚才的位置。</h3><p>最近使用的 3 个页签复用内容视图，切回时保留列表滚动位置。减少重复刷新，菜单操作跟随当前窗口的活动页签。</p><p class="release-note">详细信息栏的展开／收起按钮，移到了窗口顶部右侧。</p></article>
+        <article class="release-card release-card-picker"><span class="release-number">01 / 在应用内选择文件夹</span><h3>选好几个目录，<br>一起在新页签打开。</h3><p>WinFile 内置选择器支持浏览、输入路径、显示隐藏目录与 ⌘ 多选。解压、安卓下载、微信目录等位置，也在同一个选择器里完成。</p><button class="release-preview screenshot-button" data-image="./assets/folder-picker.png" data-caption="v{{VERSION}} 内置文件夹选择器 · Alpha / Beta 示例目录" aria-label="放大查看内置文件夹选择器"><img src="./assets/folder-picker.png" width="1400" height="980" alt="WinFile 内置选择器同时选中 Alpha 与 Beta，点击后在两个新页签打开" loading="lazy"><span>查看多选文件夹界面 ↗</span></button></article>
+        <article class="release-card"><span class="release-number">02 / 大目录浏览更轻快</span><h3>看眼前的文件，<br>少占一些内存。</h3><p>图标按可见区域加载，缩略图最多并发生成 4 张、缓存预算 64 MiB。闲置页签的数据按需回收，清理模块首次使用才加载。</p><p class="release-note">同机 1000 张合成图片、相同 4 个页签的测试中，物理内存约 337 M → 80 M。实际占用随文件与操作变化；64 MiB 仅指缩略图缓存预算。</p></article>
+        <article class="release-card"><span class="release-number">03 / 导航与扫描更可靠</span><h3>输入路径，<br>就到对应的文件。</h3><p>地址解析与补全在后台完成，输入文件路径会进入目录并选中目标。修复大目录滚动定位；目录读取失败后，可留在页面重试。</p><p class="release-note">左侧菜单可独立折叠。微信扫描达到上限时标明部分结果与占用，可提高上限重新扫描。</p></article>
       </div>
     </section>
 
@@ -90,7 +90,7 @@
         <figure class="feature-figure"><button class="screenshot-button" data-image="./assets/storage-cleanup.jpg" data-caption="v{{SCREENSHOT_VERSION}} 空间清理 · 隔离示例文件，不含私人数据" aria-label="放大查看空间清理截图"><img src="./assets/storage-cleanup.jpg" width="2160" height="1456" alt="空间清理中的缓存、日志、安装包和大文件候选，显示文件大小与实际磁盘占用" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v{{SCREENSHOT_VERSION}} 真实应用界面 · 示例文件</figcaption></figure>
       </div>
       <div class="feature-panel" id="panel-wechat" role="tabpanel" aria-labelledby="tab-wechat">
-        <div class="feature-copy"><span class="feature-kicker">WECHAT ATTACHMENTS</span><h3>微信占了多少，<br>先看清，再清理。</h3><p>在「通用清理」中查看微信附件，或进入「软件清理 → 微信」，按账号、月份、类型和大小进一步筛选。手动添加的微信目录也会用于通用扫描。</p><ul class="check-list"><li>全部、筛选与已选附件占用，一目了然</li><li>按账号、月份和来源，进一步缩小范围</li><li>双击打开，或在新页签进入所在文件夹</li><li>确认后移到废纸篓，清理由你决定</li></ul><p class="feature-footnote">仅扫描已下载到本机的附件；不读取或解密聊天数据库。</p></div>
+        <div class="feature-copy"><span class="feature-kicker">WECHAT ATTACHMENTS</span><h3>微信占了多少，<br>先看清，再清理。</h3><p>在「通用清理」中查看微信附件，或进入「软件清理 → 微信」，按账号、月份、类型和大小进一步筛选。手动添加的微信目录也会用于通用扫描。</p><ul class="check-list"><li>全部、筛选与已选附件占用，一目了然</li><li>按账号、月份和来源，进一步缩小范围</li><li>双击打开，或在新页签进入所在文件夹</li><li>确认后移到废纸篓，清理由你决定</li></ul><p class="feature-footnote">仅扫描本机附件，不读取或解密聊天数据库。达到扫描上限时标明部分结果，可提高上限重新扫描。</p></div>
         <figure class="feature-figure"><button class="screenshot-button" data-image="./assets/wechat-cleanup.jpg" data-caption="v{{SCREENSHOT_VERSION}} 软件清理中的微信 · 示例附件，不含真实聊天内容" aria-label="放大查看微信文件清理截图"><img src="./assets/wechat-cleanup.jpg" width="2160" height="1456" alt="在空间清理的软件选择器中选择微信，显示示例附件和占用统计" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v{{SCREENSHOT_VERSION}} 真实应用界面 · 示例附件</figcaption></figure>
       </div>
       <div class="feature-panel" id="panel-android" role="tabpanel" aria-labelledby="tab-android">
@@ -106,10 +106,10 @@
     <section class="everyday section-space wrap" id="everyday" aria-labelledby="everyday-title">
       <div class="section-heading"><div><p class="eyebrow"><span></span> 顺手，藏在每一次操作里</p><h2 id="everyday-title">熟悉的习惯，<br>不用从头学起。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile#功能">查看完整功能 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <div class="everyday-grid">
-        <article class="workflow-card favorites-card"><div class="mini-label">01 / 让常用文件夹触手可及</div><div class="favorite-demo" aria-hidden="true"><div class="demo-folder"><svg><use href="#folder"/></svg><span>我的项目</span></div><svg class="demo-arrow"><use href="#arrow"/></svg><div class="demo-sidebar"><span>个人收藏</span><div><svg class="icon"><use href="#star"/></svg> 我的项目</div><div class="demo-dashed">拖入文件夹以添加</div></div></div><h3>拖进侧边栏，就收藏好了。</h3><p>在文件列表中拖入文件夹，或右键添加到收藏。也能用 WinFile 自己的文件夹选择器，找到下一个常用目录。</p><span class="card-note">收藏保存快捷入口，原文件夹留在原处。</span></article>
-        <article class="workflow-card tabs-card"><div class="mini-label">02 / 别让思路被窗口打断</div><div class="tab-demo" aria-hidden="true"><div class="demo-tabbar"><span><svg class="icon"><use href="#folder"/></svg> 工作文档 <small>×</small></span><span><svg class="icon"><use href="#folder"/></svg> 下载 <small>×</small></span><b>+</b></div><div class="demo-path">⌂ <span>›</span> Documents <span>›</span> 工作文档</div><div class="demo-shortcuts"><kbd>⌘</kbd><kbd>T</kbd><span>多开一个页签，多留一条思路。</span></div></div><h3>多个目录，一个窗口。</h3><p>每个页签保留自己的目录、历史、排序与选择。最近使用的页签还能保留列表滚动位置，切回来继续。跳转所在文件夹时，默认打开新页签。</p><span class="card-note">支持固定页签、恢复页签与可编辑路径栏。</span></article>
+        <article class="workflow-card favorites-card"><div class="mini-label">01 / 让常用文件夹触手可及</div><div class="favorite-demo" aria-hidden="true"><div class="demo-folder"><svg><use href="#folder"/></svg><span>我的项目</span></div><svg class="demo-arrow"><use href="#arrow"/></svg><div class="demo-sidebar"><span>个人收藏</span><div><svg class="icon"><use href="#star"/></svg> 我的项目</div><div class="demo-dashed">拖入文件夹以添加</div></div></div><h3>拖进侧边栏，就收藏好了。</h3><p>在文件列表中拖入文件夹，或右键添加到收藏。内置选择器支持路径输入与隐藏目录；左侧菜单可以随时折叠，给文件多留一点空间。</p><span class="card-note">收藏保存快捷入口，原文件夹留在原处。</span></article>
+        <article class="workflow-card tabs-card"><div class="mini-label">02 / 别让思路被窗口打断</div><div class="tab-demo" aria-hidden="true"><div class="demo-tabbar"><span><svg class="icon"><use href="#folder"/></svg> 工作文档 <small>×</small></span><span><svg class="icon"><use href="#folder"/></svg> 下载 <small>×</small></span><b>+</b></div><div class="demo-path">⌂ <span>›</span> Documents <span>›</span> 工作文档</div><div class="demo-shortcuts"><kbd>⌘</kbd><kbd>T</kbd><span>多开一个页签，多留一条思路。</span></div></div><h3>多个目录，一个窗口。</h3><p>每个页签保留自己的目录、历史、排序与选择。内置选择器可一次打开多个目录，定位所在文件夹也默认新建页签；闲置页签的数据按需回收。</p><span class="card-note">支持固定页签、恢复页签与可编辑路径栏。</span></article>
       </div>
-      <div class="small-features"><article><svg class="icon"><use href="#search"/></svg><h3>找文件，少翻几层</h3><p>15 类文件分类，组合名称、大小和日期搜索；还有批量重命名与重复文件查找。</p></article><article><svg class="icon"><use href="#globe"/></svg><h3>跟随你的使用习惯</h3><p>中文与英文随系统自动切换，也可手动选择。深色模式跟随 macOS。</p></article><article><svg class="icon"><use href="#refresh"/></svg><h3>更新，也轻松一点</h3><p>启动时检查新版本，在系统弹窗里选择安装、跳过这个版本，或下次再说。</p></article></div>
+      <div class="small-features"><article><svg class="icon"><use href="#search"/></svg><h3>找文件，少翻几层</h3><p>原生搜索弹窗，在应用内选择范围，组合名称、类型、大小和日期查找；还有 15 类分类、批量重命名与重复文件查找。</p></article><article><svg class="icon"><use href="#globe"/></svg><h3>跟随你的使用习惯</h3><p>中文与英文随系统自动切换，也可手动选择。深色模式跟随 macOS。</p></article><article><svg class="icon"><use href="#refresh"/></svg><h3>更新，也轻松一点</h3><p>启动时检查新版本，在系统弹窗里选择安装、跳过这个版本，或下次再说。</p></article></div>
     </section>
 
     <section class="local-note wrap" aria-label="本机处理与开源"><div class="local-icon"><svg class="icon"><use href="#shield"/></svg></div><div><h2>你的文件，在你的 Mac 上整理。</h2><p>文件扫描与整理在本机进行。更新从 GitHub 下载，源码也在那里，随时可以查看。</p></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile"><svg class="icon"><use href="#github"/></svg> 看看源码 <span aria-hidden="true">↗</span></a></section>

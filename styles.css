@@ -528,7 +528,7 @@ h2 {
   border-radius: 14px;
   min-width: 0;
 }
-.release-card-software {
+.release-card-picker {
   background: #e3edda;
 }
 .release-number {
@@ -2037,4 +2037,9 @@ details a {
   .download-section h2 {
     font-size: 28px;
   }
+}
+
+.release-card-picker .release-preview img {
+  aspect-ratio: 10 / 7;
+  object-fit: contain;
 }
