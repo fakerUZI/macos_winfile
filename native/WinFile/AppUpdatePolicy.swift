@@ -14,7 +14,7 @@ enum AppUpdatePolicy {
     @MainActor
     static func hasActiveFileOperations(in models: [BrowserModel]) -> Bool {
         FileOperationHistory.shared.isBusy || models.contains {
-            $0.isBusy || $0.fileTransferProgress != nil || $0.transferProgress != nil || $0.archiveProgress != nil || $0.weChatCleanup.isCleaning || $0.storageCleanup.isCleaning || $0.softwareCleanup.isCleaning
+            $0.isBusy || $0.fileTransferProgress != nil || $0.transferProgress != nil || $0.archiveProgress != nil || $0.cleanupIsCleaning
         }
     }
 }

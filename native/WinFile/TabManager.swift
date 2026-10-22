@@ -1,5 +1,6 @@
 // 页签管理：一个窗口内管理多个浏览页签（对应 Windows 资源管理器的标签页）
 // 独立成可测试的模型，避免逻辑散落在视图里
+import AppKit
 import Combine
 import Foundation
 
@@ -65,6 +66,10 @@ final class TabManager: ObservableObject {
     private let sessionStore: BrowserSessionStore
     private let persistsSession: Bool
     private var saveTask: Task<Void, Never>?
+    private var idleTask: Task<Void, Never>?
+    private var inactiveSince: [UUID: Date] = [:]
+    private var recentIDs: [UUID] = []
+    private var memoryPressure: DispatchSourceMemoryPressure?
     @Published private(set) var closedTabs: [SavedBrowserTab] = []
 
     init(engine: FSEngine, startDirectory: URL?, restoreSession: Bool = false, sessionStore: BrowserSessionStore? = nil) {
@@ -87,6 +92,15 @@ final class TabManager: ObservableObject {
         }
         forwardActiveModelChanges()
         Self.liveManagers.add(self)
+        let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global(qos: .utility))
+        pressure.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.reclaimInactiveTabs(immediately: true)
+                NotificationCenter.default.post(name: .winFileMemoryPressure, object: nil)
+            }
+        }
+        memoryPressure = pressure
+        pressure.resume()
         // 切换页签时改订新模型
         $activeID
             .receive(on: RunLoop.main)
@@ -102,14 +116,36 @@ final class TabManager: ObservableObject {
     private func forwardActiveModelChanges() {
         let current = activeModel
         guard observedModel !== current else { return }
+        if let previous = recentIDs.last { inactiveSince[previous] = Date() }
+        let live = Set(tabs.map(\.id))
+        recentIDs.removeAll { $0 == activeID || !live.contains($0) }
+        inactiveSince = inactiveSince.filter { live.contains($0.key) }
+        if let activeID { recentIDs.append(activeID); inactiveSince[activeID] = nil }
         observedModel = current
+        current.resumeReadOnlyResults()
+        reclaimInactiveTabs()
+        idleTask?.cancel()
+        idleTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.reclaimInactiveTabs()
+        }
         modelCancellable?.cancel()
         modelCancellable = current.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send(); self?.scheduleSave() }
         objectWillChange.send()
     }
 
-    deinit { saveTask?.cancel() }
+    deinit { saveTask?.cancel(); idleTask?.cancel(); memoryPressure?.cancel() }
+
+    func reclaimInactiveTabs(immediately: Bool = false) {
+        let warm = Set(recentIDs.suffix(3))
+        for tab in tabs where tab.id != activeID {
+            if immediately || (!warm.contains(tab.id) && Date().timeIntervalSince(inactiveSince[tab.id] ?? .distantPast) >= 60) {
+                tab.model.reclaimReadOnlyResults()
+            }
+        }
+    }
 
     private func scheduleSave() {
         guard persistsSession else { return }
@@ -232,3 +268,5 @@ final class TabManager: ObservableObject {
         return visible
     }
 }
+
+extension Notification.Name { static let winFileMemoryPressure = Notification.Name("WinFileMemoryPressure") }

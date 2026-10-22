@@ -107,8 +107,17 @@ struct EmptyAreaContextMenu: NSViewRepresentable {
             gather(root)
             return candidates
                 .filter { marker in
+                    guard !marker.isHiddenOrHasHiddenAncestor else { return false }
                     let rect = marker.convert(marker.bounds, to: nil)
-                    return rect.width > 0 && rect.height > 0 && rect.contains(pointInWindow)
+                    guard rect.width > 0 && rect.height > 0 && rect.contains(pointInWindow) else { return false }
+                    // Overscan tiles exist outside the clip view. Their window rectangles
+                    // can overlap the address bar; only visible portions may intercept clicks.
+                    var ancestor = marker.superview
+                    while let view = ancestor {
+                        if view is NSClipView, !view.convert(view.bounds, to: nil).contains(pointInWindow) { return false }
+                        ancestor = view.superview
+                    }
+                    return true
                 }
                 .min { lhs, rhs in
                     let a = lhs.convert(lhs.bounds, to: nil)

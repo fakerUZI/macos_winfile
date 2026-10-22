@@ -11,6 +11,7 @@ struct MainView: View {
     var skipAutoNavigation: Bool = false
     /// 页签管理（一个窗口内可开多个页签）
     @StateObject private var tabManager: TabManager
+    @State private var showSidebar = true
     @State private var showInspector = true
     @AppStorage(PaneLayout.sidebarKey) private var sidebarWidth = 216.0
     @AppStorage(PaneLayout.inspectorKey) private var inspectorWidth = 264.0
@@ -18,6 +19,7 @@ struct MainView: View {
     @ObservedObject private var operationHistory = FileOperationHistory.shared
     @State private var pathText = ""
     @State private var suggestions: [PathSuggestion] = []
+    @State private var suggestionTask: Task<Void, Never>?
     @State private var editingPath = false
     @State private var searchText = ""
     @FocusState private var pathFieldFocused: Bool
@@ -58,11 +60,14 @@ struct MainView: View {
         GeometryReader { geometry in
             let inspectorVisible = showInspector && !model.isWeChatCleanupView && !model.isStorageCleanupView
             let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
-                                           inspector: inspectorWidth, showsInspector: inspectorVisible)
+                                           inspector: inspectorWidth, showsInspector: inspectorVisible,
+                                           showsSidebar: showSidebar)
             HStack(spacing: 0) {
-                SidebarView(engine: engine, model: model).frame(width: widths.sidebar)
-                PaneResizeHandle(preferredWidth: $sidebarWidth, actualWidth: widths.sidebar, range: 160...360,
-                                 expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216)
+                if showSidebar {
+                    SidebarView(engine: engine, model: model).frame(width: widths.sidebar)
+                    PaneResizeHandle(preferredWidth: $sidebarWidth, actualWidth: widths.sidebar, range: 160...360,
+                                     expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216)
+                }
                 contentPane
                 if inspectorVisible {
                     PaneResizeHandle(preferredWidth: $inspectorWidth, actualWidth: widths.inspector, range: 200...420,
@@ -174,6 +179,14 @@ struct MainView: View {
             switch kind {
             case .batchRename(let items):
                 BatchRenameSheet(model: model, items: items)
+            case .openFolder:
+                FolderPickerSheet(initialDirectory: model.currentDirectory?.isFileURL == true ? model.currentDirectory : nil, onOpen: { urls in
+                    DispatchQueue.main.async {
+                        for (index, url) in urls.enumerated() {
+                            newTab(startDirectory: url, activate: index == 0)
+                        }
+                    }
+                })
             case .advancedSearch:
                 AdvancedSearchSheet(model: model, initialQuery: searchText)
             case .duplicates:
@@ -206,6 +219,12 @@ struct MainView: View {
                 }.frame(width: 360, height: 500)
             case .help:
                 HelpSheet()
+            }
+        }
+        .sheet(item: Binding(get: { model.folderPickerRequest }, set: { model.folderPickerRequest = $0 })) { request in
+            FolderPickerSheet(initialDirectory: request.initialDirectory, title: request.title) { url in
+                DispatchQueue.main.async { request.onSelect(url) }
+                return nil
             }
         }
         .alert(WLocalizedString("alert.error.title", comment: "操作未完成"), isPresented: Binding(
@@ -521,35 +540,35 @@ struct MainView: View {
     }
 
     private func commitPath() {
-        let trimmed = pathText.trimmingCharacters(in: .whitespaces)
-        let expanded = (trimmed as NSString).expandingTildeInPath
-        guard !expanded.isEmpty else { editingPath = false; return }
-        let url = URL(fileURLWithPath: expanded)
+        let trimmed = pathText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { editingPath = false; return }
         editingPath = false
+        suggestionTask?.cancel()
         suggestions = []
-        var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
-            model.selectFolder(url)
-        } else {
-            model.selectFolder(url.deletingLastPathComponent())
-        }
+        model.openPath(trimmed)
     }
 
     private func refreshSuggestions(for text: String) {
-        let expanded = (text as NSString).expandingTildeInPath
-        let url = URL(fileURLWithPath: expanded.isEmpty ? NSHomeDirectory() : expanded)
-        let parent = expanded.hasSuffix("/") ? url : url.deletingLastPathComponent()
-        let prefix = expanded.hasSuffix("/") ? "" : url.lastPathComponent.lowercased()
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: parent, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-        ) else { suggestions = []; return }
-        suggestions = entries
-            .filter { prefix.isEmpty || $0.lastPathComponent.lowercased().hasPrefix(prefix) }
-            .prefix(12)
-            .compactMap { candidate in
-                let isDir = (try? candidate.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-                return PathSuggestion(path: candidate.path, name: candidate.lastPathComponent, isDirectory: isDir)
-            }
+        suggestionTask?.cancel()
+        let base = model.currentDirectory?.isFileURL == true ? model.currentDirectory! : FileSystemService.realHomeDirectory()
+        suggestionTask = Task {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
+            let found = await Task.detached(priority: .userInitiated) { () -> [PathSuggestion] in
+                guard let url = FolderPickerModel.resolvePath(text, relativeTo: base) else { return [] }
+                let parent = text.hasSuffix("/") ? url : url.deletingLastPathComponent()
+                let prefix = text.hasSuffix("/") ? "" : url.lastPathComponent.lowercased()
+                guard let entries = try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return [] }
+                return entries.filter { prefix.isEmpty || $0.lastPathComponent.lowercased().hasPrefix(prefix) }
+                    .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+                    .prefix(12).map { candidate in
+                        PathSuggestion(path: candidate.path, name: candidate.lastPathComponent,
+                                       isDirectory: (try? candidate.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false)
+                    }
+            }.value
+            guard !Task.isCancelled, editingPath, pathText == text else { return }
+            suggestions = found
+        }
     }
 
     // MARK: - 内容区
@@ -563,7 +582,7 @@ struct MainView: View {
             tab: activeTab,
             tabs: tabs,
             dialog: $dialog,
-            openFolderPanel: { openFolderPanel(newTab: true) }
+            openFolderPanel: { openFolderPanel() }
         )
     }
 
@@ -571,11 +590,15 @@ struct MainView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        // 左侧只保留「打开文件夹」。
-        // 「新标签页」按钮已按要求移除，其入口仍有：⌘T 或页签栏右侧的「+」。
         ToolbarItemGroup(placement: .navigation) {
+            Button { showSidebar.toggle() } label: {
+                Label(showSidebar ? L("action.hideSidebar", "隐藏侧边栏") : L("action.showSidebar", "显示侧边栏"),
+                      systemImage: "sidebar.left")
+            }
+            .help(showSidebar ? L("action.hideSidebar", "隐藏侧边栏") : L("action.showSidebar", "显示侧边栏"))
+            .accessibilityIdentifier("sidebar.toggle")
             // 打开文件夹（保留）：在新页签中打开，不影响当前页签
-            Button { openFolderPanel(newTab: true) } label: {
+            Button { openFolderPanel() } label: {
                 Label(L("action.openFolderInNewTab", "打开文件夹"),
                       systemImage: "folder.badge.plus")
             }
@@ -604,25 +627,8 @@ struct MainView: View {
     /// 选择文件夹：
     /// - 非沙盒：直接作为新页签打开
     /// 选择文件夹并在新页签中打开（本地版可直接访问，无授权概念）
-    private func openFolderPanel(newTab inNewTab: Bool = false) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = inNewTab
-        panel.prompt = L("panel.open", "打开")
-        panel.message = L("panel.open.message", "选择要打开的文件夹")
-        panel.directoryURL = FileSystemService.realHomeDirectory()
-        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-
-        let targets = panel.urls
-        if inNewTab {
-            // 每个选中的文件夹各开一个页签，首个直接激活
-            for (index, url) in targets.enumerated() {
-                newTab(startDirectory: url, activate: index == 0)
-            }
-        } else if let first = targets.first {
-            model.selectFolder(first)
-        }
+    private func openFolderPanel() {
+        dialog = .openFolder
     }
 
     private func confirmDelete() {
@@ -648,6 +654,7 @@ struct MainView: View {
 enum DialogKind: Identifiable {
     case batchRename([FileItem])
     case advancedSearch
+    case openFolder
     case duplicates
     case rename(FileItem)
     case newFolder
@@ -659,6 +666,7 @@ enum DialogKind: Identifiable {
     var id: String {
         switch self {
         case .batchRename: return "batchRename"
+        case .openFolder: return "openFolder"
         case .advancedSearch: return "advancedSearch"
         case .duplicates: return "duplicates"
         case .rename(let item): return "rename-\(item.id)"

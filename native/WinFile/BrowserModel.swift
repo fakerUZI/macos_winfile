@@ -140,14 +140,39 @@ final class BrowserModel: ObservableObject {
     var deleteActionTitle: String { isAndroidPath ? L("android.deletePermanent", "永久删除…") : L("action.moveToTrash", "移到废纸篓") }
     var confirmAndroidDeletion: (([AndroidEntry]) -> Bool)?
     @Published var statusMessage: String = ""
+    @Published var folderPickerRequest: FolderPickerRequest?
     @Published var errorMessage: String?
+    @Published private(set) var directoryReadError: String?
     @Published var isBusy = false
     @Published var categoryFilter: FileCategory?
 
     let engine: FSEngine
-    let weChatCleanup: WeChatCleanupModel
-    let storageCleanup: StorageCleanupModel
-    let softwareCleanup: StorageCleanupModel
+    private var cleanupBacking: WeChatCleanupModel?
+    private var storageBacking: StorageCleanupModel?
+    private var softwareBacking: StorageCleanupModel?
+    var initializedCleanupCount: Int { [cleanupBacking != nil, storageBacking != nil, softwareBacking != nil].filter { $0 }.count }
+    var cleanupIsCleaning: Bool { cleanupBacking?.isCleaning == true || storageBacking?.isCleaning == true || softwareBacking?.isCleaning == true }
+    var weChatCleanup: WeChatCleanupModel {
+        if let cleanupBacking { return cleanupBacking }
+        let value = WeChatCleanupModel()
+        cleanupBacking = value
+        cleanupSubscription = value.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return value
+    }
+    var storageCleanup: StorageCleanupModel {
+        if let storageBacking { return storageBacking }
+        let value = StorageCleanupModel()
+        storageBacking = value
+        storageCleanupSubscription = value.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return value
+    }
+    var softwareCleanup: StorageCleanupModel {
+        if let softwareBacking { return softwareBacking }
+        let value = StorageCleanupModel(softwareMode: true)
+        softwareBacking = value
+        softwareCleanupSubscription = value.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        return value
+    }
     private var softwareCleanupSubscription: AnyCancellable?
     private var storageCleanupSubscription: AnyCancellable?
     private var backStack: [SidebarSelection] = []
@@ -164,18 +189,18 @@ final class BrowserModel: ObservableObject {
     init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, storageCleanupModel: StorageCleanupModel? = nil, softwareCleanupModel: StorageCleanupModel? = nil, clipboardStore: FileClipboard? = nil) {
         self.engine = engine
         self.clipboardStore = clipboardStore ?? .shared
-        self.weChatCleanup = cleanupModel ?? WeChatCleanupModel()
-        self.storageCleanup = storageCleanupModel ?? StorageCleanupModel()
-        self.softwareCleanup = softwareCleanupModel ?? StorageCleanupModel(softwareMode: true)
+        self.cleanupBacking = cleanupModel
+        self.storageBacking = storageCleanupModel
+        self.softwareBacking = softwareCleanupModel
         filesChangedSubscription = NotificationCenter.default.publisher(for: .winFileFilesChanged)
             .receive(on: RunLoop.main).sink { [weak self] _ in
-                guard let self, !self.isBusy, self.showsFileList || self.isCleanupView else { return }
+                guard let self, !self.isSuspended, !self.isBusy, self.showsFileList || self.isCleanupView else { return }
                 self.reload()
             }
         clipboardSubscription = self.clipboardStore.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        softwareCleanupSubscription = softwareCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        storageCleanupSubscription = storageCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
-        cleanupSubscription = weChatCleanup.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        softwareCleanupSubscription = softwareCleanupModel?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        storageCleanupSubscription = storageCleanupModel?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        cleanupSubscription = cleanupModel?.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
         languageSubscription = Localization.shared.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refreshLocalizedContent() }
@@ -191,6 +216,7 @@ final class BrowserModel: ObservableObject {
         searchCancellation?.cancel()
         categoryCancellation?.cancel()
         fileTransferCancellation?.cancel()
+        pathTask?.cancel()
         directoryRefreshTask?.cancel()
         listingTask?.cancel()
         searchTask?.cancel()
@@ -254,7 +280,7 @@ final class BrowserModel: ObservableObject {
     var isCleanupView: Bool { isStorageCleanupView || isWeChatCleanupView }
     var cleanupSection: CleanupSection { isWeChatCleanupView ? .software : .general }
     var sidebarSelection: SidebarSelection? { isCleanupView ? .storageCleanup : selection }
-    var isCleaningStorage: Bool { storageCleanup.isCleaning || softwareCleanup.isCleaning || weChatCleanup.isCleaning }
+    var isCleaningStorage: Bool { cleanupIsCleaning }
     func selectSidebarDestination(_ destination: SidebarSelection) {
         if destination == .storageCleanup && isCleanupView { return }
         navigate(to: destination)
@@ -385,12 +411,15 @@ final class BrowserModel: ObservableObject {
     // MARK: - 导航
 
     private func beginPageLoad() {
+        isSuspended = false
+        directoryReadError = nil
         navigationID = UUID()
         listingTask?.cancel(); homeTask?.cancel()
         isLoadingHome = false; isLoadingDrives = false; isLoadingAppData = false; isLoadingAndroid = false
     }
 
     func navigate(to target: SidebarSelection, recordHistory: Bool = true) {
+        isSuspended = false
         if recordHistory, let current = selection, current != target {
             backStack.append(current)
             forwardStack.removeAll()
@@ -527,6 +556,7 @@ final class BrowserModel: ObservableObject {
     }
 
     private func load(directory: URL, resetCategory: Bool = true) {
+        directoryReadError = nil
         beginPageLoad()
         // 安卓路径走 adb 列目录（本地 FileManager 无法访问设备文件）
         if AndroidURL.isAndroid(directory) {
@@ -578,7 +608,10 @@ final class BrowserModel: ObservableObject {
                 }
                 self.isBusy = false
                 if let failure {
+                    self.directoryWatcher = nil
+                    self.watchedDirectory = nil
                     TabDiagnostics.shared.recordFileError(failure, operation: "listDirectory", url: directory)
+                    self.directoryReadError = failure.localizedDescription
                     self.errorMessage = failure.localizedDescription
                     self.statusMessage = failure.localizedDescription
                 } else {
@@ -594,7 +627,61 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    /// Resolve typed paths off the main thread. Invalid paths never navigate to an unrelated parent.
+    private var pathTask: Task<Void, Never>?
+    func openPath(_ text: String) {
+        pathTask?.cancel()
+        let base = currentDirectory?.isFileURL == true ? currentDirectory! : FileSystemService.realHomeDirectory()
+        let navigation = navigationID
+        pathTask = Task { [weak self] in
+            do {
+                let target = try await Task.detached(priority: .userInitiated) { () throws -> (URL, Bool) in
+                    guard let url = FolderPickerModel.resolvePath(text, relativeTo: base) else { throw FSError.notFound(base) }
+                    let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+                    return (url, values.isDirectory == true || FSEngine.isSidebarFolder(url))
+                }.value
+                guard !Task.isCancelled, let self, self.navigationID == navigation else { return }
+                if target.1 { self.selectFolder(target.0) }
+                else {
+                    self.selectFolder(target.0.deletingLastPathComponent())
+                    self.pendingSelectionID = target.0.path
+                }
+            } catch {
+                guard !Task.isCancelled, let self, self.navigationID == navigation else { return }
+                TabDiagnostics.shared.recordFileError(error as NSError, operation: "openPath", url: base)
+                self.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @Published private(set) var isSuspended = false
+    func stopWatchingDirectory() {
+        watchesChanges = false
+        directoryWatcher = nil; watchedDirectory = nil
+        directoryRefreshTask?.cancel()
+    }
+    /// Release only reproducible browser results. Cleanup selections, pending trash,
+    /// transfers, navigation history, filters and clipboard state remain intact.
+    @discardableResult
+    func reclaimReadOnlyResults() -> Bool {
+        guard !isSuspended, !isBusy, !isCleanupView, !isAndroidPath,
+              archiveProgress == nil, fileTransferProgress == nil, transferProgress == nil,
+              !cleanupIsCleaning, showsFileList, currentDirectory?.isFileURL == true || isCategoryView,
+              !items.isEmpty || !searchResults.isEmpty || !categoryResults.isEmpty else { return false }
+        stopWatchingDirectory()
+        isSuspended = true
+        items = []; searchResults = []; categoryResults = []
+        return true
+    }
+    func resumeReadOnlyResults() {
+        guard isSuspended else { beginWatchingDirectory(); return }
+        isSuspended = false
+        reload()
+        beginWatchingDirectory()
+    }
+
     func beginWatchingDirectory() {
+        guard tabManager == nil || tabManager?.activeModel === self else { return }
         watchesChanges = true
         installDirectoryWatcher()
     }
@@ -612,10 +699,8 @@ final class BrowserModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self, self.currentDirectory?.path == directory.path,
                   !self.isBusy, self.archiveProgress == nil, self.fileTransferProgress == nil else { return }
-            var isDirectory: ObjCBool = false
-            if !FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory) || !isDirectory.boolValue {
-                self.navigate(to: .home)
-            } else { self.reload() }
+            // Read on the listing worker; a disconnected volume remains visible with Retry.
+            self.reload()
         }
     }
 
@@ -933,17 +1018,15 @@ final class BrowserModel: ObservableObject {
         guard isWeChatCleanupView else { return nil }
         let parents = Set(selectedItems.map { $0.url.deletingLastPathComponent() })
         if parents.count == 1 { return parents.first }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = L("settings.choose", "选择…")
-        panel.message = L("wechat.archiveDestination", "选择压缩文件的保存位置")
-        return panel.runModal() == .OK ? panel.url : nil
+        folderPickerRequest = FolderPickerRequest(title: L("wechat.archiveDestination", "选择压缩文件的保存位置"), initialDirectory: parents.first) { [weak self] url in
+            self?.compressSelection(to: url)
+        }
+        return nil
     }
 
     /// 压缩选中项到当前目录
-    func compressSelection() {
-        guard canCompress, let directory = archiveDestination() else { return }
+    func compressSelection(to requestedDirectory: URL? = nil) {
+        guard canCompress, let directory = requestedDirectory ?? archiveDestination() else { return }
         let urls = selectedItems.map(\.url)
         let name = ArchiveService.defaultArchiveName(for: urls)
         archiveProgress = ArchiveProgress(name: name, isCompressing: true)
@@ -1030,12 +1113,9 @@ final class BrowserModel: ObservableObject {
 
     func chooseExtractionDestination() {
         guard canExtract else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.prompt = L("action.extract", "解压")
-        panel.message = L("archive.chooseDestination", "选择解压文件的保存位置")
-        if panel.runModal() == .OK, let directory = panel.url { extractSelection(to: directory) }
+        folderPickerRequest = FolderPickerRequest(title: L("archive.chooseDestination", "选择解压文件的保存位置"), initialDirectory: currentDirectory) { [weak self] directory in
+            self?.extractSelection(to: directory)
+        }
     }
 
     func cancelArchiveExtraction() { archiveCancellation?.cancel() }
@@ -1057,16 +1137,12 @@ final class BrowserModel: ObservableObject {
     func downloadSelectedToLocalFolder() {
         let entries = selectedAndroidEntries
         guard !entries.isEmpty else { return }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.prompt = L("android.chooseSaveFolder", "下载到此文件夹")
-        panel.directoryURL = FileSystemService.realHomeDirectory()
-            .appendingPathComponent("Downloads")
-        guard panel.runModal() == .OK, let target = panel.url else { return }
-        // 逐个下载（共享同一个进度显示）
-        for (index, entry) in entries.enumerated() {
-            downloadFromAndroid(entry, to: target, announce: index == entries.count - 1)
+        folderPickerRequest = FolderPickerRequest(title: L("android.chooseSaveFolder", "下载到此文件夹"),
+                                                 initialDirectory: FileSystemService.realHomeDirectory().appendingPathComponent("Downloads")) { [weak self] target in
+            guard let self else { return }
+            for (index, entry) in entries.enumerated() {
+                self.downloadFromAndroid(entry, to: target, announce: index == entries.count - 1)
+            }
         }
     }
 

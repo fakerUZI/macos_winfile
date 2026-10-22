@@ -47,14 +47,29 @@ enum FileSystemService {
     static func directoryListing(_ requested: URL, showHidden: Bool) throws -> (directory: URL, items: [FileItem]) {
         let directory = requested.standardizedFileURL.resolvingSymlinksInPath()
         let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: directory.path, isDirectory: &isDir) else {
-            if (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
-                throw FSError.unavailableSymlink(requested)
+        do {
+            let values = try directory.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else {
+                if !fm.fileExists(atPath: directory.path),
+                   (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+                    throw FSError.unavailableSymlink(requested)
+                }
+                throw FSError.notDirectory(directory)
             }
-            throw FSError.notFound(requested)
+        } catch {
+            let failure = error as NSError
+            if failure.domain == NSCocoaErrorDomain && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(failure.code) {
+                if (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+                    throw FSError.unavailableSymlink(requested)
+                }
+                let parts = requested.pathComponents
+                if parts.count > 2, parts[1] == "Volumes",
+                   !fm.fileExists(atPath: "/Volumes/" + parts[2]) { throw FSError.volumeUnavailable(requested) }
+                throw FSError.notFound(requested)
+            }
+            // Preserve EACCES/EPERM and provider errors instead of misreporting a missing path.
+            throw error
         }
-        guard isDir.boolValue else { throw FSError.notDirectory(directory) }
 
         let raw = try fm.contentsOfDirectory(
             at: directory,

@@ -57,8 +57,21 @@ struct TabContentHost: View {
             }
             // 仅文件列表视图才显示空状态；自定义页面（主页/此电脑/应用数据/
             // 安卓设备/应用程序）不使用 displayedItems，否则会误报"此文件夹为空"
-            if model.showsFileList && model.displayedItems.isEmpty && !model.isBusy {
-                EmptyStateView(engine: engine, model: model, openPanel: openFolderPanel)
+            if model.showsFileList && !model.isBusy {
+                if let error = model.directoryReadError, !model.isSearching, !model.isCategoryView {
+                    VStack(spacing: 12) {
+                        Image(systemName: "folder.badge.questionmark").font(.system(size: 36)).foregroundStyle(.secondary)
+                        Text(L("directory.unavailable", "无法读取此文件夹")).font(.headline)
+                        Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        HStack {
+                            Button(L("directory.retry", "重新读取")) { model.reload() }
+                            Button(L("panel.open", "打开")) { openFolderPanel() }
+                        }
+                    }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .textBackgroundColor))
+                } else if model.displayedItems.isEmpty {
+                    EmptyStateView(engine: engine, model: model, openPanel: openFolderPanel)
+                }
             }
             if model.isBusy {
                 HStack {

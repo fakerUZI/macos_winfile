@@ -150,7 +150,7 @@ final class FSEngine: ObservableObject {
         url.isFileURL && addedFolderPaths.contains(url.standardizedFileURL.path)
     }
 
-    static func isSidebarFolder(_ url: URL) -> Bool {
+    nonisolated static func isSidebarFolder(_ url: URL) -> Bool {
         guard url.isFileURL else { return false }
         let normalized = url.standardizedFileURL
         guard normalized.pathExtension.lowercased() != "app",
@@ -457,6 +457,7 @@ enum FSError: LocalizedError {
     case notFound(URL)
     case notDirectory(URL)
     case unavailableSymlink(URL)
+    case volumeUnavailable(URL)
     case notAuthorized(URL)
     case invalidName
     case nameExists(String)
@@ -466,6 +467,8 @@ enum FSError: LocalizedError {
         switch self {
         case .notFound(let url):
             return String(format: WLocalizedString("error.notFound", comment: "路径不存在"), url.lastPathComponent)
+        case .volumeUnavailable:
+            return L("error.volumeUnavailable", "此磁盘当前未连接或未挂载。请连接后重试。")
         case .unavailableSymlink(let url):
             return L("error.symlinkTarget", "链接“%@”的目标不存在或无法访问。", url.lastPathComponent)
         case .notDirectory(let url):

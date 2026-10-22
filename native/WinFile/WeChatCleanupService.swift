@@ -56,6 +56,10 @@ struct WeChatScanProgress {
 }
 
 struct WeChatScanResult {
+    var limitReached = false
+    var visitLimitReached = false
+    var visited = 0
+    var isPartial: Bool { limitReached || visitLimitReached }
     var files: [WeChatFile] = []
     var roots: [URL] = []
     var inaccessible: [String] = []
@@ -168,13 +172,13 @@ enum WeChatCleanupService {
         }
     }
 
-    static func scan(roots: [URL], explicitRoots: [URL] = [], cancelled: () -> Bool = { false },
+    static func scan(roots: [URL], explicitRoots: [URL] = [], candidateLimit: Int = 20_000, entryLimit: Int = 200_000, cancelled: () -> Bool = { false },
                      onProgress: (WeChatScanProgress) -> Void = { _ in }) -> WeChatScanResult {
         var result = WeChatScanResult()
         var progress = WeChatScanProgress()
         let fm = FileManager.default
         let explicit = explicitRoots.map { $0.standardizedFileURL }
-        for root in uniqueRoots(roots + explicitRoots) {
+        rootsLoop: for root in uniqueRoots(roots + explicitRoots) {
             if cancelled() { break }
             progress.currentPath = root.path
             onProgress(progress)
@@ -199,7 +203,9 @@ enum WeChatCleanupService {
             }
             guard let enumerator else { result.inaccessible.append(root.path); continue }
             for case let entry as URL in enumerator {
-                if cancelled() { break }
+                if cancelled() { break rootsLoop }
+                if result.files.count >= max(1, candidateLimit) { result.limitReached = true; break rootsLoop }
+                if progress.visited >= max(1, entryLimit) { result.visitLimitReached = true; break rootsLoop }
                 // Foundation enumerators may return /private/var while a root uses /var.
                 // Normalize aliases without following attachment symlinks.
                 let url = entry.standardizedFileURL
@@ -227,6 +233,7 @@ enum WeChatCleanupService {
                 } catch { result.inaccessible.append(url.path) }
             }
         }
+        result.visited = progress.visited
         onProgress(progress)
         result.files.sort { $0.size == $1.size ? $0.id < $1.id : $0.size > $1.size }
         result.inaccessible = Array(Set(result.inaccessible)).sorted()

@@ -68,7 +68,7 @@
 "action.toggleSortOrder" = "Toggle Sort Order";
 "action.toggleInspector" = "Show Inspector";
 "action.openFolder" = "Open Folder";
-"action.openFolder.help" = "Authorize and open a folder";
+"action.openFolder.help" = "Open folders in new tabs using the built-in picker";
 "action.authorizeFolder" = "Authorize Folder";
 "action.pasteClipboardAsFile" = "Save Clipboard Text as File";
 "action.pasted" = "Pasted";
@@ -822,6 +822,8 @@
 "layout.resizeHint" = "Drag to resize; double-click to reset";
 "layout.width" = "%d points";
 "layout.sidebarWidth" = "Sidebar width";
+"action.hideSidebar" = "Hide Sidebar";
+"action.showSidebar" = "Show Sidebar";
 "layout.inspectorWidth" = "Inspector width";
 "layout.options" = "View and Sort";
 "sort.ascending" = "Ascending";
@@ -890,7 +892,7 @@
 "folderPicker.path" = "Enter a folder path";
 "folderPicker.go" = "Go";
 "folderPicker.search" = "Filter folders in this directory";
-"folderPicker.empty" = "No matching subfolders. You can add the current folder.";
+"folderPicker.empty" = "No matching subfolders. You can use the current folder.";
 "folderPicker.addCurrent" = "Add Current Folder";
 "folderPicker.addSelected" = "Add %d Folders";
 "sidebar.dropHint" = "Drop folders here to add to Favorites";
@@ -1027,3 +1029,13 @@
 "search.invalidRange" = "Enter valid nonnegative sizes. Minimum size and start date must not exceed their end values.";
 
 "error.symlinkTarget" = "The target of “%@” does not exist or cannot be accessed.";
+
+/* Browser performance and in-app folder selection */
+"folderPicker.openHint" = "Double-click to browse; hold ⌘ to select multiple folders. Each folder opens in a new tab.";
+"folderPicker.openCurrent" = "Open Current Folder";
+"folderPicker.openSelected" = "Open %d Folders";
+"directory.unavailable" = "Unable to Read This Folder";
+"directory.retry" = "Retry";
+"wechat.partialScan" = "Partial results: storage totals do not include all files. Increase the limit to scan again.";
+"wechat.expandScan" = "Increase Limit and Rescan";
+"error.volumeUnavailable" = "This disk is disconnected or unmounted. Reconnect it and try again.";

@@ -72,7 +72,7 @@
 "action.toggleSortOrder" = "切换升序/降序";
 "action.toggleInspector" = "显示详细信息";
 "action.openFolder" = "打开文件夹";
-"action.openFolder.help" = "授权并打开一个文件夹";
+"action.openFolder.help" = "使用内置选择器在新页签打开文件夹";
 "action.authorizeFolder" = "授权文件夹";
 "action.pasteClipboardAsFile" = "把剪贴板文本存成文件";
 "action.pasted" = "已粘贴";
@@ -840,6 +840,8 @@
 "layout.resizeHint" = "拖动调整宽度，双击恢复默认";
 "layout.width" = "%d 点";
 "layout.sidebarWidth" = "侧边栏宽度";
+"action.hideSidebar" = "隐藏侧边栏";
+"action.showSidebar" = "显示侧边栏";
 "layout.inspectorWidth" = "详细信息宽度";
 "layout.options" = "显示与排序";
 "sort.ascending" = "升序";
@@ -908,7 +910,7 @@
 "folderPicker.path" = "输入文件夹路径";
 "folderPicker.go" = "前往";
 "folderPicker.search" = "筛选当前目录中的文件夹";
-"folderPicker.empty" = "没有可选择的子文件夹，可添加当前文件夹。";
+"folderPicker.empty" = "没有可选择的子文件夹，可使用当前文件夹。";
 "folderPicker.addCurrent" = "添加当前文件夹";
 "folderPicker.addSelected" = "添加 %d 个文件夹";
 "sidebar.dropHint" = "拖入文件夹以添加到个人收藏";
@@ -1045,3 +1047,13 @@
 "search.invalidRange" = "请填写有效的非负大小，并确保起始大小和日期不晚于结束值。";
 
 "error.symlinkTarget" = "链接“%@”的目标不存在或无法访问。";
+
+/* Browser performance and in-app folder selection */
+"folderPicker.openHint" = "双击进入目录，按住 ⌘ 可多选；选中的文件夹将在新页签中打开。";
+"folderPicker.openCurrent" = "打开当前文件夹";
+"folderPicker.openSelected" = "打开 %d 个文件夹";
+"directory.unavailable" = "无法读取此文件夹";
+"directory.retry" = "重新读取";
+"wechat.partialScan" = "当前仅显示部分扫描结果，占用统计并非全部文件；可提高上限重新扫描。";
+"wechat.expandScan" = "提高上限重新扫描";
+"error.volumeUnavailable" = "此磁盘当前未连接或未挂载。请连接后重试。";

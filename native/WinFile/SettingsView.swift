@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var engine: FSEngine
+    @State private var chooseStartFolder = false
+    @State private var chooseFavorites = false
     @ObservedObject private var updater = AppUpdater.shared
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
     @AppStorage("ShowHiddenFiles") private var showHidden: Bool = false
@@ -19,6 +21,13 @@ struct SettingsView: View {
                 .tabItem { Label(WLocalizedString("settings.about", comment: "关于"), systemImage: "info.circle") }
         }
         .frame(width: 480, height: 320)
+        .sheet(isPresented: $chooseStartFolder) {
+            FolderPickerSheet(initialDirectory: startFolderPath.isEmpty ? nil : URL(fileURLWithPath: startFolderPath),
+                              title: WLocalizedString("settings.startFolder", comment: "启动时打开")) { url in
+                startFolderPath = url.path; return nil
+            }
+        }
+        .sheet(isPresented: $chooseFavorites) { FolderPickerSheet { engine.addFolders($0) } }
     }
 
     private var general: some View {
@@ -55,13 +64,9 @@ struct SettingsView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Button(WLocalizedString("settings.choose", comment: "选择…")) {
-                        let panel = NSOpenPanel()
-                        panel.canChooseFiles = false
-                        panel.canChooseDirectories = true
-                        if panel.runModal() == .OK, let url = panel.url {
-                            startFolderPath = url.path
-                        }
+                        chooseStartFolder = true
                     }
+
                     Button(WLocalizedString("settings.clear", comment: "清除")) { startFolderPath = "" }
                         .disabled(startFolderPath.isEmpty)
                 }
@@ -98,15 +103,9 @@ struct SettingsView: View {
                     }
                 }
                 Button(L("settings.folders.add", "添加文件夹…")) {
-                    let panel = NSOpenPanel()
-                    panel.canChooseFiles = false
-                    panel.canChooseDirectories = true
-                    panel.allowsMultipleSelection = true
-                    panel.prompt = L("panel.open", "打开")
-                    if panel.runModal() == .OK {
-                        engine.addFolders(panel.urls)
-                    }
+                    chooseFavorites = true
                 }
+
                 Button(role: .destructive) {
                     engine.removeAllAddedFolders()
                 } label: {

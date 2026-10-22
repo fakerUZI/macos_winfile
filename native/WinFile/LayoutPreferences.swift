@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// Keep preferred pane widths when the window temporarily becomes narrower.
 enum PaneLayout {
@@ -6,19 +7,24 @@ enum PaneLayout {
     static let inspectorKey = "Layout.InspectorWidth"
     static let divider: CGFloat = 6
 
-    static func widths(total: CGFloat, sidebar: Double, inspector: Double, showsInspector: Bool) -> (sidebar: CGFloat, inspector: CGFloat) {
-        let side = min(360, max(160, sidebar.isFinite ? sidebar : 216))
+    static func widths(total: CGFloat, sidebar: Double, inspector: Double, showsInspector: Bool,
+                       showsSidebar: Bool = true) -> (sidebar: CGFloat, inspector: CGFloat) {
+        let side = showsSidebar ? min(360, max(160, sidebar.isFinite ? sidebar : 216)) : 0
         let detail = showsInspector ? min(420, max(200, inspector.isFinite ? inspector : 264)) : 0
-        let budget = max(0, total - 400 - divider * (showsInspector ? 2 : 1))
+        let dividerCount = (showsSidebar ? 1 : 0) + (showsInspector ? 1 : 0)
+        let budget = max(0, total - 400 - divider * CGFloat(dividerCount))
         guard side + detail > budget else { return (side, detail) }
-        let minimum = showsInspector ? 360.0 : 160.0
+        let minimumSide = showsSidebar ? 160.0 : 0
+        let minimumDetail = showsInspector ? 200.0 : 0
+        let minimum = minimumSide + minimumDetail
         if budget < minimum {
             let ratio = budget / minimum
-            return (160 * ratio, showsInspector ? 200 * ratio : 0)
+            return (minimumSide * ratio, minimumDetail * ratio)
         }
-        let flexibility = side - 160 + (showsInspector ? detail - 200 : 0)
+        let flexibility = side - minimumSide + detail - minimumDetail
         let ratio = flexibility > 0 ? (budget - minimum) / flexibility : 0
-        return (160 + (side - 160) * ratio, showsInspector ? 200 + (detail - 200) * ratio : 0)
+        return (minimumSide + (side - minimumSide) * ratio,
+                minimumDetail + (detail - minimumDetail) * ratio)
     }
 }
 
@@ -83,5 +89,64 @@ final class TableColumnPreferences: NSObject {
         for (column, width) in zip(table.tableColumns, values) where width.isFinite && width > 0 {
             column.width = min(column.maxWidth, max(column.minWidth, width))
         }
+    }
+}
+
+/// Shared geometry for a windowed icon grid. Only the viewport plus two spare
+/// rows at either end create tile views; content height remains stable while scrolling.
+struct IconGridMetrics {
+    static let padding: CGFloat = 14
+    static let pitch: CGFloat = 124
+    let count: Int
+    let columns: Int
+    init(count: Int, width: CGFloat) {
+        self.count = max(0, count)
+        columns = max(1, min(8, Int(max(0, width - Self.padding * 2 + 10) / 114)))
+    }
+    var rows: Int { (count + columns - 1) / columns }
+    var height: CGFloat { CGFloat(rows) * Self.pitch + Self.padding * 2 }
+    func visibleRows(offset: CGFloat, viewport: CGFloat) -> Range<Int> {
+        let start = min(rows, max(0, Int(max(0, offset - Self.padding) / Self.pitch) - 2))
+        let end = min(rows, max(start, Int(ceil((max(0, offset) + max(0, viewport)) / Self.pitch)) + 2))
+        return start..<end
+    }
+    func indices(row: Int) -> Range<Int> {
+        let start = min(count, max(0, row * columns))
+        return start..<min(count, start + columns)
+    }
+}
+
+/// Observe native scrolling to keep only nearby rows materialized. Programmatic
+/// location uses SwiftUI's ScrollViewReader and a stable content anchor.
+@MainActor
+final class IconGridViewport: ObservableObject {
+    @Published private(set) var offset: CGFloat = 0
+    private weak var scrollView: NSScrollView?
+    private var observations: [NSObjectProtocol] = []
+    private var applying = false
+    deinit { for token in observations { NotificationCenter.default.removeObserver(token) } }
+    func attach(_ view: NSView) {
+        guard let scroll = view.enclosingScrollView else { return }
+        if scroll !== scrollView {
+            for token in observations { NotificationCenter.default.removeObserver(token) }
+            observations = []
+            scrollView = scroll
+            scroll.contentView.postsBoundsChangedNotifications = true
+            if let document = scroll.documentView { document.postsFrameChangedNotifications = true }
+            for (name, object) in [(NSView.boundsDidChangeNotification, scroll.contentView as NSView),
+                                   (NSView.frameDidChangeNotification, scroll.documentView ?? scroll.contentView)] {
+                observations.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                    DispatchQueue.main.async { [weak self] in self?.synchronize() }
+                })
+            }
+        }
+        synchronize()
+    }
+    private func synchronize() {
+        guard !applying, let scrollView else { return }
+        applying = true
+        let next = max(0, scrollView.contentView.bounds.minY)
+        if abs(next - offset) > 0.5 { offset = next }
+        applying = false
     }
 }

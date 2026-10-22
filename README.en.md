@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1037%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1075%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 WinFile brings a Windows Explorer-style workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,14 +42,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 WinFile doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v1.3.3
+## What’s new in v1.3.4
 
-- **Trimmed top-right toolbar:** only **Search** and **Sidebar** (show details) remain; the “Open”, “Open With” and “Reveal in Finder” buttons were removed to cut icon crowding and overlapping meaning.
-- **One magnifier, for search only:** the search button previously used document-plus-magnifier, which was hard to distinguish from the neighbouring magnifier; it is now a plain magnifier.
-- Nothing was lost: double-click to open files, right-click for Open and Open With, and use the context menu or inspector for Reveal in Finder.
-- UI-only change with no functional or data differences; settings, favorites, tabs and cleanup history are preserved.
+- **In-app folder selection:** multi-select folders and open each in a new tab. Favorites, startup folders, extraction, Android downloads, WeChat directories and duplicate scans use the same picker.
+- **Lower large-folder memory use:** render visible icon rows, bound thumbnail caching and concurrency, and load cleanup modules on demand. Reclaim reloadable data in idle tabs.
+- **More reliable navigation:** resolve and complete paths off the main thread, scroll to located files, prevent offscreen double-click interception, and retry directory read errors.
+- **Sidebar and scan improvements:** collapse the left sidebar independently; WeChat scans explicitly mark partial results and let you raise scan limits.
 
-See the [v1.3.3 release notes](docs/releases/v1.3.3.md) and [v1.3.2 release notes](docs/releases/v1.3.2.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
+See the [v1.3.4 release notes](docs/releases/v1.3.4.md) and [v1.3.3 release notes](docs/releases/v1.3.3.md). Users on v1.1.0 or earlier must upgrade manually once to enable future in-app updates.
 
 ## Features
 
@@ -133,7 +133,7 @@ Quit WeChat before cleaning. Cleanup requires confirmation and moves selected or
 
 The cleanup page hides folder search, creation, paste and view-mode controls. Filename and type filters remain visible; account, month, source, size and age are in **Advanced Filters**. Active filters appear as removable chips and can be reset together. Click any column header to switch ascending/descending order for name, type, size, modification date or location.
 
-Drag the sidebar and inspector dividers to resize them; double-click to reset. Preferred widths persist across launches and adapt to smaller windows. File and WeChat tables remember their column widths separately.
+Use the top-left sidebar button to hide or show the entire left menu; expanding it restores its preferred width. Drag the sidebar and inspector dividers to resize them; double-click to reset. Preferred widths persist across launches and adapt to smaller windows. File and WeChat tables remember their column widths separately.
 
 ### Tabs, search and file organization
 
@@ -144,6 +144,16 @@ Drag the sidebar and inspector dividers to resize them; double-click to reset. P
 - **Find Duplicate Files** groups candidates by size, then hashes their complete contents with SHA-256. Symbolic links, package contents and hard links to the same file are skipped. The initial limit is 200,000 entries; cancellation, limits, unreadable files and changed files are reported. Preview results or open their containing folders in new tabs. Nothing is deleted automatically; redundant size describes logical bytes.
 - WeChat storage cards and common filters remain visible. **Scan Details and Storage Breakdown** shows sources, access problems and type/month distributions. Click a group to filter it; the page also shows the last completed scan time.
 - Local copies report actual byte progress. The result banner opens the destination in a new tab or retries unfinished items using the original copy/move mode, independently of subsequent clipboard changes.
+
+### Browser memory and folder selection
+
+The icon grid creates only visible tiles and nearby rows. Thumbnail generation is limited to four concurrent requests, with an LRU cache budget of 64 MiB, excluding images still displayed and the system Quick Look processes. Memory pressure clears cached thumbnails. Cleanup modules initialize on first use.
+
+Local directory, search and category results outside the three most recent tabs can be released after 60 seconds idle and reread when selected. Memory pressure prioritizes inactive tabs. Operations in progress and cleanup selections are preserved.
+
+**Open Folder** uses WinFile's built-in picker. Browse, enter paths, show hidden folders or ⌘-select multiple folders; each opens in a new tab. Extraction destinations, Android downloads, WeChat folders, duplicate scan scopes and the startup folder also use this picker. Address resolution and suggestions run off the main thread. Invalid paths retain the current location; unreadable folders have a persistent retry state.
+
+WeChat scans initially retain up to 20,000 candidates and visit up to 200,000 entries. The page labels partial results and storage totals. Increase the limit to rescan, up to 200,000 candidates and 2,000,000 entries.
 
 ### Scan and operation feedback
 
@@ -249,7 +259,7 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an authorized Android device is connected, it also runs real device file operations.
 
-v1.3.2 validation: **1037 passing, 0 failures** in both the arm64 and x86_64/Rosetta app bundles, using `--skip-device-tests`. Physical Android device read/write tests are excluded. New regressions cover native search scopes, filters, cancellation and scan limits; symbolic link identity, navigation, session restoration, watching, copying and renaming; and bounded filesystem error chains without arbitrary userInfo data. Native tab-window regressions and symbolic link UI checks pass. See the [v1.3.2 release notes](docs/releases/v1.3.2.md).
+v1.3.4 validation: **1070 CLI checks passed** and **1075 passing, 0 failures** in each arm64 and x86_64/Rosetta app bundle (`--skip-device-tests`; physical Android transfers excluded). Real-window tab regressions, multi-folder picking, large-grid scrolling and file location, double-clicks, context menus and directory-error recovery passed. See the [v1.3.4 release notes](docs/releases/v1.3.4.md).
 
 Regression coverage includes invalid mouse coordinates during app switching (NaN, infinity, and out-of-bounds values), event-monitor cleanup, and normal double-click behavior. See the [app-switch crash analysis and fix](docs/bugfixes/app-switch-crash.md).
 

@@ -310,17 +310,16 @@ final class WeChatCleanupModel: ObservableObject {
         selection = []; pendingTrashFiles = []; confirmsTrash = false
     }
 
-    func addFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.message = L("wechat.chooseHint", "选择微信数据目录或聊天附件文件夹。此文件夹内的普通文件将列为清理候选。")
-        panel.prompt = L("settings.choose", "选择…")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    @discardableResult
+    func addFolder(_ url: URL) -> String? {
+        guard FSEngine.isSidebarFolder(url), !isScanning, !isCleaning else {
+            return L("folderPicker.invalid", "请选择可读取的本地文件夹。")
+        }
         let canonical = url.standardizedFileURL.resolvingSymlinksInPath()
         if !customRoots.contains(canonical) { customRoots.append(canonical) }
         saveRoots()
         scan()
+        return nil
     }
 
     func removeFolder(_ root: URL) {
@@ -331,8 +330,19 @@ final class WeChatCleanupModel: ObservableObject {
 
     private func saveRoots() { UserDefaults.standard.set(customRoots.map(\.path), forKey: Self.rootsKey) }
 
-    func scan() {
+    private var candidateLimit = 20_000
+    private var entryLimit = 200_000
+    var canExpandScan: Bool { result.isPartial && !isScanning && !isCleaning && (candidateLimit < 200_000 || entryLimit < 2_000_000) }
+    func expandScan() {
+        guard canExpandScan else { return }
+        candidateLimit = min(200_000, candidateLimit * 2)
+        entryLimit = min(2_000_000, entryLimit * 2)
+        scan(expanding: true)
+    }
+    func scan(expanding: Bool = false) {
         guard !isScanning, !isCleaning else { return }
+        if !expanding { candidateLimit = 20_000; entryLimit = 200_000 }
+        let candidateLimit = candidateLimit, entryLimit = entryLimit
         isScanning = true
         selection = []
         message = nil
@@ -349,7 +359,7 @@ final class WeChatCleanupModel: ObservableObject {
         }
         let task = Task.detached(priority: .userInitiated) {
             let discovery = WeChatCleanupService.discoverRoots(home: homeDirectory)
-            var scanned = WeChatCleanupService.scan(roots: discovery.roots, explicitRoots: explicit,
+            var scanned = WeChatCleanupService.scan(roots: discovery.roots, explicitRoots: explicit, candidateLimit: candidateLimit, entryLimit: entryLimit,
                                                     cancelled: { Task.isCancelled }, onProgress: update)
             scanned.inaccessible = Array(Set(scanned.inaccessible + discovery.inaccessible)).sorted()
             return scanned

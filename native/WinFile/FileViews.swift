@@ -44,7 +44,7 @@ struct FileIconView: View {
                     .offset(x: badgeSize * 0.18, y: badgeSize * 0.18)
             }
         }
-        .task(id: item.id) {
+        .task(id: "\(item.id)|\(item.modified?.timeIntervalSince1970 ?? 0)|\(item.size ?? 0)|\(size)") {
             await loadImage()
         }
     }
@@ -76,21 +76,27 @@ struct FileIconView: View {
         // 小尺寸（列表行内 18pt）不生成，用系统图标即可，避免无谓开销。
         let wantsThumbnail = item.supportsThumbnail && size >= 32
         if wantsThumbnail {
-            if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size).image {
+            if let thumb = await ThumbnailService.shared.thumbnail(for: item.url, size: size, version: "\(item.modified?.timeIntervalSince1970 ?? 0)|\(item.size ?? 0)").image {
+                guard !Task.isCancelled else { return }
                 image = thumb
                 return
             }
             // 生成失败（损坏或未支持的格式）→ 落到系统图标
         }
 
+        guard !Task.isCancelled else { return }
         // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
         let url = item.url
         let target = size * 2
         let loaded = await Task.detached(priority: .userInitiated) {
             let icon = NSWorkspace.shared.icon(forFile: url.path)
-            icon.size = NSSize(width: target, height: target)
-            return ImageBox(image: icon)
+            var bounds = NSRect(x: 0, y: 0, width: target, height: target)
+            let compact = icon.cgImage(forProposedRect: &bounds, context: nil, hints: nil).map {
+                NSImage(cgImage: $0, size: bounds.size)
+            }
+            return ImageBox(image: compact ?? icon)
         }.value
+        guard !Task.isCancelled else { return }
         image = loaded.image
     }
 }
@@ -397,69 +403,59 @@ struct FileIconGridView: View {
     /// 列表容器标记（用于把空白右键限定在本列表内）
     @State private var listMarker: NSView?
 
-    /// 列宽与间距（自建网格用）
-    private let tileMinWidth: CGFloat = 104
-    private let tileSpacing: CGFloat = 10
-    /// 网格可用宽度（由 GeometryReader 提供，用于计算列数）
-    @State private var gridWidth: CGFloat = 900
-
-    /// 每行列数：按最小磁贴宽度自适应，上限 8 列
-    private var columnCount: Int {
-        max(1, min(8, Int((gridWidth + tileSpacing) / (tileMinWidth + tileSpacing))))
-    }
-
-    /// 按列分组后的行
-    private var rows: [[FileItem]] {
-        let items = model.displayedItems
-        guard !items.isEmpty else { return [] }
-        var result: [[FileItem]] = []
-        var index = 0
-        while index < items.count {
-            let end = min(index + columnCount, items.count)
-            result.append(Array(items[index..<end]))
-            index = end
-        }
-        return result
-    }
+    @StateObject private var viewport = IconGridViewport()
+    private struct LocateTarget: Equatable { let index: Int; let request = UUID() }
+    @State private var locateTarget: LocateTarget?
 
     var body: some View {
-        // 自建网格：按列分组、逐行排布。
-        //
-        // 为什么不用 LazyVGrid：实测分类视图有 16 项时，LazyVGrid 只创建了 14 个
-        // 磁贴视图，空白位置连点击都无响应（用户实测确认），且该问题在离屏环境
-        // 无法自动验证。自建网格不依赖懒加载，视图创建数量完全确定。
-        // 文件列表通常几十到几百项，一次性布局的开销可以接受。
         GeometryReader { proxy in
+            let items = model.displayedItems
+            let metrics = IconGridMetrics(count: items.count, width: proxy.size.width)
+            let rows = metrics.visibleRows(offset: viewport.offset, viewport: proxy.size.height)
             ScrollViewReader { scroller in
             ScrollView {
-                VStack(alignment: .leading, spacing: tileSpacing) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                        HStack(alignment: .top, spacing: tileSpacing) {
-                            ForEach(row) { item in
-                                tile(for: item)
-                                    .frame(maxWidth: .infinity)
-                                    .id(item.id)
-                            }
-                            // 补齐本行剩余列，保证各列宽度一致
-                            if row.count < columnCount {
-                                ForEach(0..<(columnCount - row.count), id: \.self) { _ in
-                                    Color.clear.frame(maxWidth: .infinity)
-                                }
+                let targetY = locateTarget.map {
+                    IconGridMetrics.padding + CGFloat($0.index / metrics.columns) * IconGridMetrics.pitch + (IconGridMetrics.pitch - 10) / 2
+                } ?? 0
+                VStack(spacing: 0) {
+                    Color.clear.frame(height: min(targetY, metrics.height - 1))
+                    Color.clear.frame(height: 1).id("grid.locate.anchor")
+                    Color.clear.frame(height: max(0, metrics.height - min(targetY, metrics.height - 1) - 1))
+                }
+                    .frame(height: metrics.height)
+                    .overlay(alignment: .topLeading) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(rows, id: \.self) { row in
+                                let indices = metrics.indices(row: row)
+                                HStack(alignment: .top, spacing: 10) {
+                                    ForEach(indices, id: \.self) { index in
+                                        tile(for: items[index])
+                                            .frame(maxWidth: .infinity)
+                                            .frame(height: IconGridMetrics.pitch - 10, alignment: .top)
+                                    }
+                                    ForEach(0..<(metrics.columns - indices.count), id: \.self) { _ in
+                                        Color.clear.frame(maxWidth: .infinity)
+                                    }
+                                }.frame(height: IconGridMetrics.pitch - 10, alignment: .top)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, IconGridMetrics.padding)
+                        .offset(y: IconGridMetrics.padding + CGFloat(rows.lowerBound) * IconGridMetrics.pitch)
                     }
-                }
-                .padding(14)
+                    .background(IconGridScrollObserver(viewport: viewport))
             }
-            .onAppear { gridWidth = proxy.size.width }
-            .onChange(of: proxy.size.width) { newValue in gridWidth = newValue }
-            // 从分类/搜索跳转过来时，滚动到目标并选中
+            .task(id: locateTarget) {
+                guard locateTarget != nil else { return }
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                scroller.scrollTo("grid.locate.anchor", anchor: .center)
+            }
+            .onAppear { selectPendingItem() }
             .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
-                selectPendingItem(scroller: scroller)
+                selectPendingItem()
             }
-            .onChange(of: model.displayedItems.map(\.id)) { _ in
-                selectPendingItem(scroller: scroller)
+            .onChange(of: items.count) { _ in
+                selectPendingItem()
             }
             }
         }
@@ -495,16 +491,14 @@ struct FileIconGridView: View {
         )
     }
 
-    private func selectPendingItem(scroller: ScrollViewProxy) {
+    private func selectPendingItem() {
         guard let id = model.pendingSelectionID,
-              model.displayedItems.contains(where: { $0.id == id }) else { return }
+              let index = model.displayedItems.firstIndex(where: { $0.id == id }) else { return }
         model.selectedIDs = [id]
-        withAnimation { scroller.scrollTo(id, anchor: .center) }
+        locateTarget = LocateTarget(index: index)
         _ = model.consumePendingSelection()
     }
 
-    /// 单个磁贴：含双击标记、单击选择、右键菜单
-    @ViewBuilder
     private func tile(for item: FileItem) -> some View {
         FileTile(engine: engine, item: item, selected: model.selectedIDs.contains(item.id))
             .modifier(LocalFileDrag(url: item.url))
@@ -718,5 +712,29 @@ struct FileTile: View {
                 .stroke(selected ? Color.accentColor.opacity(0.5) : .clear)
         )
         .contentShape(Rectangle())
+    }
+}
+
+private struct IconGridScrollObserver: NSViewRepresentable {
+    let viewport: IconGridViewport
+    func makeNSView(context: Context) -> IconGridObservationView { IconGridObservationView(viewport: viewport) }
+    func updateNSView(_ view: IconGridObservationView, context: Context) {
+        DispatchQueue.main.async { viewport.attach(view) }
+    }
+}
+private final class IconGridObservationView: NSView {
+    let viewport: IconGridViewport
+    init(viewport: IconGridViewport) { self.viewport = viewport; super.init(frame: .zero) }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncViewport()
+    }
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncViewport()
+    }
+    private func syncViewport() {
+        DispatchQueue.main.async { [weak self] in if let self { self.viewport.attach(self) } }
     }
 }

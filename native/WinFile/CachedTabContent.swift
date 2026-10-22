@@ -25,6 +25,17 @@ struct CachedTabContent: NSViewRepresentable {
         private var recency: [UUID] = []
         private var activeID: UUID?
         private var language = ""
+        private var pressureObserver: NSObjectProtocol?
+        init() {
+            pressureObserver = NotificationCenter.default.addObserver(forName: .winFileMemoryPressure, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    for id in Array(self.hosts.keys) where id != self.activeID { self.hosts.removeValue(forKey: id) }
+                    self.recency = self.recency.filter { $0 == self.activeID }
+                }
+            }
+        }
+        deinit { if let pressureObserver { NotificationCenter.default.removeObserver(pressureObserver) } }
 
         private func content(_ input: CachedTabContent, model: BrowserModel) -> AnyView {
             AnyView(TabContentHost(engine: input.engine, model: model, dialog: input.$dialog,

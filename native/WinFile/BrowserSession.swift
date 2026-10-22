@@ -41,9 +41,11 @@ struct SavedBrowserTab: Codable {
         model.sortField = SortField(rawValue: sort) ?? .name
         model.sortAscendingFlag = ascending
         model.layout = ViewLayout(rawValue: layout) ?? .details
-        let softwareID = software ?? "wechat"
-        model.selectCleanupSoftware(model.softwareCleanup.softwareChoices.contains { $0.id == softwareID } ? softwareID : "wechat")
-        model.weChatCleanup.restoreFilters(wechat)
+        if destination == .weChatCleanup {
+            let softwareID = software ?? "wechat"
+            model.selectCleanupSoftware(model.softwareCleanup.softwareChoices.contains { $0.id == softwareID } ? softwareID : "wechat")
+            model.weChatCleanup.restoreFilters(wechat)
+        }
         model.searchCriteria = criteria ?? FileSearchCriteria()
         model.navigate(to: destination)
         if kind == "folder", model.currentDirectory != nil, !query.isEmpty || model.searchCriteria.isActive {

@@ -12,13 +12,14 @@ final class FolderPickerModel: ObservableObject {
     @Published var search = ""
     @Published var showHidden = false { didSet { if oldValue != showHidden { navigate(to: directory) } } }
     @Published private(set) var isLoading = false
+    @Published private(set) var canChooseDirectory = false
     @Published var errorMessage: String?
     private var generation = UUID()
     private var loadTask: Task<Void, Never>?
 
     init(initialDirectory: URL?) {
         let home = FileSystemService.realHomeDirectory()
-        directory = initialDirectory.flatMap { FSEngine.isSidebarFolder($0) ? $0 : nil } ?? home
+        directory = initialDirectory.flatMap { $0.isFileURL ? $0 : nil } ?? home
         pathText = directory.path
     }
 
@@ -31,7 +32,7 @@ final class FolderPickerModel: ObservableObject {
         return visibleFolders.filter { selectedPaths.contains($0.path) }
     }
 
-    static func resolvePath(_ text: String, relativeTo directory: URL) -> URL? {
+    nonisolated static func resolvePath(_ text: String, relativeTo directory: URL) -> URL? {
         guard !text.isEmpty else { return nil }
         if text.hasPrefix("file:") { return URL(string: text).flatMap { $0.isFileURL ? $0.standardizedFileURL : nil } }
         if text.contains("://") { return nil }
@@ -66,7 +67,7 @@ final class FolderPickerModel: ObservableObject {
     }
 
     func navigate(to target: URL) {
-        guard FSEngine.isSidebarFolder(target) else {
+        guard target.isFileURL, target.pathExtension.lowercased() != "app" else {
             errorMessage = L("folderPicker.invalid", "请选择可读取的本地文件夹。")
             return
         }
@@ -80,6 +81,7 @@ final class FolderPickerModel: ObservableObject {
         loadTask = Task { [weak self] in
             let result = await Task.detached(priority: .userInitiated) {
                 Result {
+                    guard FSEngine.isSidebarFolder(target) else { throw FSError.notAuthorized(target) }
                     let resolved = target.resolvingSymlinksInPath()
                     let browsing = resolved.path == target.path ? target : resolved
                     return (browsing, try Self.listFolders(browsing, showHidden: hidden))
@@ -89,6 +91,7 @@ final class FolderPickerModel: ObservableObject {
             self.isLoading = false
             switch result {
             case .success(let listing):
+                self.canChooseDirectory = true
                 self.directory = listing.0
                 self.pathText = listing.0.path
                 self.folders = listing.1
@@ -101,4 +104,12 @@ final class FolderPickerModel: ObservableObject {
     }
 
     func cancelLoading() { loadTask?.cancel(); generation = UUID() }
+}
+
+/// A folder-only request owned by the initiating model/window.
+struct FolderPickerRequest: Identifiable {
+    let id = UUID()
+    let title: String
+    let initialDirectory: URL?
+    let onSelect: (URL) -> Void
 }

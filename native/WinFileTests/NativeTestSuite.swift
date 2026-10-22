@@ -119,6 +119,7 @@ enum NativeTestSuite {
             try testExperienceImprovements(sandbox)
             try testLayoutAndFilterExperience(sandbox)
             try testRemainingImprovements(sandbox)
+            try testMemoryAndPickerImprovements(sandbox)
         } catch {
             print("  ✘ 测试抛出异常：\(error.localizedDescription)")
             TestReporter.shared.failures.append("异常：\(error.localizedDescription)")
@@ -1642,6 +1643,139 @@ enum NativeTestSuite {
     }
 
     @MainActor
+    private static func testMemoryAndPickerImprovements(_ sandbox: URL) throws {
+        print("\n[内存、虚拟网格与内置选择器回归]")
+        let root = sandbox.appendingPathComponent("MemoryRegression")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for i in 0..<16 { try Data("test".utf8).write(to: root.appendingPathComponent("file-\(i).txt")) }
+        let metrics = IconGridMetrics(count: 16, width: 900)
+        check("16 个图标分行后不丢失首尾条目", (0..<metrics.rows).flatMap { Array(metrics.indices(row: $0)) } == Array(0..<16))
+        let large = IconGridMetrics(count: 100_000, width: 900)
+        check("十万图标只创建可见区附近磁贴", large.visibleRows(offset: 20_000, viewport: 800).count * large.columns < 100)
+        check("虚拟网格末行可见且不越界", large.visibleRows(offset: large.height - 800, viewport: 800).upperBound == large.rows && large.indices(row: large.rows - 1).upperBound == large.count)
+        check("空网格和窄窗口几何有效", IconGridMetrics(count: 0, width: 0).visibleRows(offset: 0, viewport: 800).isEmpty && IconGridMetrics(count: 16, width: 50).columns == 1)
+        let engine = FSEngine(); engine.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engine, startDirectory: root)
+        waitFor { !model.isBusy }
+        check("普通目录不创建清理模块", model.initializedCleanupCount == 0)
+        _ = AppUpdatePolicy.hasActiveFileOperations(in: [model])
+        let saved = SavedBrowserTab(model: model)
+        let restored = BrowserModel(engine: engine, startDirectory: nil)
+        saved.apply(to: restored); waitFor { !restored.isBusy }
+        check("会话保存恢复及更新检查不初始化清理模块", model.initializedCleanupCount == 0 && restored.initializedCleanupCount == 0)
+        let file = model.items[0]
+        model.selectedIDs = [file.id]
+        check("闲置目录可回收条目", model.reclaimReadOnlyResults() && model.isSuspended && model.items.isEmpty)
+        check("回收保留目录、选择和排序", model.currentDirectory == root && model.selectedIDs == [file.id])
+        model.resumeReadOnlyResults(); waitFor { !model.isBusy }
+        check("重新激活恢复目录条目和选择", !model.isSuspended && model.items.count == 16 && model.selectedIDs == [file.id])
+        model.isBusy = true
+        check("进行中的操作不可回收", !model.reclaimReadOnlyResults())
+        model.isBusy = false
+        _ = model.storageCleanup
+        check("仅初始化访问的清理模块", model.initializedCleanupCount == 1)
+        model.openPath("does-not-exist")
+        waitFor { model.errorMessage != nil }
+        check("无效地址显示错误且不跳到父目录", model.currentDirectory == root && model.items.count == 16 && model.errorMessage != nil)
+        model.errorMessage = nil
+        model.selectedIDs = []
+        model.openPath(file.url.absoluteString)
+        waitFor { model.selectedIDs == [file.id] && !model.isBusy }
+        check("输入文件 URL 可定位所属目录中的文件", model.currentDirectory?.path == root.path && model.selectedIDs == [file.id], "directory=\(model.currentDirectory?.path ?? "nil"), selection=\(model.selectedIDs)")
+        let absent = root.appendingPathComponent("removed")
+        model.selectFolder(absent); waitFor { !model.isBusy }
+        model.errorMessage = nil
+        check("关闭错误弹窗后仍保留读取失败状态", model.directoryReadError != nil && model.items.isEmpty)
+        try FileManager.default.createDirectory(at: absent, withIntermediateDirectories: true)
+        model.reload(); waitFor { !model.isBusy }
+        check("重试成功后恢复真正空目录状态", model.directoryReadError == nil && model.items.isEmpty)
+        let denied = root.appendingPathComponent("Denied")
+        try FileManager.default.createDirectory(at: denied, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: denied.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: denied.path) }
+        model.selectFolder(denied); waitFor { !model.isBusy }
+        check("权限不足目录显示读取错误而非空目录", model.directoryReadError != nil)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: denied.path)
+        model.selectFolder(absent); waitFor { !model.isBusy }
+        do {
+            _ = try FileSystemService.list(URL(fileURLWithPath: "/Volumes/WinFile-Unmounted-\(UUID().uuidString)/folder"), showHidden: false)
+            check("未挂载磁盘提示连接后重试", false)
+        } catch FSError.volumeUnavailable { check("未挂载磁盘提示连接后重试", true) }
+        let picker = FolderPickerModel(initialDirectory: root)
+        picker.navigate(to: root); waitFor { !picker.isLoading }
+        check("内置选择器使用当前目录且不改变浏览页签", picker.candidates.map(\.path) == [root.path] && model.currentDirectory?.path == absent.path)
+        let scan = WeChatCleanupService.scan(roots: [], explicitRoots: [root], candidateLimit: 5)
+        check("微信扫描候选上限明确标记部分结果", scan.files.count == 5 && scan.limitReached && scan.isPartial)
+        let visited = WeChatCleanupService.scan(roots: [], explicitRoots: [root], entryLimit: 3)
+        check("微信扫描遍历上限可控且不误报全部完成", visited.visited == 3 && visited.visitLimitReached)
+        let manager = TabManager(engine: engine, startDirectory: root)
+        waitFor { !manager.activeModel.isBusy }
+        let first = manager.activeTab
+        let active = manager.newTab(startDirectory: root)
+        waitFor { !active.model.isBusy }
+        manager.reclaimInactiveTabs(immediately: true)
+        check("内存压力只回收非活动页签", first.model.isSuspended && !active.model.isSuspended && active.model.items.count == 18)
+        manager.select(first)
+        waitFor { !first.model.isSuspended && !first.model.isBusy }
+        check("切回被回收页签自动读取且保留身份", manager.activeTab.id == first.id && first.model.items.count == 18)
+        var finished = false
+        Task { @MainActor in
+            let probe = ThumbnailTestProbe()
+            let service = ThumbnailService(byteLimit: 6144, concurrencyLimit: 2, generator: { url, _ in await probe.generate(url) })
+            await withTaskGroup(of: Void.self) { group in
+                for i in 0..<12 { group.addTask { _ = await service.thumbnail(for: root.appendingPathComponent("\(i)"), size: 44) } }
+            }
+            let stats = await service.statistics()
+            let peak = await probe.peak
+            check("缩略图并发不超过设定的两个任务", peak == 2 && stats.running == 0 && stats.queued == 0)
+            check("缩略图缓存按字节预算回收", stats.bytes <= 6144 && stats.cached <= 3 && stats.cached > 0)
+            let url = root.appendingPathComponent("shared")
+            async let a = service.thumbnail(for: url, size: 44)
+            async let b = service.thumbnail(for: url, size: 44)
+            _ = await (a, b)
+            let sharedCount = await probe.count(for: url)
+            check("相同缩略图请求合并生成", sharedCount == 1)
+            _ = await service.thumbnail(for: url, size: 44)
+            let hitCount = await probe.count(for: url)
+            check("缓存命中不重复生成", hitCount == 1)
+            _ = await service.thumbnail(for: url, size: 44, version: "changed")
+            let updatedCount = await probe.count(for: url)
+            check("文件版本变化重新生成缩略图", updatedCount == 2)
+            let cancelURL = root.appendingPathComponent("cancel")
+            let leaving = Task { await service.thumbnail(for: cancelURL, size: 44) }
+            let staying = Task { await service.thumbnail(for: cancelURL, size: 44) }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            leaving.cancel()
+            let cancelledBox = await leaving.value
+            let keptBox = await staying.value
+            check("单个消费者取消不会中断其他消费者", cancelledBox.image == nil && keptBox.image != nil)
+            let lru = ThumbnailService(byteLimit: 4096, concurrencyLimit: 1, generator: { url, _ in await probe.generate(url) })
+            let one = root.appendingPathComponent("LRU-1"), two = root.appendingPathComponent("LRU-2"), three = root.appendingPathComponent("LRU-3")
+            _ = await lru.thumbnail(for: one, size: 44)
+            _ = await lru.thumbnail(for: two, size: 44)
+            _ = await lru.thumbnail(for: one, size: 44)
+            _ = await lru.thumbnail(for: three, size: 44)
+            _ = await lru.thumbnail(for: one, size: 44)
+            _ = await lru.thumbnail(for: two, size: 44)
+            let oneCount = await probe.count(for: one), twoCount = await probe.count(for: two)
+            check("LRU 保留最近访问而非整体清空", oneCount == 1 && twoCount == 2)
+            let allCancelled = (0..<8).map { i in Task { await service.thumbnail(for: root.appendingPathComponent("cancel-all-\(i)"), size: 44) } }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            for task in allCancelled { task.cancel() }
+            for task in allCancelled { _ = await task.value }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            let cancelledStats = await service.statistics()
+            check("队列和运行请求取消后全部释放", cancelledStats.running == 0 && cancelledStats.queued == 0)
+            await service.removeCachedImages()
+            let empty = await service.statistics()
+            check("内存压力可释放全部缩略图缓存", empty.bytes == 0 && empty.cached == 0)
+            finished = true
+        }
+        waitFor({ finished }, timeout: 10)
+        check("缩略图异步回归完整结束", finished)
+    }
+
+    @MainActor
     private static func testLayoutAndFilterExperience(_ sandbox: URL) throws {
         print("\n[工具栏、筛选与宽度记忆]")
         func spinUntil(_ condition: () -> Bool) {
@@ -1726,6 +1860,12 @@ enum NativeTestSuite {
         check("窄窗口给内容保留至少四百点", narrow.sidebar >= 160 && narrow.inspector >= 200 && narrow.sidebar + narrow.inspector + 12 <= 460.01)
         let hidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: false)
         check("隐藏检查器释放空间", hidden.sidebar == 360 && hidden.inspector == 0)
+        let sidebarHidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: true, showsSidebar: false)
+        check("折叠左侧栏释放全部侧栏空间且保留检查器首选宽度", sidebarHidden.sidebar == 0 && sidebarHidden.inspector == 420)
+        let allHidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: false, showsSidebar: false)
+        check("两侧栏隐藏时无残余栏宽", allHidden.sidebar == 0 && allHidden.inspector == 0)
+        let smallSidebarHidden = PaneLayout.widths(total: 560, sidebar: 360, inspector: 420, showsInspector: true, showsSidebar: false)
+        check("折叠左侧栏后窄窗口仍为内容保留四百点", smallSidebarHidden.sidebar == 0 && smallSidebarHidden.inspector >= 0 && smallSidebarHidden.inspector + PaneLayout.divider <= 160.01)
         let invalid = PaneLayout.widths(total: 1180, sidebar: .nan, inspector: .infinity, showsInspector: true)
         check("损坏布局偏好回退默认宽度", invalid.sidebar == 216 && invalid.inspector == 264)
         let limited = PaneLayout.widths(total: 2000, sidebar: -5, inspector: 5000, showsInspector: true)
@@ -4007,6 +4147,22 @@ enum NativeTestSuite {
         check("正常单击透传且不触发打开", installer.handleLeftMouseDown(single) === single && activated == 0)
         check("正常图标双击仅触发一次并吞掉事件", installer.handleLeftMouseDown(event(normal)) == nil && activated == 1)
 
+        let clipping = NSScrollView(frame: NSRect(x: 200, y: 0, width: 180, height: 120))
+        let scrollingDocument = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 1000))
+        clipping.documentView = scrollingDocument; root.addSubview(clipping)
+        let overscan = FileTileMarkerView(frame: NSRect(x: 10, y: 500, width: 100, height: 70))
+        overscan.item = item(URL(fileURLWithPath: "/tmp")); scrollingDocument.addSubview(overscan)
+        clipping.contentView.scroll(to: NSPoint(x: 0, y: 300))
+        let offscreen = overscan.convert(NSPoint(x: 50, y: 35), to: nil)
+        check("离屏磁贴不会抢占地址栏或工具栏的双击", EmptyAreaContextMenu.InstallerView.tileMarker(at: offscreen, in: root) == nil)
+        overscan.setFrameOrigin(NSPoint(x: 10, y: 320))
+        let onscreen = overscan.convert(NSPoint(x: 50, y: 35), to: nil)
+        check("可见磁贴仍可按坐标识别", EmptyAreaContextMenu.InstallerView.tileMarker(at: onscreen, in: root) === overscan)
+        clipping.isHidden = true
+        check("隐藏父容器中的磁贴不参与查找", EmptyAreaContextMenu.InstallerView.tileMarker(at: onscreen, in: root) == nil)
+        clipping.removeFromSuperview()
+
+
         let invalid: [(String, NSPoint)] = [
             ("NaN 横坐标", NSPoint(x: CGFloat.nan, y: 90)),
             ("NaN 纵坐标", NSPoint(x: 80, y: CGFloat.nan)),
@@ -4382,5 +4538,22 @@ enum NativeTestSuite {
     @MainActor
     private static func item(_ url: URL) -> FileItem {
         FileItem(url: url, resourceKeys: FileSystemService.resourceKeys, showHidden: true)!
+    }
+}
+
+private actor ThumbnailTestProbe {
+    private var active = 0
+    private(set) var peak = 0
+    private var counts: [String: Int] = [:]
+    func count(for url: URL) -> Int { counts[url.path, default: 0] }
+    func generate(_ url: URL) async -> ImageBox {
+        active += 1; peak = max(peak, active); counts[url.path, default: 0] += 1
+        try? await Task.sleep(nanoseconds: 40_000_000)
+        active -= 1
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 16, pixelsHigh: 16, bitsPerSample: 8,
+                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                   bytesPerRow: 64, bitsPerPixel: 32)!
+        let image = NSImage(size: NSSize(width: 16, height: 16)); image.addRepresentation(rep)
+        return ImageBox(image: image)
     }
 }

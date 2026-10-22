@@ -7,6 +7,15 @@ struct FolderPickerSheet: View {
     private let onChoose: ([URL]) -> String?
     private let pickerTitle: String
     private let singleFolder: Bool
+    private var opensFolders = false
+
+    init(initialDirectory: URL? = nil, onOpen: @escaping ([URL]) -> Void) {
+        _browser = StateObject(wrappedValue: FolderPickerModel(initialDirectory: initialDirectory))
+        pickerTitle = L("panel.open.message", "选择要打开的文件夹")
+        singleFolder = false
+        opensFolders = true
+        onChoose = { urls in onOpen(urls); return nil }
+    }
 
     init(initialDirectory: URL? = nil, onChoose: @escaping ([URL]) -> SidebarFolderAddition) {
         _browser = StateObject(wrappedValue: FolderPickerModel(initialDirectory: initialDirectory))
@@ -31,7 +40,7 @@ struct FolderPickerSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(pickerTitle).font(.headline)
-            Text(singleFolder ? L("cleanup.folderHint", "双击进入目录，选择一个文件夹或使用当前文件夹。") : L("folderPicker.hint", "双击进入文件夹，按住 ⌘ 可多选；也可直接添加当前文件夹。"))
+            Text(opensFolders ? L("folderPicker.openHint", "双击进入目录，按住 ⌘ 可多选；选中的文件夹将在新页签中打开。") : singleFolder ? L("cleanup.folderHint", "双击进入目录，选择一个文件夹或使用当前文件夹。") : L("folderPicker.hint", "双击进入文件夹，按住 ⌘ 可多选；也可直接添加当前文件夹。"))
                 .font(.caption).foregroundStyle(.secondary)
             HStack {
                 Button { browser.navigate(to: browser.directory.deletingLastPathComponent()) } label: {
@@ -56,7 +65,7 @@ struct FolderPickerSheet: View {
             Table(browser.visibleFolders.map { FolderPickerEntry(url: $0) }, selection: $browser.selectedPaths) {
                 TableColumn(L("column.name", "名称")) { entry in
                     Label(entry.url.lastPathComponent, systemImage: "folder.fill")
-                        .foregroundStyle(Color.accentColor).help(entry.url.path)
+                        .help(entry.url.path)
                 }
             }
             .contextMenu(forSelectionType: String.self) { _ in } primaryAction: { ids in
@@ -88,12 +97,12 @@ struct FolderPickerSheet: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button(L("button.cancel", "取消")) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button(singleFolder ? L("cleanup.choose", "选择此文件夹") : browser.selectedPaths.isEmpty ? L("folderPicker.addCurrent", "添加当前文件夹")
+                Button(opensFolders ? (browser.selectedPaths.isEmpty ? L("folderPicker.openCurrent", "打开当前文件夹") : L("folderPicker.openSelected", "打开 %d 个文件夹", browser.candidates.count)) : singleFolder ? L("cleanup.choose", "选择此文件夹") : browser.selectedPaths.isEmpty ? L("folderPicker.addCurrent", "添加当前文件夹")
                        : L("folderPicker.addSelected", "添加 %d 个文件夹", browser.candidates.count)) {
                     if let error = onChoose(browser.candidates) { browser.errorMessage = error }
                     else { dismiss() }
                 }
-                .disabled(browser.isLoading || browser.candidates.isEmpty)
+                .disabled(browser.isLoading || !browser.canChooseDirectory || browser.candidates.isEmpty)
             }
         }
         .padding(18).frame(width: 700, height: 490)

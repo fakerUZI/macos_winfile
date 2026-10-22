@@ -77,6 +77,7 @@ struct WeChatCleanupView: View {
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
     @State private var showAdvancedFilters = false
+    @State private var showFolderPicker = false
     @State private var usageByMonth = false
     @State private var showScanDetails = false
 
@@ -93,6 +94,15 @@ struct WeChatCleanupView: View {
             let compact = geometry.size.height < 500
             VStack(alignment: .leading, spacing: compact ? 6 : 12) {
                 header
+                if store.result.isPartial {
+                    HStack {
+                        Text(L("wechat.partialScan", "当前仅显示部分扫描结果，占用统计并非全部文件；可提高上限重新扫描。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(L("wechat.expandScan", "提高上限重新扫描")) { store.expandScan() }
+                            .disabled(!store.canExpandScan)
+                    }
+                }
                 usageSummary(compact: compact)
                 filters
                 HStack {
@@ -121,6 +131,9 @@ struct WeChatCleanupView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { if !store.hasScanned { store.scan() } }
+        .sheet(isPresented: $showFolderPicker) {
+            FolderPickerSheet(title: L("wechat.choose", "选择微信文件夹…"), onSelect: store.addFolder)
+        }
         .onChange(of: store.message) { if $0 != nil { showScanDetails = true } }
         .alert(L("wechat.confirmTitle", "将所选附件移到废纸篓？"), isPresented: $store.confirmsTrash) {
             Button(L("action.moveToTrash", "移到废纸篓"), role: .destructive) { store.clean(store.pendingTrashFiles) }
@@ -212,7 +225,7 @@ struct WeChatCleanupView: View {
             } else {
                 Button(L("appData.rescan", "重新扫描")) { store.scan() }.disabled(operationInProgress)
             }
-            Button(L("wechat.choose", "选择微信文件夹…")) { store.addFolder() }
+            Button(L("wechat.choose", "选择微信文件夹…")) { showFolderPicker = true }
                 .disabled(operationInProgress)
         }
     }

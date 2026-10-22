@@ -96,6 +96,7 @@ final class DuplicateScanModel: ObservableObject {
 }
 
 struct DuplicateFilesSheet: View {
+    @State private var showFolderPicker = false
     @ObservedObject var model: BrowserModel
     @StateObject private var scan = DuplicateScanModel()
     @Environment(\.dismiss) private var dismiss
@@ -147,9 +148,11 @@ struct DuplicateFilesSheet: View {
             } else { Spacer(); Text(L("duplicates.ready", "选择范围后开始查找" )).foregroundStyle(.secondary); Spacer() }
             HStack { Spacer(); Button(L("button.close", "关闭")) { scan.cancel(); dismiss() }.keyboardShortcut(.cancelAction) }
         }.padding(20).frame(width: 800, height: 560).onDisappear { scan.cancel() }
+            .sheet(isPresented: $showFolderPicker) {
+                FolderPickerSheet(initialDirectory: folder, title: L("duplicates.chooseHint", "选择要检查的本机文件夹")) { url in
+                    folder = url; scan.result = nil; return nil
+                }
+            }
     }
-    private func choose() {
-        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        if panel.runModal() == .OK { folder = panel.url; scan.result = nil }
-    }
+    private func choose() { showFolderPicker = true }
 }
