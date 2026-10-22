@@ -528,7 +528,7 @@ h2 {
   border-radius: 14px;
   min-width: 0;
 }
-.release-card-picker {
+.release-card-video {
   background: #e3edda;
 }
 .release-number {
@@ -2039,7 +2039,7 @@ details a {
   }
 }
 
-.release-card-picker .release-preview img {
-  aspect-ratio: 10 / 7;
+.release-card-video .release-preview img {
+  aspect-ratio: 75 / 49;
   object-fit: contain;
 }
