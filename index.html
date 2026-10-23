@@ -11,7 +11,7 @@
   <meta property="og:description" content="LeafFiles：免费开源的原生 macOS 文件管理器。在一个窗口整理微信附件、浏览安卓文件、预览与解压压缩包。">
   <meta property="og:url" content="https://fakeruzi.github.io/macos_winfile/">
   <meta property="og:locale" content="zh_CN">
-  <meta property="og:image" content="https://fakeruzi.github.io/macos_winfile/assets/main-window.png">
+  <meta property="og:image" content="https://fakeruzi.github.io/macos_winfile/assets/interface-refresh.jpg">
   <link rel="canonical" href="https://fakeruzi.github.io/macos_winfile/">
   <link rel="alternate" hreflang="zh-CN" href="https://fakeruzi.github.io/macos_winfile/">
   <link rel="alternate" hreflang="en" href="https://fakeruzi.github.io/macos_winfile/en/">
@@ -61,9 +61,9 @@
       </div>
       <div class="hero-visual">
         <div class="orbit-label"><span class="tiny-sparkle" aria-hidden="true">✳</span> 给文件一个井井有条的家</div>
-        <button class="screenshot-button hero-window" data-image="./assets/main-window.png" data-caption="LeafFiles 主界面 · 示例文件" aria-label="放大查看 LeafFiles 主界面截图">
+        <button class="screenshot-button hero-window" data-image="./assets/interface-refresh.jpg" data-caption="LeafFiles 主界面 · 示例文件" aria-label="放大查看 LeafFiles 主界面截图">
           <span class="window-top" aria-hidden="true"><span class="window-dots"><i></i><i></i><i></i></span><span>LeafFiles</span><span class="window-symbol">⌘</span></span>
-          <img class="hero-shot" src="./assets/main-window.png" alt="LeafFiles 原生界面，含个人收藏、类型分类、多页签、图标视图和文件详情" width="1760" height="1116" fetchpriority="high">
+          <img class="hero-shot" src="./assets/interface-refresh.jpg" alt="LeafFiles 原生界面，含个人收藏、类型分类、多页签、图标视图和文件详情" width="1800" height="1144" fetchpriority="high">
           <span class="enlarge-hint">↗ 查看界面</span>
         </button>
         <div class="floating-note"><span class="note-icon"><svg class="icon"><use href="#check"/></svg></span><div><strong>文件管理，回到熟悉的节奏。</strong><span>原生 SwiftUI · 专为 macOS</span></div></div>
@@ -74,12 +74,12 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">先看看里面，<br>再从容解开。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">界面更清爽，<br>整理更顺手。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <div class="release-grid">
-        <article class="release-card release-card-preview"><span class="release-number">01 / 压缩包内置预览</span><h3>还没解压，<br>就知道里面有什么。</h3><p>双击、空格或右键打开本机压缩包，查看目录、大小与压缩方式。按名称或路径筛选，再单独查看需要的文件。</p><button class="release-preview screenshot-button" data-image="./assets/archive-preview.jpg" data-caption="{{VERSION}} 压缩包预览 · 示例文件" aria-label="放大查看 ZIPX 包内预览"><img src="./assets/archive-preview.jpg" width="1800" height="1400" alt="LeafFiles 内置 ZIPX 预览，列出中文示例目录与文件，并显示所选说明文件内容" loading="lazy"><span>查看包内预览界面 ↗</span></button><p class="release-note">普通包列目录不解出文件；单文件使用临时只读副本与内置 Quick Look，不自动打开外部应用。</p></article>
-        <article class="release-card"><span class="release-number">02 / 更多解压格式</span><h3>从 ZIPX 到 Zstandard，<br>常见归档一起处理。</h3><p>新增 ZIPX、Zstandard、LZMA、CAB、ARJ、LZH/LHA、CPIO、AR、DEB、RPM、XAR 与 Unix compress，保留 ZIP、RAR、7Z 和 TAR。</p><div class="format-tags" aria-label="新增解压格式"><span>ZIPX</span><span>ZSTD / LZMA</span><span>CAB / ARJ</span><span>LZH / CPIO</span><span>AR / XAR</span></div><p class="release-note">扩展算法的 ZIP 使用内置 7-Zip。具体算法与加密变体取决于引擎；软件包只解出内容，不执行安装。创建压缩包仍为 ZIP。</p></article>
-        <article class="release-card"><span class="release-number">03 / 从预览直接解压</span><h3>看好内容，<br>再选一个合适的位置。</h3><p>在预览窗口选择解到当前目录、独立文件夹或自选位置。内置目录选择器固定来源，右键哪个包，就处理哪个包。</p><p class="release-note">保留密码、分卷、批量解压、取消与同名不覆盖。单文件预览上限 64 MiB；压缩 TAR 的中间归档上限 512 MiB，关闭后清理，较大项目可正常解压后查看。</p></article>
+        <article class="release-card release-card-preview"><span class="release-number">01 / 界面焕新</span><h3>日常操作，<br>一眼看清。</h3><p>页签、工具栏与地址栏统一层级和间距；侧边栏分组可折叠并记住状态。清理页突出总量和已选占用，扫描与清理操作更清楚。</p><button class="release-preview screenshot-button" data-image="./assets/interface-refresh.jpg" data-caption="{{VERSION}} 界面优化 · 隔离示例文件" aria-label="放大查看界面优化截图"><img src="./assets/interface-refresh.jpg" width="1800" height="1144" alt="LeafFiles 优化后的侧边栏、页签、文件网格与图片详情，使用隔离示例文件" loading="lazy"><span>查看界面优化 ↗</span></button><p class="release-note">真实应用界面，使用隔离示例文件；更多界面变化见完整更新记录。</p></article>
+        <article class="release-card"><span class="release-number">02 / 新名称 LeafFiles</span><h3>名字焕新，<br>熟悉的习惯继续。</h3><p>WinFile 正式更名为 LeafFiles。中英文名称、菜单、帮助和关于页面统一更新。原安装命令、收藏、设置和自动更新继续沿用。</p><p class="release-note">应用目录和下载文件名继续保留 WinFile，以兼容原有安装。无需迁移收藏和设置，直接更新即可。</p></article>
+        <article class="release-card"><span class="release-number">03 / 搜索与预览</span><h3>少一点拥挤，<br>多一点专注。</h3><p>搜索默认收起更多条件，并显示有效条件数量。压缩包预览在宽窗口左右分栏、窄窗口上下排列；文件详情显示更大的本机缩略图与分组属性。</p><p class="release-note">保留微信附件整理、MTP 安卓文件管理、视频按需读取与 ZIPX / RAR / 7Z 等多格式解压功能。</p></article>
       </div>
     </section>
 
@@ -105,7 +105,7 @@
       </div>
       <div class="feature-panel" id="panel-archive" role="tabpanel" aria-labelledby="tab-archive">
         <div class="feature-copy"><span class="feature-kicker">ARCHIVE PREVIEW &amp; EXTRACTION</span><h3>先看清内容，<br>再把文件解出来。</h3><p>ZIPX、RAR、7Z、TAR 与更多归档格式，都在一个窗口里处理。内置目录预览与名称筛选，选中单个文件即可查看。</p><div class="format-tags" aria-label="支持的解压格式"><span>ZIP / ZIPX</span><span>RAR / RAR5</span><span>7Z / TAR</span><span>ZSTD / LZMA</span><span>CAB / ARJ / LZH</span></div><ul class="check-list"><li>查看包内路径、大小、压缩方式与加密状态</li><li>单文件内置预览，自选位置使用内置选择器</li><li>密码、分卷、批量解压与取消</li><li>同名冲突自动另存，保留已有文件</li></ul><p class="feature-footnote">创建压缩包支持 ZIP。单文件预览上限 64 MiB，压缩 TAR 中间归档上限 512 MiB；临时副本关闭后清理，超限可直接解压。算法变体受引擎限制。</p></div>
-        <figure class="feature-figure archive-preview-figure"><button class="screenshot-button" data-image="./assets/archive-preview.jpg" data-caption="{{VERSION}} 压缩包预览 · 示例文件" aria-label="放大查看 ZIPX 包内预览"><img src="./assets/archive-preview.jpg" width="1800" height="1400" alt="LeafFiles 内置 ZIPX 预览，列出中文示例目录与文件，并显示所选说明文件内容" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> {{VERSION}} 功能界面 · 生成样例</figcaption></figure>
+        <figure class="feature-figure archive-preview-figure"><button class="screenshot-button" data-image="./assets/archive-preview.jpg" data-caption="v1.5.0 压缩包预览 · 示例文件" aria-label="放大查看 ZIPX 包内预览"><img src="./assets/archive-preview.jpg" width="1800" height="1400" alt="LeafFiles 内置 ZIPX 预览，列出中文示例目录与文件，并显示所选说明文件内容" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v1.5.0 功能界面 · 生成样例</figcaption></figure>
       </div>
     </section>
 
@@ -121,7 +121,7 @@
     <section class="local-note wrap" aria-label="本机处理与开源"><div class="local-icon"><svg class="icon"><use href="#shield"/></svg></div><div><h2>你的文件，在你的 Mac 上整理。</h2><p>文件扫描与整理在本机进行。更新从 GitHub 下载，源码也在那里，随时可以查看。</p></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile"><svg class="icon"><use href="#github"/></svg> 看看源码 <span aria-hidden="true">↗</span></a></section>
 
     <section class="faq section-space wrap" id="faq" aria-labelledby="faq-title"><div><p class="eyebrow"><span></span> 在开始之前</p><h2 id="faq-title">你可能还想知道。</h2><p class="faq-intro">还有其他问题？<br>欢迎到 <a href="https://github.com/fakerUZI/macos_winfile/issues">GitHub 告诉我们 ↗</a></p></div><div class="faq-list">
-      <details><summary>WinFile 和 LeafFiles 是同一款应用吗？<span aria-hidden="true">+</span></summary><p>是的，WinFile 现更名为 LeafFiles。原安装命令、GitHub 地址和自动更新渠道继续使用，已有收藏和设置会保留。更名将在下一次应用正式发行时进入下载包；当前公开的 v{{DOWNLOAD_VERSION}} 及部分截图仍显示旧名称。为兼容原有安装，应用目录和下载文件名继续使用 WinFile.app 与 WinFile.zip。</p></details>
+      <details><summary>WinFile 和 LeafFiles 是同一款应用吗？<span aria-hidden="true">+</span></summary><p>是的，WinFile 现更名为 LeafFiles。原安装命令、GitHub 地址和自动更新渠道继续使用，已有收藏和设置会保留。从 v2.0.0 起，安装包显示名称为 LeafFiles；部分历史截图仍显示旧名称。为兼容原有安装，应用目录和下载文件名继续使用 WinFile.app 与 WinFile.zip。</p></details>
       <details><summary>LeafFiles 免费吗？支持哪些 Mac？<span aria-hidden="true">+</span></summary><p>免费、MIT 协议开源。需要 macOS {{MIN_MACOS}} 或更新版本，同一个安装包支持 Apple 芯片和 Intel Mac。界面支持简体中文与英文。</p></details>
       <details><summary>第一次打开，提示无法验证开发者怎么办？<span aria-hidden="true">+</span></summary><p>当前发行包尚未经过 Apple 公证。请从本页的 GitHub Releases 下载，解压后将 WinFile.app 放入「应用程序」。核对 <a href="https://github.com/fakerUZI/macos_winfile/releases/latest/download/WinFile.zip.sha256">SHA-256 校验文件</a>后，可按 macOS 提示到「系统设置 → 隐私与安全性」允许打开。<a href="https://github.com/fakerUZI/macos_winfile#安装">查看完整安装说明 ↗</a></p></details>
       <details><summary>空间清理会自动删除文件吗？可以撤销吗？<span aria-hidden="true">+</span></summary><p>不会。扫描只列出候选，默认不选择任何文件，确认后才移到废纸篓；执行前会复查文件身份和占用状态，运行中的应用、受保护或无法确认状态的文件会保留。通用清理和其他软件缓存可在当前会话用 ⌘Z 撤销，微信附件可从废纸篓恢复。移到废纸篓不会立即增加可用空间；磁盘占用仅作估算。</p></details>
