@@ -18,12 +18,15 @@ extension ArchiveService {
         if let range = name.range(of: #"\.part([0-9]+)\.rar$"#, options: [.regularExpression, .caseInsensitive]) {
             let digits = String(name[range]).dropFirst(5).dropLast(4)
             firstName = String(name[..<range.lowerBound]) + ".part" + String(repeating: "0", count: max(0, digits.count - 1)) + "1.rar"
-        } else if lower.range(of: #"\.(7z|zip)\.[0-9]{3,}$"#, options: .regularExpression) != nil {
+        } else if lower.range(of: #"\.(7z|zip|zipx)\.[0-9]{3,}$"#, options: .regularExpression) != nil {
             firstName = archive.deletingPathExtension().lastPathComponent + "." + String(repeating: "0", count: max(2, archive.pathExtension.count - 1)) + "1"
         } else if lower.range(of: #"\.r[0-9]{2,3}$"#, options: .regularExpression) != nil {
             firstName = archive.deletingPathExtension().lastPathComponent + ".rar"
         } else if lower.range(of: #"\.z[0-9]{2,3}$"#, options: .regularExpression) != nil {
-            firstName = archive.deletingPathExtension().lastPathComponent + ".zip"
+            let stem = archive.deletingPathExtension()
+            let zip = stem.appendingPathExtension("zip")
+            let zipx = stem.appendingPathExtension("zipx")
+            firstName = FileManager.default.fileExists(atPath: zipx.path) && !FileManager.default.fileExists(atPath: zip.path) ? zipx.lastPathComponent : zip.lastPathComponent
         }
         guard let firstName else { return archive }
         let parent = archive.deletingLastPathComponent()
@@ -36,7 +39,7 @@ extension ArchiveService {
 
     static func extractionBaseName(_ archive: URL) -> String {
         var name = archive.lastPathComponent
-        for suffix in [".tar.gz", ".tar.bz2", ".tar.xz", ".7z.001", ".zip.001", ".tgz", ".tbz2", ".tbz", ".txz"] {
+        for suffix in tarSuffixes + [".7z.001", ".zip.001", ".zipx.001"] {
             if name.lowercased().hasSuffix(suffix) { return String(name.dropLast(suffix.count)) }
         }
         if let range = name.range(of: #"\.part[0-9]+\.rar$"#, options: [.regularExpression, .caseInsensitive]) {
@@ -63,7 +66,6 @@ extension ArchiveService {
         try unpack(archive, into: payload, work: work, engine: engine, password: password,
                    cancellation: cancellation, onProgress: onProgress)
         // gzip/bzip2/xz are streams. Only unwrap a TAR payload; report.txt.gz stays report.txt.
-        let streamExtensions: Set<String> = ["gz", "bz2", "xz", "tgz", "tbz", "tbz2", "txz"]
         if streamExtensions.contains(archive.pathExtension.lowercased()) {
             let children = try fm.contentsOfDirectory(at: payload, includingPropertiesForKeys: [.isRegularFileKey])
             if children.count == 1, let inner = children.first,
@@ -117,9 +119,9 @@ extension ArchiveService {
         return committed.map(\.target)
     }
 
-    private static func isTarPayload(_ url: URL, original: URL) -> Bool {
+    static func isTarPayload(_ url: URL, original: URL) -> Bool {
         let lower = original.lastPathComponent.lowercased()
-        if [".tar.gz", ".tar.bz2", ".tar.xz", ".tgz", ".tbz", ".tbz2", ".txz"].contains(where: lower.hasSuffix) { return true }
+        if tarSuffixes.contains(where: lower.hasSuffix) { return true }
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         let data = handle.readData(ofLength: 512)
@@ -142,7 +144,10 @@ extension ArchiveService {
         let hasZipVolumes = ["z01", "Z01"].contains {
             existsWithoutFollowing(archive.deletingPathExtension().appendingPathExtension($0))
         }
-        if archive.pathExtension.lowercased() == "zip", !hasZipVolumes, !listing.contains("Encrypted = +") {
+        let zipMethods = listing.components(separatedBy: "\n").filter { $0.hasPrefix("Method = ") }
+            .map { String($0.dropFirst(9)) }
+        let metadataCompatibleZip = zipMethods.allSatisfy { $0 == "Store" || $0 == "Deflate" }
+        if archive.pathExtension.lowercased() == "zip", !hasZipVolumes, !listing.contains("Encrypted = +"), metadataCompatibleZip {
             // Preserve macOS resource forks and metadata for ordinary ZIP archives.
             _ = try execute(engine: URL(fileURLWithPath: "/usr/bin/ditto"),
                             arguments: ["-x", "-k", archive.path, payload.path], password: nil,
@@ -153,7 +158,7 @@ extension ArchiveService {
         }
     }
 
-    private static func validateListing(_ listing: String) throws {
+    static func validateListing(_ listing: String) throws {
         for line in listing.components(separatedBy: "\n") {
             if line.hasPrefix("Hard Link = ") {
                 let target = String(line.dropFirst(12)).replacingOccurrences(of: "\\", with: "/")
@@ -169,7 +174,7 @@ extension ArchiveService {
         }
     }
 
-    private static func validateExtractedTree(_ root: URL, cancellation: ScanCancellation) throws {
+    static func validateExtractedTree(_ root: URL, cancellation: ScanCancellation) throws {
         let fm = FileManager.default
         let canonical = root.resolvingSymlinksInPath().path + "/"
         var readError: Error?
@@ -190,7 +195,7 @@ extension ArchiveService {
     private static func existsWithoutFollowing(_ url: URL) -> Bool {
         (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
     }
-    private static func removeStaging(_ root: URL) {
+    static func removeStaging(_ root: URL) {
         let fm = FileManager.default
         try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
         if let entries = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]) {
@@ -201,14 +206,15 @@ extension ArchiveService {
         }
         try? fm.removeItem(at: root)
     }
-    private static func checkCancellation(_ token: ScanCancellation) throws {
+    static func checkCancellation(_ token: ScanCancellation) throws {
         if token.isCancelled { throw ArchiveError.cancelled }
     }
 
     /// Log to a private file so stdout/stderr cannot deadlock each other's pipes.
     /// Passwords go through stdin, never process arguments or saved preferences.
-    private static func execute(engine: URL, arguments: [String], password: String?, work: URL,
-                                cancellation: ScanCancellation, onProgress: ((Double?) -> Void)? = nil) throws -> String {
+    static func execute(engine: URL, arguments: [String], password: String?, work: URL,
+                        cancellation: ScanCancellation, onProgress: ((Double?) -> Void)? = nil,
+                        monitoredFile: URL? = nil, maximumFileBytes: Int64 = Int64.max) throws -> String {
         try checkCancellation(cancellation)
         let logURL = work.appendingPathComponent("engine-\(UUID().uuidString).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -237,8 +243,15 @@ extension ArchiveService {
         try process.run()
         var stoppingAt: Date?
         var lastProgress: Double?
+        var limitError: ArchiveError?
         while process.isRunning {
-            if cancellation.isCancelled {
+            if (((try? FileManager.default.attributesOfItem(atPath: logURL.path)[.size]) as? NSNumber)?.int64Value ?? 0) > 32 * 1024 * 1024 {
+                limitError = .invalidListing
+            }
+            if let monitoredFile, monitoredBytes(at: monitoredFile) > maximumFileBytes {
+                limitError = .previewTooLarge
+            }
+            if cancellation.isCancelled || limitError != nil {
                 if stoppingAt == nil { process.terminate(); stoppingAt = Date() }
                 else if Date().timeIntervalSince(stoppingAt!) > 2 { kill(process.processIdentifier, SIGKILL) }
             }
@@ -255,6 +268,7 @@ extension ArchiveService {
         }
         process.waitUntilExit()
         try checkCancellation(cancellation)
+        if let limitError { throw limitError }
         let attributes = try FileManager.default.attributesOfItem(atPath: logURL.path)
         guard ((attributes[.size] as? NSNumber)?.intValue ?? 0) <= 32 * 1024 * 1024 else {
             throw ArchiveError.commandFailed(L("archive.error.listingTooLarge", "压缩包目录信息过大，无法完成验证。"), -1)
@@ -279,5 +293,21 @@ extension ArchiveService {
         let size = try handle.seekToEnd()
         try handle.seek(toOffset: size > count ? size - count : 0)
         return handle.readData(ofLength: Int(count))
+    }
+
+    private static func monitoredBytes(at url: URL) -> Int64 {
+        let fm = FileManager.default
+        guard let values = try? fm.attributesOfItem(atPath: url.path) else { return 0 }
+        if values[.type] as? FileAttributeType != .typeDirectory {
+            return (values[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        guard let entries = fm.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else { return 0 }
+        var total: Int64 = 0
+        for case let child as URL in entries {
+            guard let info = try? child.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]), info.isRegularFile == true else { continue }
+            let size = Int64(info.fileSize ?? 0)
+            total = total > Int64.max - size ? Int64.max : total + size
+        }
+        return total
     }
 }

@@ -349,7 +349,7 @@ enum FileTypeDB {
         let ext = fileExtension(of: name)
         if ((ext.hasPrefix("r") || ext.hasPrefix("z")) && (3...4).contains(ext.count) && ext.dropFirst().allSatisfy(\.isNumber))
             || (ext.count >= 3 && ext.allSatisfy(\.isNumber)
-                && lower.range(of: #"\.(7z|zip)\.[0-9]+$"#, options: .regularExpression) != nil) {
+                && lower.range(of: #"\.(7z|zip|zipx)\.[0-9]+$"#, options: .regularExpression) != nil) {
             return .init(category: .archive, description: L("type.archiveVolume", "压缩分卷"))
         }
         if let hit = table[ext] { return .init(category: hit.category, description: L("fileType.\(ext)", hit.description)) }

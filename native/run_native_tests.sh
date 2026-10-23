@@ -44,6 +44,8 @@ CORE=(
   "$SRC/WeChatCleanupModel.swift"
   "$SRC/ArchiveService.swift"
   "$SRC/ArchiveExtraction.swift"
+  "$SRC/ArchivePreview.swift"
+  "$SRC/ArchivePreviewModel.swift"
   "$SRC/ThumbnailService.swift"
   "$SRC/FileAssociations.swift"
   "$SRC/DefaultAppService.swift"

@@ -223,6 +223,9 @@ struct MainView: View {
                 HelpSheet()
             }
         }
+        .sheet(item: Binding(get: { model.archivePreviewRequest }, set: { model.archivePreviewRequest = $0 })) { request in
+            ArchivePreviewSheet(request: request, browser: model)
+        }
         .sheet(item: Binding(get: { model.folderPickerRequest }, set: { model.folderPickerRequest = $0 })) { request in
             FolderPickerSheet(initialDirectory: request.initialDirectory, title: request.title) { url in
                 DispatchQueue.main.async { request.onSelect(url) }

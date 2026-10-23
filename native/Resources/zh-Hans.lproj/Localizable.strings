@@ -1085,3 +1085,20 @@
 "android.stream.cancelled" = "已取消流式播放。";
 
 "android.connection.ready" = "设备已连接，请选择存储位置。";
+
+"archive.preview.title" = "预览压缩包";
+"archive.preview.filter" = "筛选包内文件名或路径";
+"archive.preview.summary" = "%d 个项目 · 已知原始大小 %@";
+"archive.preview.closeFile" = "关闭文件预览";
+"archive.preview.hint" = "列表不解出普通压缩包；查看文件仅临时解出所选项（最大 64 MiB），不打开外部应用，关闭后删除。压缩 TAR 预览需临时展开中间归档（最大 512 MiB）。";
+"archive.preview.file" = "查看所选文件";
+"archive.preview.path" = "包内路径";
+"archive.preview.packed" = "压缩后";
+"archive.preview.method" = "压缩方式";
+"archive.preview.encrypted" = "已加密";
+"archive.preview.loading" = "正在读取压缩包目录…";
+"archive.preview.empty" = "没有可显示的项目";
+"archive.preview.unlock" = "解锁预览";
+"archive.error.invalidListing" = "无法安全识别压缩包目录，请检查文件是否损坏。";
+"archive.error.previewTooLarge" = "此项目超过预览大小限制，请解压后查看。";
+"archive.error.changed" = "压缩包已发生变化，请关闭预览后重新打开。";

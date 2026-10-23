@@ -109,6 +109,7 @@ final class BrowserModel: ObservableObject {
     @Published var transferProgress: AndroidTransferProgress?
     /// 压缩/解压进度
     @Published var archiveProgress: ArchiveProgress?
+    @Published var archivePreviewRequest: ArchivePreviewRequest?
     private var archiveCancellation: ScanCancellation?
     private var archiveID = UUID()
     private var transferTask: Task<Void, Never>?
@@ -1042,6 +1043,18 @@ final class BrowserModel: ObservableObject {
 
     var canExtract: Bool { canMutateFiles && !selectedArchives.isEmpty && !isAndroidPath }
 
+    var canPreviewArchive: Bool { !isAndroidPath && selectedItems.count == 1 && selectedArchives.count == 1 }
+
+    func previewArchiveSelection() {
+        guard canPreviewArchive, let url = selectedArchives.first?.url else { return }
+        previewArchive(url)
+    }
+
+    func previewArchive(_ url: URL) {
+        guard url.isFileURL, ArchiveService.isArchive(url) else { return }
+        archivePreviewRequest = ArchivePreviewRequest(archive: url, destination: currentDirectory ?? url.deletingLastPathComponent())
+    }
+
     var canCompress: Bool { canMutateFiles && !selectedItems.isEmpty && !isAndroidPath && (currentDirectory != nil || isWeChatCleanupView) }
 
     /// Aggregated cleanup results can span folders; ask where to save a combined archive.
@@ -1085,7 +1098,12 @@ final class BrowserModel: ObservableObject {
     /// Process every selected archive; a volume set is extracted only once.
     func extractSelection(to chosenDirectory: URL? = nil, createFolder: Bool = false) {
         guard canExtract else { return }
-        let archives = selectedArchives.map(\.url)
+        extractArchives(selectedArchives.map(\.url), to: chosenDirectory, createFolder: createFolder)
+    }
+
+    /// Preview actions retain their source even when the main listing selection changes.
+    func extractArchives(_ archives: [URL], to chosenDirectory: URL? = nil, createFolder: Bool = false) {
+        guard canMutateFiles, !archives.isEmpty, archives.allSatisfy({ $0.isFileURL && ArchiveService.isArchive($0) }) else { return }
         let currentDestination = chosenDirectory ?? currentDirectory
         let token = ScanCancellation()
         archiveCancellation = token
@@ -1143,10 +1161,11 @@ final class BrowserModel: ObservableObject {
         }
     }
 
-    func chooseExtractionDestination() {
-        guard canExtract else { return }
+    func chooseExtractionDestination(for requestedArchives: [URL]? = nil) {
+        let archives = requestedArchives ?? selectedArchives.map(\.url)
+        guard canMutateFiles, !archives.isEmpty, archives.allSatisfy({ $0.isFileURL && ArchiveService.isArchive($0) }) else { return }
         folderPickerRequest = FolderPickerRequest(title: L("archive.chooseDestination", "选择解压文件的保存位置"), initialDirectory: currentDirectory) { [weak self] directory in
-            self?.extractSelection(to: directory)
+            self?.extractArchives(archives, to: directory)
         }
     }
 
@@ -1757,6 +1776,10 @@ final class BrowserModel: ObservableObject {
             open([item.url], with: app)
             return
         }
+        if ArchiveService.isArchive(item.url), selectedItems.count <= 1 {
+            archivePreviewRequest = ArchivePreviewRequest(archive: item.url, destination: currentDirectory ?? item.url.deletingLastPathComponent())
+            return
+        }
         noteOpened(item.url)
         if !engine.open(item) { errorMessage = engine.lastError ?? L("error.openFailed", "无法打开") }
     }
@@ -1795,6 +1818,7 @@ final class BrowserModel: ObservableObject {
             openAndroidFiles(selectedAndroidEntries, preview: true)
             return
         }
+        if canPreviewArchive { previewArchiveSelection(); return }
         QuickLookService.shared.show(selectedItems.map(\.url))
     }
 

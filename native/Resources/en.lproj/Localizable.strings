@@ -1067,3 +1067,20 @@
 "android.stream.cancelled" = "Streaming cancelled.";
 
 "android.connection.ready" = "Device connected. Choose a storage location.";
+
+"archive.preview.title" = "Preview archive";
+"archive.preview.filter" = "Filter names or paths inside the archive";
+"archive.preview.summary" = "%d items · Known original size %@";
+"archive.preview.closeFile" = "Close file preview";
+"archive.preview.hint" = "Listing does not unpack ordinary archives. Viewing a file extracts only that item temporarily (up to 64 MiB), without opening an external app, and deletes it on close. Compressed TAR preview temporarily expands the intermediate archive (up to 512 MiB).";
+"archive.preview.file" = "View selected file";
+"archive.preview.path" = "Archive path";
+"archive.preview.packed" = "Packed size";
+"archive.preview.method" = "Method";
+"archive.preview.encrypted" = "Encrypted";
+"archive.preview.loading" = "Reading archive contents…";
+"archive.preview.empty" = "No items to display";
+"archive.preview.unlock" = "Unlock preview";
+"archive.error.invalidListing" = "The archive listing could not be read safely. Check whether the file is damaged.";
+"archive.error.previewTooLarge" = "This item exceeds the preview size limit. Extract it to view it.";
+"archive.error.changed" = "The archive has changed. Close the preview and open it again.";

@@ -97,6 +97,7 @@ enum NativeTestSuite {
             testCustomPagesNotReportedEmpty()
             try testArchive()
             try testExpandedArchives(sandbox)
+            try testArchivePreview(sandbox)
             try testSelectAllConsistency()
             testTileLayoutUniformity()
             try testCategoryViewIntegrity()
@@ -4168,6 +4169,196 @@ enum NativeTestSuite {
         model.extractSelection(to: try output("批量分卷"))
         wait()
         check("同时选中多个分卷只解压一次", model.lastTransferOutcome?.completed.count == 1 && model.lastTransferOutcome?.failures.isEmpty == true)
+    }
+
+    @MainActor
+    static func testArchivePreview(_ sandbox: URL) throws {
+        print("\n[ZIPX / 扩展格式与压缩包预览]")
+        let fm = FileManager.default
+        let root = sandbox.appendingPathComponent("archive-preview")
+        let source = root.appendingPathComponent("source")
+        try fm.createDirectory(at: source, withIntermediateDirectories: true)
+        guard let engine = ArchiveService.sevenZipURL else { throw ArchiveError.engineMissing }
+        func run(_ tool: URL, _ arguments: [String], input: Data? = nil) throws {
+            let p = Process(); p.executableURL = tool; p.arguments = arguments; p.currentDirectoryURL = source
+            p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+            if let input {
+                let pipe = Pipe(); p.standardInput = pipe
+                try p.run(); pipe.fileHandleForWriting.write(input); try pipe.fileHandleForWriting.close()
+            } else { try p.run() }
+            p.waitUntilExit()
+            guard p.terminationStatus == 0 else { throw ArchiveError.commandFailed(tool.lastPathComponent, p.terminationStatus) }
+        }
+        func output(_ name: String) throws -> URL {
+            let url = root.appendingPathComponent(name)
+            try fm.createDirectory(at: url, withIntermediateDirectories: true); return url
+        }
+        func fixture(_ name: String) -> URL {
+            let bundled = Bundle.main.resourceURL?.appendingPathComponent("TestFixtures/" + name)
+            if let bundled, fm.fileExists(atPath: bundled.path) { return bundled }
+            return URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/" + name)
+        }
+        func fails(_ name: String, _ action: () throws -> Void, expected: (Error) -> Bool = { _ in true }) {
+            do { try action(); check(name, false) } catch { check(name, expected(error), error.localizedDescription) }
+        }
+        let extensions = ["zipx", "zst", "zstd", "tzst", "lzma", "tlz", "Z", "taz", "cab", "arj", "lzh", "lha", "cpio", "ar", "deb", "rpm", "xar"]
+        check("新增格式均可识别并保留软件包分类", extensions.allSatisfy {
+            let category: FileCategory = ["deb", "rpm"].contains($0) ? .executable : .archive
+            return ArchiveService.isArchive(URL(fileURLWithPath: "/sample." + $0)) && FileTypeDB.info(name: "sample." + $0, isDirectory: false, isSymlink: false, isBundle: false).category == category
+        })
+        check("未将磁盘映像、可执行文件和 Office 文档纳入解压入口", ["dmg", "exe", "docx", "xlsx"].allSatisfy { !ArchiveService.isArchive(URL(fileURLWithPath: "/sample." + $0)) })
+        var zipxBytes: Data?
+        for (name, method) in [("zipx-lzma.zipx", "LZMA"), ("zipx-ppmd.zipx", "PPMd"), ("zipx-zstd.zipx", "zstd")] {
+            let archive = fixture(name), dest = try output(name)
+            let contents = try ArchiveService.previewContents(archive)
+            defer { contents.close() }
+            check("真实 ZIPX \(method) 预览识别路径、大小和算法", contents.entries.first?.path == "vimrc" && contents.entries.first?.size == 912 && contents.entries.first?.method == method)
+            check("普通 ZIPX 目录预览不解出包内文件", (try? fm.contentsOfDirectory(atPath: contents.workspace.path))?.isEmpty == true)
+            _ = try ArchiveService.extract(archive, to: dest)
+            let bytes = try Data(contentsOf: dest.appendingPathComponent("vimrc"))
+            if let zipxBytes { check("ZIPX \(method) 解压与其他算法还原内容一致", bytes == zipxBytes) }
+            else { zipxBytes = bytes; check("真实 ZIPX LZMA 解压还原全部字节", bytes.count == 912) }
+            let item = try ArchiveService.prepareMemberPreview(contents.entries[0], contents: contents)
+            check("ZIPX \(method) 单文件预览内容与解压一致", (try? Data(contentsOf: item.url)) == bytes)
+            item.close()
+        }
+        let cabOut = try output("cab")
+        let renamedZip = root.appendingPathComponent("lzma-with-zip-extension.zip")
+        try fm.copyItem(at: fixture("zipx-lzma.zipx"), to: renamedZip)
+        let renamedOut = try output("lzma-zip")
+        _ = try ArchiveService.extract(renamedZip, to: renamedOut)
+        check("ZIP 扩展名使用新算法时自动交给支持的引擎", (try? Data(contentsOf: renamedOut.appendingPathComponent("vimrc"))) == zipxBytes)
+        _ = try ArchiveService.extract(fixture("cab-mszip.cab"), to: cabOut)
+        check("真实 CAB MSZip 解压还原内容", (try? Data(contentsOf: cabOut.appendingPathComponent("zero"))) == Data(repeating: 0, count: 33000))
+        let lhaOut = try output("lha")
+        _ = try ArchiveService.extract(fixture("lha-lh5.lzh"), to: lhaOut)
+        check("真实 LHA LH5 解压还原文件", (try? Data(contentsOf: lhaOut.appendingPathComponent("file1")))?.count == 60 && (try? Data(contentsOf: lhaOut.appendingPathComponent("file2")))?.count == 78)
+        let text = Data("Archive preview 中文 ✓\n".utf8)
+        try text.write(to: source.appendingPathComponent("sample.txt"))
+        for (ext, format) in [("cpio", "newc"), ("ar", "ar"), ("xar", "xar")] {
+            let archive = root.appendingPathComponent("sample." + ext)
+            try run(URL(fileURLWithPath: "/usr/bin/tar"), ["--format=" + format, "-cf", archive.path, "sample.txt"])
+            let dest = try output("restore-" + ext)
+            _ = try ArchiveService.extract(archive, to: dest)
+            check("\(ext) 格式完整解压", (try? Data(contentsOf: dest.appendingPathComponent("sample.txt"))) == text)
+            let report = try ArchiveService.previewContents(archive)
+            check("\(ext) 可列出包内文件", report.entries.contains { $0.path == "sample.txt" && $0.size == Int64(text.count) })
+            report.close()
+        }
+        let tarZ = root.appendingPathComponent("source.tar.Z")
+        try run(URL(fileURLWithPath: "/usr/bin/tar"), ["-cZf", tarZ.path, "sample.txt"])
+        let zOut = try output("compress-Z")
+        _ = try ArchiveService.extract(tarZ, to: zOut)
+        check("TAR.Z 两层解压完整还原", (try? Data(contentsOf: zOut.appendingPathComponent("sample.txt"))) == text)
+        let zReport = try ArchiveService.previewContents(tarZ)
+        check("TAR.Z 预览自动展开中间归档", zReport.expandedStream && zReport.entries.contains { $0.path == "sample.txt" })
+        zReport.close()
+        let tarLzma = root.appendingPathComponent("source.tar.lzma")
+        try run(URL(fileURLWithPath: "/usr/bin/tar"), ["--lzma", "-cf", tarLzma.path, "sample.txt"])
+        let lzmaOut = try output("lzma")
+        _ = try ArchiveService.extract(tarLzma, to: lzmaOut)
+        check("TAR.LZMA 两层解压完整还原", (try? Data(contentsOf: lzmaOut.appendingPathComponent("sample.txt"))) == text)
+        let lzmaReport = try ArchiveService.previewContents(tarLzma)
+        check("TAR.LZMA 可预览内层目录", lzmaReport.expandedStream && lzmaReport.entries.contains { $0.path == "sample.txt" })
+        lzmaReport.close()
+        let zstd = fixture("tar-zstd.tar.zst")
+        let zstdReport = try ArchiveService.previewContents(zstd)
+        check("未知原始大小的 TAR.ZST 可在限额内展开预览", zstdReport.expandedStream && !zstdReport.entries.isEmpty)
+        let zstdOut = try output("zstd")
+        _ = try ArchiveService.extract(zstd, to: zstdOut)
+        check("TAR.ZST 自动解开两层且内容与目录预览一致", zstdReport.entries.filter { !$0.isDirectory }.allSatisfy { fm.fileExists(atPath: zstdOut.appendingPathComponent($0.path).path) })
+        zstdReport.close()
+        check("扩展 TAR 和分卷后缀完整移除", ["tar.zst", "tar.lzma", "tar.Z", "tzst", "tlz", "taz", "zipx.001"].allSatisfy { ArchiveService.extractionBaseName(URL(fileURLWithPath: "/project." + $0)) == "project" })
+        let literalName = "中文 [1]*?.txt"
+        try text.write(to: source.appendingPathComponent(literalName))
+        try Data("not selected".utf8).write(to: source.appendingPathComponent("中文 11x.txt"))
+        let archive = root.appendingPathComponent("preview.zipx")
+        try run(engine, ["a", "-tzip", "-mm=LZMA", archive.path, literalName, "中文 11x.txt"])
+        let report = try ArchiveService.previewContents(archive)
+        let member = report.entries.first { $0.path == literalName }!
+        let prepared = try ArchiveService.prepareMemberPreview(member, contents: report)
+        check("包内带通配符的路径按字面精确预览", (try? Data(contentsOf: prepared.url)) == text && !fm.fileExists(atPath: prepared.directory.appendingPathComponent("中文 11x.txt").path))
+        let currentStamp = try ArchiveSourceStamp(archive)
+        check("文件预览副本只读且原压缩包不变", ((try? fm.attributesOfItem(atPath: prepared.url.path)[.posixPermissions]) as? NSNumber)?.intValue == 0o400 && currentStamp == report.sourceStamp)
+        prepared.close()
+        check("关闭单文件预览删除临时内容", !fm.fileExists(atPath: prepared.directory.path))
+        let protected = root.appendingPathComponent("protected.7z")
+        try run(engine, ["a", "-t7z", "-mhe=on", "-ppreview-test", protected.path, "sample.txt"])
+        fails("加密目录预览请求密码", { _ = try ArchiveService.previewContents(protected) }, expected: { if case ArchiveError.passwordRequired = $0 { return true }; return false })
+        fails("加密目录预览可识别错误密码", { _ = try ArchiveService.previewContents(protected, password: "wrong") }, expected: { if case ArchiveError.wrongPassword = $0 { return true }; return false })
+        let unlocked = try ArchiveService.previewContents(protected, password: "preview-test")
+        check("正确密码解锁文件头并显示加密状态", unlocked.entries.first?.path == "sample.txt" && unlocked.entries.first?.encrypted == true)
+        let unlockedFile = try ArchiveService.prepareMemberPreview(unlocked.entries[0], contents: unlocked, password: "preview-test")
+        check("加密单文件预览通过标准输入使用密码", (try? Data(contentsOf: unlockedFile.url)) == text)
+        unlocked.close()
+        check("关闭加密预览删除整个工作区", !fm.fileExists(atPath: unlocked.workspace.path))
+        let split = root.appendingPathComponent("split.zipx")
+        try run(engine, ["a", "-tzip", "-mx=0", "-v128b", split.path, literalName, "中文 11x.txt"])
+        let second = root.appendingPathComponent("split.zipx.002")
+        check("ZIPX 数字分卷入口可识别", ArchiveService.isArchive(second) && FileTypeDB.info(name: second.lastPathComponent, isDirectory: false, isSymlink: false, isBundle: false).category == .archive)
+        let splitReport = try ArchiveService.previewContents(second)
+        check("从 ZIPX 后续卷预览自动定位首卷", splitReport.archive.lastPathComponent == "split.zipx.001" && splitReport.entries.count == 2)
+        splitReport.close()
+        let splitOut = try output("split-zipx")
+        _ = try ArchiveService.extract(second, to: splitOut)
+        check("ZIPX 多分卷解压完整还原", (try? Data(contentsOf: splitOut.appendingPathComponent(literalName))) == text)
+        fails("预览列表拒绝目录穿越", { _ = try ArchiveService.parseContents("Path = ../outside\nSize = 1\n\n") }, expected: { if case ArchiveError.unsafePath = $0 { return true }; return false })
+        fails("预览列表拒绝伪造字段和负大小", { _ = try ArchiveService.parseContents("Path = file\nSize = -1\n\n") })
+        fails("预览列表拒绝含换行的歧义记录", { _ = try ArchiveService.parseContents("Path = file\nnot a field\nSize = 1\n\n") })
+        let special = try ArchiveService.parseContents("Path = directory\nFolder = +\nSize = 0\n\nPath = link\nSize = 4\nSymbolic Link = file\n\nPath = huge\nSize = 67108865\n\n")
+        check("目录、链接和超过 64 MiB 的项目不进入文件预览", special.allSatisfy { !$0.canPreview })
+        let token = ScanCancellation(); token.cancel()
+        fails("目录预览开始前可以取消", { _ = try ArchiveService.previewContents(archive, cancellation: token) }, expected: { if case ArchiveError.cancelled = $0 { return true }; return false })
+        let waitEnd = { Date().addingTimeInterval(30) }
+        func wait(_ condition: () -> Bool) {
+            let end = waitEnd()
+            while condition() && Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.03)) }
+        }
+        let previewModel = ArchivePreviewModel(archive: archive)
+        previewModel.load(); wait { previewModel.isLoading }
+        check("异步预览模型加载目录且不阻塞主线程", previewModel.contents?.entries.count == 2 && previewModel.error == nil)
+        previewModel.show(member); wait { previewModel.isPreparing }
+        let modelWork = previewModel.contents?.workspace
+        check("异步单文件预览完成后可读取副本", previewModel.preview.map { (try? Data(contentsOf: $0.url)) == text } == true)
+        previewModel.close(); wait { modelWork.map { fm.fileExists(atPath: $0.path) } ?? false }
+        check("关闭预览模型释放文件和工作区", modelWork.map { !fm.fileExists(atPath: $0.path) } == true && previewModel.preview == nil)
+        let earlyClose = ArchivePreviewModel(archive: archive)
+        earlyClose.load(); earlyClose.close()
+        var cleanupFinished = false
+        Task { await earlyClose.cleanupTask?.value; cleanupFinished = true }
+        wait { !cleanupFinished }
+        check("读取中关闭不会回写过期预览结果", earlyClose.contents == nil)
+        let fs = FSEngine(); fs.restrictScopeForTesting([root])
+        let browser = BrowserModel(engine: fs, startDirectory: root)
+        wait { browser.isBusy }
+        browser.selectedIDs = [FileItem.canonicalID(for: archive)]
+        browser.previewSelection()
+        check("空格预览进入内置压缩包窗口", browser.archivePreviewRequest.map { FileItem.canonicalID(for: $0.archive) == FileItem.canonicalID(for: archive) } == true)
+        browser.archivePreviewRequest = nil
+        if let item = browser.items.first(where: { FileItem.canonicalID(for: $0.url) == FileItem.canonicalID(for: archive) }) { browser.activate(item) }
+        check("默认双击压缩包打开预览", browser.archivePreviewRequest.map { FileItem.canonicalID(for: $0.archive) == FileItem.canonicalID(for: archive) } == true)
+        browser.selectedIDs = [FileItem.canonicalID(for: archive), FileItem.canonicalID(for: protected)]
+        check("多选不会把预览目标误判为单个压缩包", !browser.canPreviewArchive)
+        if let target = browser.items.first(where: { FileItem.canonicalID(for: $0.url) == FileItem.canonicalID(for: protected) }) {
+            let context = browser.sidebarContextItems(item: target, ids: [target.id])
+            browser.previewArchive(context[0].url)
+            check("右键另一压缩包的预览不沿用主列表旧选择", browser.archivePreviewRequest.map { FileItem.canonicalID(for: $0.archive) == FileItem.canonicalID(for: protected) } == true)
+        } else { check("右键另一压缩包的预览不沿用主列表旧选择", false) }
+        browser.chooseExtractionDestination(for: [archive])
+        browser.selectedIDs = [FileItem.canonicalID(for: protected)]
+        let pickedOut = try output("picker-captured-source")
+        browser.folderPickerRequest?.onSelect(pickedOut)
+        browser.folderPickerRequest = nil
+        wait { browser.archiveProgress != nil || browser.isBusy }
+        check("解压目录选择器固定源包而非后续选中项", fm.fileExists(atPath: pickedOut.appendingPathComponent(literalName).path) && browser.lastTransferOutcome?.failures.isEmpty == true)
+        let capturedOut = try output("captured-source")
+        browser.extractArchives([archive], to: capturedOut)
+        wait { browser.archiveProgress != nil || browser.isBusy }
+        check("预览解压使用捕获来源不依赖主列表后续选择", fm.fileExists(atPath: capturedOut.appendingPathComponent(literalName).path) && browser.lastTransferOutcome?.failures.isEmpty == true)
+        try Data("changed archive".utf8).write(to: archive)
+        fails("预览后原压缩包变化会拒绝读取旧条目", { _ = try ArchiveService.prepareMemberPreview(member, contents: report) }, expected: { if case ArchiveError.archiveChanged = $0 { return true }; return false })
+        report.close()
+        check("关闭目录预览清理私有工作区", !fm.fileExists(atPath: report.workspace.path))
     }
 
     // MARK: - 侧边栏分类管理

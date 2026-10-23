@@ -12,6 +12,7 @@ import Foundation
 
 enum ArchiveError: LocalizedError {
     case unsupported, engineMissing, passwordRequired, wrongPassword, cancelled, unsafePath, insufficientSpace
+    case invalidListing, previewTooLarge, archiveChanged
     case missingVolume(String)
     case noSelection
     case commandFailed(String, Int32)
@@ -26,6 +27,9 @@ enum ArchiveError: LocalizedError {
         case .cancelled: return L("archive.cancelled", "已取消解压")
         case .unsafePath: return L("archive.error.unsafePath", "压缩包包含不安全的路径或外部链接，已停止解压。")
         case .insufficientSpace: return L("archive.error.space", "目标磁盘的可用空间不足。")
+        case .invalidListing: return L("archive.error.invalidListing", "无法安全识别压缩包目录，请检查文件是否损坏。")
+        case .previewTooLarge: return L("archive.error.previewTooLarge", "此项目超过预览大小限制，请解压后查看。")
+        case .archiveChanged: return L("archive.error.changed", "压缩包已发生变化，请关闭预览后重新打开。")
         case .missingVolume(let name): return L("archive.error.volume", "分卷不完整或压缩包已截断。请将所有分卷放在同一文件夹后重试。%@", name.isEmpty ? "" : "\n" + name)
 
         case .noSelection:
@@ -57,13 +61,18 @@ enum ArchiveService {
     /// 可识别的压缩包扩展名
     /// 由内置 7-Zip 解码，普通 ZIP 保留 ditto 元数据处理。
     static let archiveExtensions: Set<String> = [
-        "zip", "rar", "7z",
+        "zip", "zipx", "rar", "7z",
         "tar", "tgz", "gz", "bz2", "tbz", "tbz2", "xz", "txz",
+        "zst", "zstd", "tzst", "lzma", "tlz", "z", "taz",
+        "cab", "arj", "lzh", "lha", "cpio", "ar", "deb", "rpm", "xar",
     ]
+
+    static let streamExtensions: Set<String> = ["gz", "bz2", "xz", "tgz", "tbz", "tbz2", "txz", "zst", "zstd", "tzst", "lzma", "tlz", "z", "taz"]
+    static let tarSuffixes = [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar.zstd", ".tar.lzma", ".tar.z", ".tgz", ".tbz2", ".tbz", ".txz", ".tzst", ".tlz", ".taz"]
 
     static func isArchive(_ url: URL) -> Bool {
         archiveExtensions.contains(url.pathExtension.lowercased())
-            || url.lastPathComponent.range(of: #"\.(?:7z|zip)\.[0-9]{3,}$|\.[rz][0-9]{2,3}$"#,
+            || url.lastPathComponent.range(of: #"\.(?:7z|zip|zipx)\.[0-9]{3,}$|\.[rz][0-9]{2,3}$"#,
                                           options: [.regularExpression, .caseInsensitive]) != nil
     }
 

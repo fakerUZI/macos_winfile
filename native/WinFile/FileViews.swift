@@ -578,6 +578,12 @@ struct FileItemContextMenu: View {
         sidebarTargets.filter { $0.isBrowsableFolder && $0.url.isFileURL && $0.url.pathExtension.lowercased() != "app" }
     }
 
+    private var archiveTargets: [URL] {
+        sidebarTargets.filter { !$0.isDirectory && $0.url.isFileURL && ArchiveService.isArchive($0.url) }.map(\.url)
+    }
+
+    private var singleContextArchive: URL? { sidebarTargets.count == 1 ? archiveTargets.first : nil }
+
     var body: some View {
         Button(WLocalizedString("action.open", comment: "打开")) { model.openSelection() }
         if !sidebarFolders.isEmpty {
@@ -590,7 +596,10 @@ struct FileItemContextMenu: View {
             .disabled(alreadyAdded)
         }
         if !model.isAndroidPath || !model.selectedAndroidEntries.filter({ !$0.isDirectory }).isEmpty {
-            Button(L("action.quickLook", "快速预览")) { model.previewSelection() }
+            Button(L("action.quickLook", "快速预览")) {
+                if let archive = singleContextArchive { model.previewArchive(archive) }
+                else { model.previewSelection() }
+            }
         }
         // 安卓文件在本机没有可用的打开方式，只在本地条目上提供
         if selectedCount <= 1, let item, !AndroidURL.isAndroid(item.url) {
@@ -652,10 +661,13 @@ struct FileItemContextMenu: View {
         Divider()
         // 压缩与解压（安卓路径不适用，走 MTP 无对应能力）
         if !model.isAndroidPath {
-            if model.canExtract {
-                Button(model.currentDirectory == nil ? L("action.extractBeside", "解压到所在文件夹") : L("action.extractHere", "解压到当前文件夹")) { model.extractSelection() }
-                Button(L("action.extractFolder", "解压到独立文件夹")) { model.extractSelection(createFolder: true) }
-                Button(L("action.extractTo", "解压到…")) { model.chooseExtractionDestination() }
+            if let archive = singleContextArchive {
+                Button(L("archive.preview.title", "预览压缩包")) { model.previewArchive(archive) }
+            }
+            if model.canMutateFiles, !archiveTargets.isEmpty {
+                Button(model.currentDirectory == nil ? L("action.extractBeside", "解压到所在文件夹") : L("action.extractHere", "解压到当前文件夹")) { model.extractArchives(archiveTargets) }
+                Button(L("action.extractFolder", "解压到独立文件夹")) { model.extractArchives(archiveTargets, createFolder: true) }
+                Button(L("action.extractTo", "解压到…")) { model.chooseExtractionDestination(for: archiveTargets) }
             }
             Button(L("action.compress", "压缩为 zip")) { model.compressSelection() }
                 .disabled(!model.canCompress)
