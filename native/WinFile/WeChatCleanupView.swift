@@ -8,17 +8,11 @@ struct CleanupHubView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 16) {
-                Label(L("cleanup.title", "空间清理"), systemImage: "externaldrive.badge.minus").font(.title3.bold())
-                Picker(L("cleanup.section", "清理范围"), selection: Binding(
-                    get: { model.cleanupSection }, set: { model.selectCleanupSection($0) }
-                )) {
-                    Text(L("cleanup.general", "通用清理")).tag(CleanupSection.general)
-                    Text(L("software.title", "软件清理")).tag(CleanupSection.software)
-                }.pickerStyle(.segmented).frame(maxWidth: 320).disabled(model.isCleaningStorage)
-                Spacer()
-            }.padding(.horizontal, 16).padding(.vertical, 10)
-            Divider()
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) { heading; Spacer(minLength: 12); sectionPicker }
+                VStack(alignment: .leading, spacing: 10) { heading; sectionPicker }
+            }.padding(.horizontal, 20).padding(.vertical, 14)
+            Divider().opacity(0.6)
             if model.cleanupSection == .software {
                 SoftwareCleanupView(model: model, dialog: $dialog)
             } else {
@@ -26,6 +20,24 @@ struct CleanupHubView: View {
             }
         }.background(Color(nsColor: .textBackgroundColor))
     }
+
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(L("cleanup.title", "空间清理")).font(.title2.weight(.semibold))
+            Text(L("cleanup.subtitle", "先查看占用，再选择需要清理的文件"))
+                .font(.caption).foregroundStyle(.secondary)
+        }.fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var sectionPicker: some View {
+        Picker(L("cleanup.section", "清理范围"), selection: Binding(
+            get: { model.cleanupSection }, set: { model.selectCleanupSection($0) }
+        )) {
+            Text(L("cleanup.general", "通用清理")).tag(CleanupSection.general)
+            Text(L("software.title", "软件清理")).tag(CleanupSection.software)
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 260).disabled(model.isCleaningStorage)
+    }
+
 }
 
 struct SoftwareCleanupView: View {
@@ -40,21 +52,17 @@ struct SoftwareCleanupView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label(L("software.title", "软件清理"), systemImage: "square.stack.3d.up.fill").font(.headline)
-                    Spacer()
-                    Button(L("software.refresh", "刷新软件列表")) { store.refreshSoftwareChoices() }
-                        .disabled(store.busy)
-                }
-                HStack {
-                    Picker(L("software.select", "选择软件"), selection: Binding(
-                        get: { store.selectedSoftwareID }, set: { model.selectCleanupSoftware($0) }
-                    )) {
-                        ForEach(store.softwareChoices) { Text($0.title).tag($0.id) }
-                    }.frame(maxWidth: 340)
-                    Spacer()
-                }
+            HStack(spacing: 12) {
+                Picker(L("software.select", "选择软件"), selection: Binding(
+                    get: { store.selectedSoftwareID }, set: { model.selectCleanupSoftware($0) }
+                )) {
+                    ForEach(store.softwareChoices) { Text($0.title).tag($0.id) }
+                }.frame(maxWidth: 340)
+                Spacer(minLength: 8)
+                Button { store.refreshSoftwareChoices() } label: { Image(systemName: "arrow.clockwise") }
+                    .help(L("software.refresh", "刷新软件列表"))
+                    .accessibilityLabel(L("software.refresh", "刷新软件列表"))
+                    .disabled(store.busy)
             }
             .disabled(model.weChatCleanup.isCleaning || store.isCleaning)
             .padding(.horizontal, 16).padding(.vertical, 10)
@@ -91,7 +99,7 @@ struct WeChatCleanupView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let compact = geometry.size.height < 500
+            let compact = geometry.size.height < 560
             VStack(alignment: .leading, spacing: compact ? 6 : 12) {
                 header
                 if store.result.isPartial {
@@ -122,7 +130,7 @@ struct WeChatCleanupView: View {
                             .lineLimit(1).foregroundStyle(.secondary)
                     }
                 }.font(.caption)
-                files.frame(minHeight: 100)
+                files.frame(minHeight: 100).modifier(InsetSurface())
                 footer
             }
             .controlSize(compact ? .small : .regular)
@@ -168,13 +176,18 @@ struct WeChatCleanupView: View {
                     Text(L("wechat.lastScan", "最后扫描：%@", FileItem.formatDate(date))).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            HStack(spacing: 10) {
-                usageCard(L("wechat.usage.total", "全部附件"),
-                          bytes: store.isScanning ? store.scanProgress.bytes : store.totalSize,
-                          count: store.isScanning ? store.scanProgress.files : store.result.files.count, compact: compact)
-                usageCard(L("wechat.usage.filtered", "当前筛选"), bytes: store.matchingSize, count: store.matchingCount, compact: compact)
-                usageCard(L("wechat.usage.selected", "已选附件"), bytes: store.selectedSize, count: store.selectedFiles.count, compact: compact)
+            HStack(spacing: 12) {
+                CleanupMetricCard(title: L("wechat.usage.total", "全部附件"),
+                                  value: FileItem.formatSize(store.isScanning ? store.scanProgress.bytes : store.totalSize),
+                                  detail: L("wechat.usage.count", "%d 个文件", store.isScanning ? store.scanProgress.files : store.result.files.count),
+                                  symbol: "bubble.left.and.bubble.right", compact: compact)
+                CleanupMetricCard(title: L("wechat.usage.selected", "已选附件"),
+                                  value: FileItem.formatSize(store.selectedSize),
+                                  detail: L("wechat.usage.count", "%d 个文件", store.selectedFiles.count),
+                                  symbol: "checkmark.circle", compact: compact)
             }
+            Text(L("wechat.usage.filtered", "当前筛选") + "  " + L("cleanup.resultCount", "%d 项 / %@", store.matchingCount, FileItem.formatSize(store.matchingSize)))
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
         }
     }
 
@@ -203,31 +216,29 @@ struct WeChatCleanupView: View {
         }
     }
 
-    private func usageCard(_ title: String, bytes: Int64, count: Int, compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(FileItem.formatSize(bytes)).font(compact ? .headline : .title3.weight(.semibold)).monospacedDigit()
-            if !compact { Text(L("wechat.usage.count", "%d 个文件", count)).font(.caption).foregroundStyle(.secondary) }
+    private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { heading; Spacer(minLength: 8); scanActions }
+            VStack(alignment: .leading, spacing: 8) { heading; scanActions }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(compact ? 6 : 10)
-        .help(L("wechat.usage.count", "%d 个文件", count))
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private var header: some View {
-        HStack {
-            Label(L("wechat.title", "微信文件清理"), systemImage: "bubble.left.and.bubble.right.fill")
-                .font(.title3.weight(.semibold)).foregroundStyle(.green)
-            Spacer()
+    private var heading: some View {
+        Label(L("wechat.title", "微信文件清理"), systemImage: "bubble.left.and.bubble.right.fill")
+            .font(.title3.weight(.semibold)).fixedSize()
+    }
+
+    private var scanActions: some View {
+        HStack(spacing: 8) {
+            Button(L("wechat.choose", "选择微信文件夹…")) { showFolderPicker = true }.disabled(operationInProgress)
             if operationInProgress { ProgressView().controlSize(.small) }
-            if store.isScanning {
-                Button(L("button.cancel", "取消")) { store.cancelScan() }
-            } else {
-                Button(L("appData.rescan", "重新扫描")) { store.scan() }.disabled(operationInProgress)
+            if store.isScanning { Button(L("button.cancel", "取消")) { store.cancelScan() } }
+            else {
+                Button { store.scan() } label: {
+                    Label(L("appData.rescan", "重新扫描"), systemImage: "arrow.clockwise")
+                }.buttonStyle(.borderedProminent).disabled(operationInProgress)
             }
-            Button(L("wechat.choose", "选择微信文件夹…")) { showFolderPicker = true }
-                .disabled(operationInProgress)
-        }
+        }.fixedSize(horizontal: true, vertical: false)
     }
 
     private var roots: some View {
@@ -368,7 +379,7 @@ struct WeChatCleanupView: View {
         HStack(alignment: .top) {
             Image(systemName: "lock.shield").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 4) {
-                Text(L("wechat.access", "部分目录无法读取，结果可能不完整。可授予 WinFile 完整磁盘访问权限后重新扫描，或手动选择微信文件夹。"))
+                Text(L("wechat.access", "部分目录无法读取，结果可能不完整。可授予 LeafFiles 完整磁盘访问权限后重新扫描，或手动选择微信文件夹。"))
                     .font(.caption)
                 DisclosureGroup(L("wechat.unreadable", "查看无法读取的位置")) {
                     ScrollView { Text(store.result.inaccessible.joined(separator: "\n")).font(.caption2).textSelection(.enabled) }
@@ -400,7 +411,7 @@ struct WeChatCleanupView: View {
             TableColumn(L("column.modified", "修改日期"), value: \WeChatFile.modified) { file in Text(FileItem.formatDate(file.modified)) }.width(min: 120, ideal: 140)
             TableColumn(L("wechat.location", "所在目录"), value: \WeChatFile.parentPath, comparator: .localizedStandard) { file in
                 Button { model.openContainingFolder(of: file.url) } label: {
-                    Text(file.url.deletingLastPathComponent().path).lineLimit(1).truncationMode(.middle)
+                    Text(FileSystemService.abbreviate(file.url.deletingLastPathComponent())).lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.link)
                 .help(L("action.openContainingFolder", "打开所在文件夹") + "\n" + file.url.deletingLastPathComponent().path)
@@ -446,40 +457,49 @@ struct WeChatCleanupView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(L("wechat.summary", "共 %d 项（%@），筛选后 %d 项", store.result.files.count,
-                       FileItem.formatSize(store.totalSize), store.matchingCount))
-                    .font(.caption).foregroundStyle(.secondary)
-                if store.matchingCount > WeChatCleanupModel.pageSize {
-                    Text(L("wechat.pageRange", "（第 %d–%d 项）", store.pageRange.first, store.pageRange.last))
-                        .font(.caption).foregroundStyle(.tertiary)
+            Divider().opacity(0.6)
+            Text(L("wechat.summary", "共 %d 项（%@），筛选后 %d 项", store.result.files.count,
+                   FileItem.formatSize(store.totalSize), store.matchingCount))
+                .font(.caption).foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { locationAction; Spacer(minLength: 8); pageActions; selectAllAction; trashAction }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack { locationAction; Spacer(); selectAllAction }
+                    HStack { pageActions; Spacer(); trashAction }
                 }
-            }
-            HStack {
-                Button {
-                    if let file = store.selectedFiles.first { model.openContainingFolder(of: file.url) }
-                } label: {
-                    Label(L("action.openContainingFolder", "打开所在文件夹"), systemImage: "folder")
-                }
-                .disabled(store.selectedFiles.count != 1 || operationInProgress)
-                Spacer()
-                // 分页：仅超过一页时出现，避免小数据量增加噪音
-                if store.matchingCount > WeChatCleanupModel.pageSize {
-                    Button { store.previousPage() } label: { Image(systemName: "chevron.left") }
-                        .help(L("wechat.pagePrev", "上一页"))
-                        .disabled(!store.canGoPrevious || operationInProgress)
-                    Text(L("wechat.page", "第 %d / %d 页", store.page + 1, store.pageCount))
-                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
-                    Button { store.nextPage() } label: { Image(systemName: "chevron.right") }
-                        .help(L("wechat.pageNext", "下一页"))
-                        .disabled(!store.canGoNext || operationInProgress)
-                }
-                Button(L("wechat.selectAll", "全选筛选结果")) { store.selection = Set(store.visibleFiles.map(\.id)) }
-                    .disabled(operationInProgress || store.visibleFiles.isEmpty)
-                Button(L("wechat.trashSelection", "清理所选 %d 项（%@）", store.selectedFiles.count, FileItem.formatSize(store.selectedSize)), role: .destructive) {
-                    store.requestTrash()
-                }.disabled(store.selectedFiles.isEmpty || operationInProgress)
             }
         }
+    }
+
+    private var locationAction: some View {
+        Button {
+            if let file = store.selectedFiles.first { model.openContainingFolder(of: file.url) }
+        } label: { Label(L("action.openContainingFolder", "打开所在文件夹"), systemImage: "folder") }
+            .disabled(store.selectedFiles.count != 1 || operationInProgress)
+    }
+
+    @ViewBuilder
+    private var pageActions: some View {
+        if store.matchingCount > WeChatCleanupModel.pageSize {
+            HStack(spacing: 8) {
+                Button { store.previousPage() } label: { Image(systemName: "chevron.left") }
+                    .help(L("wechat.pagePrev", "上一页")).disabled(!store.canGoPrevious || operationInProgress)
+                Text(L("wechat.page", "第 %d / %d 页", store.page + 1, store.pageCount))
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                Button { store.nextPage() } label: { Image(systemName: "chevron.right") }
+                    .help(L("wechat.pageNext", "下一页")).disabled(!store.canGoNext || operationInProgress)
+            }
+        }
+    }
+
+    private var selectAllAction: some View {
+        Button(L("wechat.selectAll", "全选筛选结果")) { store.selection = Set(store.visibleFiles.map(\.id)) }
+            .buttonStyle(.link).disabled(operationInProgress || store.visibleFiles.isEmpty)
+    }
+
+    private var trashAction: some View {
+        Button(role: .destructive) { store.requestTrash() } label: {
+            Label(L("wechat.trashSelection", "清理所选 %d 项（%@）", store.selectedFiles.count, FileItem.formatSize(store.selectedSize)), systemImage: "trash")
+        }.buttonStyle(TrashActionStyle()).disabled(store.selectedFiles.isEmpty || operationInProgress)
     }
 }

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Install the latest verified WinFile release without Xcode or Homebrew.
+# Install the latest verified LeafFiles release without Xcode or Homebrew.
+# Legacy WinFile archive/app/executable names deliberately preserve existing installs.
 set -euo pipefail
 
 RELEASE_URL="https://github.com/fakerUZI/macos_winfile/releases/latest/download"
@@ -13,12 +14,12 @@ while [ "$#" -gt 0 ]; do
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
-[ "$(uname -s)" = Darwin ] || { echo 'WinFile requires macOS.' >&2; exit 1; }
+[ "$(uname -s)" = Darwin ] || { echo 'LeafFiles requires macOS.' >&2; exit 1; }
 MACOS_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$MACOS_MAJOR" -ge 13 ] || { echo 'WinFile requires macOS 13 or later.' >&2; exit 1; }
+[ "$MACOS_MAJOR" -ge 13 ] || { echo 'LeafFiles requires macOS 13 or later.' >&2; exit 1; }
 case "$(uname -m)" in arm64|x86_64) ;; *) echo 'Unsupported Mac architecture.' >&2; exit 1 ;; esac
 if pgrep -x WinFile >/dev/null 2>&1; then
-  echo 'Please quit WinFile before installing, then run this command again.' >&2; exit 1
+  echo 'Please quit LeafFiles before installing, then run this command again.' >&2; exit 1
 fi
 mkdir -p "$INSTALL_DIR"
 [ -w "$INSTALL_DIR" ] || { echo 'Cannot write to the install directory. Try: --dir "$HOME/Applications"' >&2; exit 1; }
@@ -44,7 +45,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-echo 'Downloading the latest WinFile release…'
+echo 'Downloading the latest LeafFiles release…'
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 2 \
   "$RELEASE_URL/WinFile.zip" -o "$DOWNLOAD_DIR/WinFile.zip"
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --retry 2 \
@@ -59,7 +60,7 @@ SOURCE="$STAGING_DIR/unpacked/WinFile.app"
 # Copy without Finder/resource-fork attributes before checking the complete bundle.
 /usr/bin/ditto --noextattr --norsrc "$SOURCE" "$STAGING_DIR/WinFile.app"
 /usr/bin/codesign --verify --deep --strict "$STAGING_DIR/WinFile.app"
-if pgrep -x WinFile >/dev/null 2>&1; then echo 'WinFile started during download. Quit it and retry.' >&2; exit 1; fi
+if pgrep -x WinFile >/dev/null 2>&1; then echo 'LeafFiles started during download. Quit it and retry.' >&2; exit 1; fi
 if [ -e "$TARGET" ]; then
   BACKUP_DIR="$INSTALL_DIR/.WinFile-backups"
   [ ! -L "$BACKUP_DIR" ] || { echo 'Backup directory must not be a symbolic link.' >&2; exit 1; }
@@ -72,6 +73,6 @@ mv "$STAGING_DIR/WinFile.app" "$TARGET"
 /usr/bin/codesign --verify --deep --strict "$TARGET"
 INSTALL_DONE=1
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$TARGET/Contents/Info.plist")"
-echo "Installed WinFile $VERSION: $TARGET"
+echo "Installed LeafFiles $VERSION: $TARGET"
 [ -z "$BACKUP" ] || echo "Previous version saved: $BACKUP"
 if [ "$OPEN_APP" = 1 ]; then /usr/bin/open "$TARGET"; fi

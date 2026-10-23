@@ -1,5 +1,5 @@
-/* WinFile English strings */
-"app.name" = "WinFile";
+/* LeafFiles English strings */
+"app.name" = "LeafFiles";
 
 "sidebar.favorites" = "Favorites";
 "sidebar.categories" = "Categories";
@@ -99,7 +99,7 @@
 "menu.home" = "Home";
 "menu.applications" = "Applications";
 "menu.chooseFolder" = "Open Folder…";
-"menu.help" = "WinFile Help";
+"menu.help" = "LeafFiles Help";
 
 "search.placeholder" = "Search this folder";
 "search.inFolder" = "Search Results";
@@ -185,7 +185,7 @@
 "settings.startFolder.default" = "Last used location";
 "settings.choose" = "Choose…";
 "settings.clear" = "Clear";
-"settings.privacy.explain" = "WinFile follows the macOS sandbox: it can only read locations you explicitly authorize. Authorizations are stored as security-scoped bookmarks and can be revoked here.";
+"settings.privacy.explain" = "LeafFiles runs locally without App Sandbox. macOS still controls access to protected locations. Favorites are saved on this Mac and can be managed here.";
 "settings.privacy.mode" = "Mode";
 "settings.privacy.count" = "Authorized folders";
 "settings.privacy.authorize" = "Authorize Folder…";
@@ -193,8 +193,8 @@
 "settings.version" = "Version %@";
 "settings.about.description" = "A Windows Explorer–style file manager for macOS. Native SwiftUI, no external processes, no network access, everything stays on your Mac.";
 
-"help.title" = "WinFile Tips";
-"help.intro" = "WinFile brings Windows Explorer habits to macOS while respecting the sandbox and standard keyboard shortcuts.";
+"help.title" = "LeafFiles Tips";
+"help.intro" = "LeafFiles brings tabs, file browsing, Android access, archive previews and storage cleanup together in one native macOS app. Here are the most useful actions.";
 "help.copyPaste" = "Copy / paste selected files (also writes them to the system clipboard)";
 "help.copyPath" = "Copy the full path of the selection";
 "help.rename" = "Rename the selected item";
@@ -220,7 +220,7 @@
 "error.bookmarkFailed" = "Could not save authorization for that folder";
 
 /* Sandbox authorization guidance */
-"empty.authorize.hint" = "For your security WinFile can only access folders you explicitly authorize. Click below to choose folders (multiple selection allowed, e.g. Desktop, Documents, Downloads). Authorizations are remembered across launches.";
+"empty.authorize.hint" = "Add folders to Favorites for quick access. You can select multiple folders, such as Desktop, Documents and Downloads. Favorites are remembered across launches.";
 
 "sidebar.needAuth" = "Sandboxed: only the container and Applications are available. Click + to authorize more folders.";
 
@@ -314,7 +314,7 @@
 "appData.title" = "App Data";
 "appData.subtitle" = "Pick an app to browse the files it stores (attachments, caches, exports).";
 "appData.needAccess.title" = "Full Disk Access is required to read other apps' data";
-"appData.needAccess.detail" = "macOS protects other apps' data directories. Only you can grant this permission.\nPath: System Settings → Privacy & Security → Full Disk Access → enable WinFile, then relaunch.";
+"appData.needAccess.detail" = "macOS protects other apps' data directories. Only you can grant this permission.\nPath: System Settings → Privacy & Security → Full Disk Access → enable LeafFiles, then relaunch.";
 "appData.openSettings" = "Open System Settings";
 "appData.rescan" = "Rescan";
 "appData.hideHint" = "Don't show again";
@@ -452,7 +452,7 @@
 "wechat.sort" = "Sort";
 "wechat.sort.size" = "Size: Largest First";
 "wechat.sort.date" = "Modified: Newest First";
-"wechat.access" = "Some locations could not be read. Results may be incomplete. Give WinFile Full Disk Access and rescan, or choose your WeChat folder.";
+"wechat.access" = "Some locations could not be read. Results may be incomplete. Give LeafFiles Full Disk Access and rescan, or choose your WeChat folder.";
 "wechat.unreadable" = "Show Unreadable Locations";
 "wechat.location" = "Folder";
 "wechat.scanning" = "Scanning WeChat attachments…";
@@ -687,7 +687,7 @@
 
 "android.deleteTitle" = "Permanently delete %d items on the device?";
 
-"android.deleteMessage" = "These items will be permanently deleted from the Android device. They will not go to Trash and cannot be undone in WinFile.";
+"android.deleteMessage" = "These items will be permanently deleted from the Android device. They will not go to Trash and cannot be undone in LeafFiles.";
 
 "android.deleteConfirm" = "Delete Permanently";
 
@@ -759,7 +759,7 @@
 
 "wechat.usage.scope" = "Includes scanned local attachments, excluding chat databases. Updates after cleanup.";
 
-"archive.error.engineMissing" = "The extraction engine is missing. Please reinstall WinFile.";
+"archive.error.engineMissing" = "The extraction engine is missing. Please reinstall LeafFiles.";
 
 "archive.error.passwordRequired" = "This archive requires a password.";
 
@@ -1029,13 +1029,13 @@
 "android.open.incomplete" = "The download is incomplete; the file was not opened. Check the device connection and try again.";
 "android.open.noSpace" = "There is not enough free space on the local cache volume to download this file.";
 "android.connection.notReady" = "Unlock the Android device, select USB File Transfer and close other apps using the device. This folder will recover automatically when ready.";
-"android.connection.busy" = "Unable to start an MTP session. Preview, Photos, Image Capture or another transfer app may be using the device. Quit that app completely; closing its window may not release USB access. After changing USB modes, wait briefly. WinFile will retry automatically.";
+"android.connection.busy" = "Unable to start an MTP session. Preview, Photos, Image Capture or another transfer app may be using the device. Quit that app completely; closing its window may not release USB access. After changing USB modes, wait briefly. LeafFiles will retry automatically.";
 "android.connection.disconnected" = "The Android device is disconnected. Reconnect and select File Transfer to recover this folder automatically.";
 "android.open.complete" = "Opened %d local cached copies. Changes are not sent back to the Android device.";
 "android.open.cancelled" = "Download and open cancelled.";
 "android.open.downloading" = "Downloading to open…";
 
-"android.mtp.missing" = "The MTP component is missing. Please reinstall WinFile.";
+"android.mtp.missing" = "The MTP component is missing. Please reinstall LeafFiles.";
 "android.mtp.timeout" = "The device timed out. Check the connection, unlock the phone and select File Transfer, then retry.";
 "android.mtp.protocol" = "Cannot read the MTP response. Please retry.";
 "android.mtp.connect" = "Unlock the phone, select USB File Transfer and close other transfer apps using the device, then retry.";
@@ -1084,3 +1084,17 @@
 "archive.error.invalidListing" = "The archive listing could not be read safely. Check whether the file is damaged.";
 "archive.error.previewTooLarge" = "This item exceeds the preview size limit. Extract it to view it.";
 "archive.error.changed" = "The archive has changed. Close the preview and open it again.";
+
+/* Interface hierarchy and native appearance */
+"sidebar.navigation" = "Navigation";
+"sidebar.expanded" = "Expanded";
+"sidebar.collapsed" = "Collapsed";
+"cleanup.subtitle" = "Review storage, then choose what to clean";
+"cleanup.overview" = "Review caches, logs, installers, large files and chat attachments. Scanning never deletes files.";
+"cleanup.candidateBytes" = "Candidate file size";
+"cleanup.candidateCount" = "%d items · Nothing deleted automatically";
+"cleanup.resultCount" = "%d items / %@";
+"archive.preview.details" = "Archive details and preview information";
+"search.moreFilters" = "More filters";
+"search.moreFilterCount" = "More filters (%d)";
+"cleanup.scannedDisk" = "Scanned disk usage (estimated)";

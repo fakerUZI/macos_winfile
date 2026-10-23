@@ -20,6 +20,7 @@ struct AdvancedSearchSheet: View {
     @State private var recursive = true
     @State private var showHidden = false
     @State private var choosingScope = false
+    @State private var showsAdvanced = false
     @State private var selectedID: String?
     @State private var sortField = SortField.name
     @State private var ascending = true
@@ -39,6 +40,7 @@ struct AdvancedSearchSheet: View {
         _category = State(initialValue: criteria.category?.rawValue ?? "all")
         _extensions = State(initialValue: (criteria.extensions ?? []).joined(separator: ", "))
         _showHidden = State(initialValue: model.showHidden)
+        _showsAdvanced = State(initialValue: criteria.isActive || model.showHidden)
     }
 
     private func bytes(_ text: String) -> Int64? {
@@ -69,11 +71,17 @@ struct AdvancedSearchSheet: View {
             HStack {
                 Label(L("search.windowTitle", "搜索文件"), systemImage: "magnifyingglass").font(.title2.bold())
                 Spacer()
-                Text("WinFile").foregroundStyle(.secondary)
+                Text("LeafFiles").foregroundStyle(.secondary)
             }
             scopeControls
             queryControls
-            filterControls
+            DisclosureGroup(isExpanded: $showsAdvanced) {
+                filterControls.padding(.top, 10)
+            } label: {
+                Text(advancedFilterCount == 0 ? L("search.moreFilters", "更多条件") : L("search.moreFilterCount", "更多条件（%d）", advancedFilterCount))
+                    .font(.callout).foregroundStyle(advancedFilterCount > 0 ? Color.accentColor : .secondary)
+            }
+            .padding(12).modifier(InsetSurface())
             if (kind != "folders" && ((!minimum.isEmpty && bytes(minimum) == nil) || (!maximum.isEmpty && bytes(maximum) == nil))) || !request.criteria.isValid {
                 Text(L("search.invalidRange", "请填写有效的非负大小，并确保起始大小和日期不晚于结束值。"))
                     .font(.caption).foregroundStyle(.red)
@@ -97,7 +105,8 @@ struct AdvancedSearchSheet: View {
             resultTable
             footer
         }
-        .padding(20).frame(width: 900, height: 660).textFieldStyle(.roundedBorder)
+        .padding(20).frame(minWidth: 740, idealWidth: 920, maxWidth: 1100, minHeight: 560, idealHeight: 700, maxHeight: 900)
+        .background(InterfaceStyle.content).textFieldStyle(.roundedBorder)
         .onAppear { queryFocused = true; if search.request == nil && valid { runSearch() } }
         .onDisappear { search.close() }
         .sheet(isPresented: $choosingScope) {
@@ -131,7 +140,15 @@ struct AdvancedSearchSheet: View {
             TextField(L("search.nameHint", "输入文件名或部分名称，也可只使用筛选条件"), text: $query)
                 .focused($queryFocused).onSubmit { if valid && !search.isSearching { runSearch() } }
                 .accessibilityIdentifier("search.query")
-        }
+                .textFieldStyle(.plain)
+        }.padding(10).modifier(InsetSurface())
+    }
+
+    private var advancedFilterCount: Int {
+        [kind != "all", kind != "folders" && category != "all",
+         kind != "folders" && !extensions.trimmingCharacters(in: .whitespaces).isEmpty,
+         kind != "folders" && !minimum.isEmpty, kind != "folders" && !maximum.isEmpty,
+         useStart, useEnd, !recursive, showHidden].filter { $0 }.count
     }
 
     private var filterControls: some View {
@@ -193,6 +210,7 @@ struct AdvancedSearchSheet: View {
                     .lineLimit(1).truncationMode(.middle).help($0.url.deletingLastPathComponent().path)
             }
         }
+        .modifier(InsetSurface())
         .accessibilityIdentifier("search.results")
         .contextMenu(forSelectionType: String.self) { ids in
             if let item = search.report.items.first(where: { ids.contains($0.id) }) {

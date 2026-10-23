@@ -1,5 +1,5 @@
-/* WinFile 简体中文字符串（开发语言） */
-"app.name" = "WinFile 文件管理器";
+/* LeafFiles 简体中文字符串（开发语言） */
+"app.name" = "LeafFiles";
 
 /* 侧边栏 */
 "sidebar.favorites" = "个人收藏";
@@ -105,7 +105,7 @@
 "menu.home" = "个人文件夹";
 "menu.applications" = "应用程序";
 "menu.chooseFolder" = "打开文件夹…";
-"menu.help" = "WinFile 帮助";
+"menu.help" = "LeafFiles 帮助";
 
 /* 搜索与路径 */
 "search.placeholder" = "在当前文件夹中搜索";
@@ -198,7 +198,7 @@
 "settings.startFolder.default" = "上次使用的位置";
 "settings.choose" = "选择…";
 "settings.clear" = "清除";
-"settings.privacy.explain" = "WinFile 遵循 macOS 沙盒规范：只能读取你通过“打开文件夹”明确授权的位置。授权信息以安全作用域书签保存，可随时在此撤销。";
+"settings.privacy.explain" = "LeafFiles 在本机运行，未启用 App Sandbox；受保护位置仍由 macOS 管理访问权限。个人收藏保存在本机，可在此管理。";
 "settings.privacy.mode" = "运行模式";
 "settings.privacy.count" = "已授权文件夹";
 "settings.privacy.authorize" = "授权新文件夹…";
@@ -207,8 +207,8 @@
 "settings.about.description" = "Windows 资源管理器风格的 macOS 文件管理器。原生 SwiftUI 实现，无外部进程、不联网、数据全部留在本机。";
 
 /* 帮助 */
-"help.title" = "WinFile 使用提示";
-"help.intro" = "WinFile 提供 Windows 资源管理器式的操作习惯，同时遵循 macOS 的沙盒与键盘规范。以下是最常用的操作。";
+"help.title" = "LeafFiles 使用提示";
+"help.intro" = "LeafFiles 将多页签文件管理、安卓设备访问、压缩包预览和空间清理整合在原生 macOS 界面中。以下是最常用的操作。";
 "help.copyPaste" = "复制 / 粘贴所选文件（复制的同时会写入系统剪贴板）";
 "help.copyPath" = "复制所选文件的完整路径";
 "help.rename" = "重命名所选项目";
@@ -236,7 +236,7 @@
 "error.bookmarkFailed" = "无法保存对该文件夹的授权";
 
 /* 沙盒授权引导 */
-"empty.authorize.hint" = "出于安全考虑，WinFile 只能访问你明确授权的文件夹。点击下方按钮选择要浏览的文件夹（可多选，例如桌面、文稿、下载）。授权会被记住，下次启动仍然有效。";
+"empty.authorize.hint" = "添加文件夹到个人收藏，方便快速访问。可多选桌面、文稿、下载等目录，收藏会保存在本机，下次启动仍可使用。";
 
 /* 沙盒默认目录说明 */
 "sidebar.needAuth" = "沙盒模式：当前仅可浏览容器与应用程序，点 + 授权更多文件夹。";
@@ -331,7 +331,7 @@
 "appData.title" = "应用数据";
 "appData.subtitle" = "选择应用即可浏览它保存的文件（附件、缓存、导出内容等）";
 "appData.needAccess.title" = "需要「完整磁盘访问权限」才能读取其它应用的数据";
-"appData.needAccess.detail" = "macOS 会保护其它应用的数据目录，此权限只能由你手动授予，应用无法自行申请。\n路径：系统设置 → 隐私与安全性 → 完整磁盘访问权限 → 勾选 WinFile，然后重新打开应用。";
+"appData.needAccess.detail" = "macOS 会保护其它应用的数据目录，此权限只能由你手动授予，应用无法自行申请。\n路径：系统设置 → 隐私与安全性 → 完整磁盘访问权限 → 勾选 LeafFiles，然后重新打开应用。";
 "appData.openSettings" = "打开系统设置";
 "appData.rescan" = "重新扫描";
 "appData.hideHint" = "不再提示";
@@ -470,7 +470,7 @@
 "wechat.sort" = "排序";
 "wechat.sort.size" = "大小：从大到小";
 "wechat.sort.date" = "修改时间：从新到旧";
-"wechat.access" = "部分目录无法读取，结果可能不完整。可授予 WinFile 完整磁盘访问权限后重新扫描，或手动选择微信文件夹。";
+"wechat.access" = "部分目录无法读取，结果可能不完整。可授予 LeafFiles 完整磁盘访问权限后重新扫描，或手动选择微信文件夹。";
 "wechat.unreadable" = "查看无法读取的位置";
 "wechat.location" = "所在目录";
 "wechat.scanning" = "正在扫描微信附件…";
@@ -705,7 +705,7 @@
 
 "android.deleteTitle" = "永久删除设备上的 %d 项？";
 
-"android.deleteMessage" = "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 WinFile 撤销。";
+"android.deleteMessage" = "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 LeafFiles 撤销。";
 
 "android.deleteConfirm" = "永久删除";
 
@@ -777,7 +777,7 @@
 
 "wechat.usage.scope" = "仅统计已扫描的本机附件，不包含聊天数据库；清理后自动更新。";
 
-"archive.error.engineMissing" = "解压引擎缺失，请重新安装 WinFile。";
+"archive.error.engineMissing" = "解压引擎缺失，请重新安装 LeafFiles。";
 
 "archive.error.passwordRequired" = "此压缩包需要密码。";
 
@@ -1047,13 +1047,13 @@
 "android.open.incomplete" = "下载不完整，未打开文件。请检查设备连接后重试。";
 "android.open.noSpace" = "本机缓存所在磁盘的可用空间不足，无法下载此文件。";
 "android.connection.notReady" = "请解锁安卓设备，选择 USB「文件传输」，并关闭其他占用设备的传输软件；就绪后将自动恢复。";
-"android.connection.busy" = "无法建立 MTP 会话。设备可能被「预览」「照片」「图像捕捉」或其他传输软件占用；请完全退出占用的应用，仅关闭窗口可能不会释放设备。若刚切换 USB 模式，请稍候，WinFile 会自动重试。";
+"android.connection.busy" = "无法建立 MTP 会话。设备可能被「预览」「照片」「图像捕捉」或其他传输软件占用；请完全退出占用的应用，仅关闭窗口可能不会释放设备。若刚切换 USB 模式，请稍候，LeafFiles 会自动重试。";
 "android.connection.disconnected" = "安卓设备已断开。重新连接并选择「文件传输」后，将自动恢复此目录。";
 "android.open.complete" = "已打开 %d 个本机缓存副本；修改不会回传到安卓设备。";
 "android.open.cancelled" = "已取消下载并打开。";
 "android.open.downloading" = "正在下载以打开…";
 
-"android.mtp.missing" = "MTP 组件缺失，请重新安装 WinFile。";
+"android.mtp.missing" = "MTP 组件缺失，请重新安装 LeafFiles。";
 "android.mtp.timeout" = "设备响应超时，请检查连接、解锁手机并选择「文件传输」后重试。";
 "android.mtp.protocol" = "无法读取 MTP 响应，请重试。";
 "android.mtp.connect" = "请解锁手机并选择 USB「文件传输」，关闭其他占用设备的传输软件后重试。";
@@ -1102,3 +1102,17 @@
 "archive.error.invalidListing" = "无法安全识别压缩包目录，请检查文件是否损坏。";
 "archive.error.previewTooLarge" = "此项目超过预览大小限制，请解压后查看。";
 "archive.error.changed" = "压缩包已发生变化，请关闭预览后重新打开。";
+
+/* Interface hierarchy and native appearance */
+"sidebar.navigation" = "导航";
+"sidebar.expanded" = "已展开";
+"sidebar.collapsed" = "已折叠";
+"cleanup.subtitle" = "先查看占用，再选择需要清理的文件";
+"cleanup.overview" = "查看缓存、日志、安装包、大文件与聊天附件；扫描不会删除文件。";
+"cleanup.candidateBytes" = "候选文件占用";
+"cleanup.candidateCount" = "%d 项 · 不会自动删除";
+"cleanup.resultCount" = "%d 项 / %@";
+"archive.preview.details" = "归档详情与预览说明";
+"search.moreFilters" = "更多条件";
+"search.moreFilterCount" = "更多条件（%d）";
+"cleanup.scannedDisk" = "已扫描磁盘占用（估算）";

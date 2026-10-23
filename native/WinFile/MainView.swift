@@ -81,11 +81,11 @@ struct MainView: View {
     private var contentPane: some View {
         VStack(spacing: 0) {
             tabStrip
-            Divider()
-            commandBar
-            Divider()
+            if !model.isStorageCleanupView && !model.isWeChatCleanupView {
+                commandBar
+            }
             addressBar
-            Divider()
+            Divider().opacity(0.6)
             contentArea
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -323,7 +323,7 @@ struct MainView: View {
                 .help(L("tab.all", "所有标签页（%d）", tabs.count))
                 Spacer(minLength: 0)
             }.padding(.horizontal, 8).padding(.vertical, 5)
-        }.frame(height: 34).background(.bar).background(BrowserInteractionBoundary())
+        }.frame(height: 36).background(InterfaceStyle.chrome).background(BrowserInteractionBoundary())
     }
 
     // MARK: - 命令栏
@@ -435,8 +435,9 @@ struct MainView: View {
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)          // 图标按钮，避免中文标签被挤压裁剪
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(.bar)
+        .padding(.vertical, 7)
+        .controlSize(.regular)
+        .background(InterfaceStyle.chrome)
     }
 
     private var presentationControls: some View {
@@ -533,7 +534,8 @@ struct MainView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
+        .background(InterfaceStyle.chrome)
     }
 
     private func beginEditingPath() {
@@ -852,11 +854,7 @@ struct TabChipView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isActive ? Color(nsColor: .controlBackgroundColor) : Color.clear)
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isActive ? Color.accentColor.opacity(0.8) : Color.clear, lineWidth: 1)
-            )
-            // 选中态再加一条底部高亮，切换时更醒目
+            // A single accent marks the active tab; keyboard focus remains native.
             .overlay(alignment: .bottom) {
                 Rectangle()
                     .fill(isActive ? Color.accentColor : Color.clear)

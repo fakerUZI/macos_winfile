@@ -96,7 +96,7 @@ final class TableColumnPreferences: NSObject {
 /// rows at either end create tile views; content height remains stable while scrolling.
 struct IconGridMetrics {
     static let padding: CGFloat = 14
-    static let pitch: CGFloat = 124
+    static let pitch: CGFloat = 116
     let count: Int
     let columns: Int
     init(count: Int, width: CGFloat) {

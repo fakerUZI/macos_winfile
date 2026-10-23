@@ -11,6 +11,7 @@ struct ArchivePreviewSheet: View {
     @State private var selection: Int?
     @State private var password = ""
     @State private var choosingDestination = false
+    @State private var showsDetails = false
 
     init(request: ArchivePreviewRequest, browser: BrowserModel) {
         self.request = request
@@ -45,21 +46,34 @@ struct ArchivePreviewSheet: View {
                 Text(L("archive.preview.summary", "%d 个项目 · 已知原始大小 %@", contents.entries.count, bytes(contents.totalSize)))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            memberTable
-            if let preview = model.preview {
-                HStack {
-                    Text(preview.url.lastPathComponent).font(.caption).lineLimit(1)
-                    Spacer()
-                    Button(L("archive.preview.closeFile", "关闭文件预览")) { model.clearPreview() }
+            GeometryReader { geometry in
+                if model.preview != nil && geometry.size.width >= 960 {
+                    HSplitView {
+                        memberTable(compact: true).frame(minWidth: 380, maxWidth: .infinity)
+                        filePreview.frame(minWidth: 280, idealWidth: 360, maxWidth: .infinity)
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        memberTable(compact: false).frame(minHeight: model.preview == nil ? 100 : 60)
+                        if model.preview != nil {
+                            filePreview.frame(height: min(210, max(80, geometry.size.height * 0.5)))
+                        }
+                    }
                 }
-                ArchiveQuickLookView(url: preview.url).frame(height: 200)
-            }
+            }.frame(minHeight: 160)
             if model.needsPassword { passwordControls }
             if let error = model.error {
                 Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled).lineLimit(4)
             }
-            Text(L("archive.preview.hint", "列表不解出普通压缩包；查看文件仅临时解出所选项（最大 64 MiB），不打开外部应用，关闭后删除。压缩 TAR 预览需临时展开中间归档（最大 512 MiB）。"))
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            DisclosureGroup(L("archive.preview.details", "归档详情与预览说明"), isExpanded: $showsDetails) {
+                VStack(alignment: .leading, spacing: 5) {
+                    if let selected {
+                        Text(L("archive.preview.method", "压缩方式") + ": " + selected.method + " · " + L("archive.preview.packed", "压缩后") + ": " + bytes(selected.packedSize))
+                    }
+                    Text(L("archive.preview.hint", "列表不解出普通压缩包；查看文件仅临时解出所选项（最大 64 MiB），不打开外部应用，关闭后删除。压缩 TAR 预览需临时展开中间归档（最大 512 MiB）。"))
+                }.font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+            }.font(.caption)
+            Divider().opacity(0.6)
             HStack {
                 Button(L("archive.preview.file", "查看所选文件")) { showSelected() }
                     .disabled(selected?.canPreview != true || model.isPreparing || model.needsPassword)
@@ -72,7 +86,9 @@ struct ArchivePreviewSheet: View {
                 }.fixedSize().disabled(model.contents == nil || !browser.canMutateFiles || model.isLoading || model.isPreparing)
             }
         }
-        .padding(20).frame(width: 900, height: 700)
+        .padding(20)
+        .background(InterfaceStyle.content)
+        .frame(minWidth: 720, idealWidth: 1080, maxWidth: 1200, minHeight: 540, idealHeight: 720, maxHeight: 900)
         .onAppear { model.load() }
         .onDisappear { model.close(); password = "" }
         .onChange(of: selection) { _ in model.clearPreview(); password = "" }
@@ -85,21 +101,36 @@ struct ArchivePreviewSheet: View {
         }
     }
 
-    private var memberTable: some View {
-        Table(entries, selection: $selection) {
-            TableColumn(L("archive.preview.path", "包内路径")) { item in
-                Label(item.path, systemImage: item.isLink ? "link" : item.isDirectory ? "folder" : "doc")
-                    .lineLimit(1).truncationMode(.middle).help(item.path)
-            }.width(min: 260, ideal: 450)
-            TableColumn(L("column.size", "大小")) { Text($0.isDirectory ? "—" : bytes($0.size)) }.width(90)
-            TableColumn(L("archive.preview.packed", "压缩后")) { Text(bytes($0.packedSize)) }.width(90)
-            TableColumn(L("archive.preview.method", "压缩方式")) { item in
-                HStack {
-                    if item.encrypted { Image(systemName: "lock.fill").accessibilityLabel(L("archive.preview.encrypted", "已加密")) }
-                    Text(item.method.isEmpty ? "—" : item.method).lineLimit(1).help(item.method)
+    private func memberTable(compact: Bool) -> some View {
+        Group {
+            // Conditional columns require macOS 14.4. Separate native tables
+            // preserve the application's macOS 13 minimum deployment target.
+            if compact {
+                Table(entries, selection: $selection) {
+                    TableColumn(L("archive.preview.path", "包内路径")) { item in
+                        Label(item.path, systemImage: item.isLink ? "link" : item.isDirectory ? "folder" : "doc")
+                            .lineLimit(1).truncationMode(.middle).help(item.path)
+                    }.width(min: 180, ideal: 350)
+                    TableColumn(L("column.size", "大小")) { Text($0.isDirectory ? "—" : bytes($0.size)) }.width(90)
                 }
-            }.width(140)
+            } else {
+                Table(entries, selection: $selection) {
+                    TableColumn(L("archive.preview.path", "包内路径")) { item in
+                        Label(item.path, systemImage: item.isLink ? "link" : item.isDirectory ? "folder" : "doc")
+                            .lineLimit(1).truncationMode(.middle).help(item.path)
+                    }.width(min: 180, ideal: 350)
+                    TableColumn(L("column.size", "大小")) { Text($0.isDirectory ? "—" : bytes($0.size)) }.width(90)
+                    TableColumn(L("archive.preview.packed", "压缩后")) { Text(bytes($0.packedSize)) }.width(90)
+                    TableColumn(L("archive.preview.method", "压缩方式")) { item in
+                        HStack {
+                            if item.encrypted { Image(systemName: "lock.fill").accessibilityLabel(L("archive.preview.encrypted", "已加密")) }
+                            Text(item.method.isEmpty ? "—" : item.method).lineLimit(1).help(item.method)
+                        }
+                    }.width(140)
+                }
+            }
         }
+        .modifier(InsetSurface())
         .accessibilityIdentifier("archive.preview.entries")
         .background(TableDoubleClickInstaller { table in
             TableDiagnostics.installDoubleClick(on: table) { row in
@@ -115,6 +146,24 @@ struct ArchivePreviewSheet: View {
                 Text(model.isLoading ? L("archive.preview.loading", "正在读取压缩包目录…") : model.needsPassword ? L("archive.error.passwordRequired", "此压缩包需要密码。") : L("archive.preview.empty", "没有可显示的项目"))
                     .foregroundStyle(.secondary).allowsHitTesting(false)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var filePreview: some View {
+        if let preview = model.preview {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(preview.url.lastPathComponent).font(.headline).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Button { model.clearPreview() } label: { Image(systemName: "xmark.circle") }
+                        .buttonStyle(.borderless)
+                        .help(L("archive.preview.closeFile", "关闭文件预览"))
+                        .accessibilityLabel(L("archive.preview.closeFile", "关闭文件预览"))
+                }
+                Divider().opacity(0.6)
+                ArchiveQuickLookView(url: preview.url).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.padding(12).modifier(InsetSurface())
         }
     }
 

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>WinFile 文件管理器</string>
+	<string>LeafFiles</string>
 	<key>CFBundleExecutable</key>
 	<string>WinFile</string>
 	<key>CFBundleIconFile</key>
@@ -13,25 +13,25 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>WinFile</string>
+	<string>LeafFiles</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.5.0</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>12</string>
+	<string>13</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>WinFile 需要通过 Finder 把文件移到废纸篓，以及在终端中打开目录。</string>
+	<string>LeafFiles 需要通过 Finder 把文件移到废纸篓，以及在终端中打开目录。</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>WinFile 需要浏览你的桌面文件。</string>
+	<string>LeafFiles 需要浏览你的桌面文件。</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>WinFile 需要浏览你的文稿文件。</string>
+	<string>LeafFiles 需要浏览你的文稿文件。</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>WinFile 需要浏览你的下载文件。</string>
+	<string>LeafFiles 需要浏览你的下载文件。</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -39,7 +39,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>WinFile 需要浏览外置磁盘上的文件。</string>
+	<string>LeafFiles 需要浏览外置磁盘上的文件。</string>
 	<key>NSSupportsAutomaticGraphicsSwitching</key>
 	<true/>
 	<key>SUAllowsAutomaticUpdates</key>

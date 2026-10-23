@@ -15,7 +15,7 @@ enum MTPError: LocalizedError {
     }
     var errorDescription: String? {
         switch self {
-        case .unavailable: return L("android.mtp.missing", "MTP 组件缺失，请重新安装 WinFile。")
+        case .unavailable: return L("android.mtp.missing", "MTP 组件缺失，请重新安装 LeafFiles。")
         case .timeout: return L("android.mtp.timeout", "设备响应超时，请检查连接、解锁手机并选择「文件传输」后重试。")
         case .noDevice: return L("android.error.noDevice", "没有可用的安卓设备")
         case .protocolError: return L("android.mtp.protocol", "无法读取 MTP 响应，请重试。")

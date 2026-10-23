@@ -44,7 +44,9 @@ struct InspectorView: View {
     @ViewBuilder
     private func single(_ item: FileItem) -> some View {
         VStack(spacing: 8) {
-            FileIconView(engine: engine, item: item, size: 64)
+            FileIconView(engine: engine, item: item,
+                         size: item.supportsThumbnail && !AndroidURL.isAndroid(item.url) ? 144 : 64)
+                .padding(.vertical, 8)
             Text(item.name)
                 .font(.headline)
                 .multilineTextAlignment(.center)
@@ -146,14 +148,28 @@ struct InspectorView: View {
                 row(WLocalizedString("attr.size", comment: "大小"),
                     FileItem.formatSize(size))
             }
+            Divider().padding(.vertical, 4)
             if let modified = item.modified {
                 row(WLocalizedString("attr.modified", comment: "修改时间"), Self.dateFormatter.string(from: modified))
             }
             if let created = item.created {
                 row(WLocalizedString("attr.created", comment: "创建时间"), Self.dateFormatter.string(from: created))
             }
-            row(WLocalizedString("attr.where", comment: "位置"),
-                FileSystemService.abbreviate(item.url.deletingLastPathComponent()))
+            Divider().padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(WLocalizedString("attr.where", comment: "位置")).foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        model.copyPathToClipboard(includeDirectory: true)
+                    } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.borderless)
+                    .help(L("action.copyDir", "复制所在目录"))
+                    .accessibilityLabel(L("action.copyDir", "复制所在目录"))
+                }
+                Text(FileSystemService.abbreviate(item.url.deletingLastPathComponent()))
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
             if item.isBundle, let bundleID = Bundle(url: item.url)?.bundleIdentifier {
                 row(WLocalizedString("attr.bundleID", comment: "标识符"), bundleID)
             }
@@ -165,7 +181,7 @@ struct InspectorView: View {
         HStack(alignment: .top, spacing: 8) {
             Text(title)
                 .foregroundStyle(.secondary)
-                .frame(width: 62, alignment: .leading)
+                .frame(minWidth: 62, idealWidth: 78, alignment: .leading)
             Text(value)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

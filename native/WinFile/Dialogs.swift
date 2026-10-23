@@ -281,7 +281,7 @@ struct HelpSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(WLocalizedString("help.title", comment: "WinFile 使用提示")).font(.headline)
+            Text(WLocalizedString("help.title", comment: "LeafFiles 使用提示")).font(.headline)
             Text(WLocalizedString("help.intro", comment: "帮助说明"))
                 .font(.callout)
                 .foregroundStyle(.secondary)

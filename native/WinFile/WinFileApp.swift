@@ -373,7 +373,7 @@ struct WinFileCommands: Commands {
 
         // 帮助
         CommandGroup(replacing: .help) {
-            Button(WLocalizedString("menu.help", comment: "WinFile 帮助")) {
+            Button(WLocalizedString("menu.help", comment: "LeafFiles 帮助")) {
                 NotificationCenter.default.post(name: .winFileShowHelp, object: nil)
             }
             Divider()

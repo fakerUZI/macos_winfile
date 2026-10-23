@@ -21,7 +21,7 @@ enum ArchiveError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupported: return L("archive.error.unsupported", "暂不支持该格式")
-        case .engineMissing: return L("archive.error.engineMissing", "解压引擎缺失，请重新安装 WinFile。")
+        case .engineMissing: return L("archive.error.engineMissing", "解压引擎缺失，请重新安装 LeafFiles。")
         case .passwordRequired: return L("archive.error.passwordRequired", "此压缩包需要密码。")
         case .wrongPassword: return L("archive.error.wrongPassword", "密码错误或加密数据损坏，请检查后重试。")
         case .cancelled: return L("archive.cancelled", "已取消解压")

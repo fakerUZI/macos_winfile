@@ -6,148 +6,32 @@ struct SidebarView: View {
     @State private var showSidebarManager = false
     @State private var showAddFolder = false
     @State private var isDropTargeted = false
+    @AppStorage("Sidebar.FavoritesExpanded") private var favoritesExpanded = true
+    @AppStorage("Sidebar.CategoriesExpanded") private var categoriesExpanded = true
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     /// 分类的显示与顺序（右键菜单与拖拽排序共用）
     @ObservedObject private var preferences = SidebarPreferences.shared
 
     var body: some View {
-        // 选中态完全由当前页签的模型驱动：
-        // 绑定必须显式读 model.selection，切换页签时才能跟着换行
-        List(selection: Binding<SidebarSelection?>(
-            get: { model.sidebarSelection },
-            set: { newValue in
-                guard let newValue else { return }
-                model.selectSidebarDestination(newValue)
-            }
-        )) {
-            // 管理入口：放在最上方，便于随时调整侧边栏内容与顺序
-            Section {
-                Button {
-                    showSidebarManager = true
-                } label: {
-                    Label(L("sidebar.manage", "管理侧边栏…"), systemImage: "slider.horizontal.3")
+        VStack(spacing: 0) {
+            HStack {
+                Text(L("sidebar.navigation", "导航")).font(.headline).foregroundStyle(.secondary)
+                Spacer()
+                Button { showSidebarManager = true } label: {
+                    Image(systemName: "slider.horizontal.3").frame(width: 24, height: 24)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-
-            // Windows 资源管理器顶部两个页面
-            Section {
-                Label {
-                    Text(L("view.home", "主页"))
-                } icon: {
-                    Image(systemName: "house.fill").foregroundStyle(Color(nsColor: .systemBlue))
-                }
-                .tag(SidebarSelection.home)
-
-                Label {
-                    Text(L("view.thisPC", "此电脑"))
-                } icon: {
-                    Image(systemName: "pc").foregroundStyle(Color(nsColor: .systemBlue))
-                }
-                .tag(SidebarSelection.thisPC)
-
-            }
-
-            Section(WLocalizedString("sidebar.favorites", comment: "个人收藏")) {
-                ForEach(Array(engine.authorizedRoots.enumerated()), id: \.element.path) { index, url in
-                    favoriteRow(url, index: index)
-                }
-                // 空列表时给出提示，避免看起来像坏了
-                if engine.authorizedRoots.isEmpty {
-                    Text(L("sidebar.favorites.empty", "右键可管理收藏"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .onDrop(of: [.fileURL], delegate: folderDropDelegate)
-                }
-            }
-
-            Section(WLocalizedString("sidebar.categories", comment: "按类型分类")) {
-                ForEach(SidebarPreferences.shared.visibleCategories) { category in
-                    Label {
-                        HStack {
-                            Text(category.localizedName)
-                            Spacer()
-                            if let count = engine.categoryCounts[category], count > 0 {
-                                Text(count >= FileSystemService.categoryBudget ? "\(count)+" : "\(count)")
-                                    .help(L("scan.badgeScope", "初始扫描范围内的计数；可进入分类继续深入扫描。"))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .monospacedDigit()
-                            }
-                        }
-                    } icon: {
-                        Image(systemName: category.symbol)
-                            .foregroundStyle(Color(nsColor: category.tint))
-                    }
-                    .tag(SidebarSelection.category(category))
-                    .contextMenu {
-                        Button(L("sidebar.moveUp", "上移")) { preferences.move(category, by: -1) }
-                            .disabled(!preferences.canMove(category, by: -1))
-                        Button(L("sidebar.moveDown", "下移")) { preferences.move(category, by: 1) }
-                            .disabled(!preferences.canMove(category, by: 1))
-                        Divider()
-                        Button(L("sidebar.remove", "从侧边栏移除")) { preferences.hide(category) }
-                            .disabled(preferences.visibleCategories.count <= 1)
-                        Button(L("sidebar.manage", "管理侧边栏…")) { showSidebarManager = true }
-                    }
-                }
-                if engine.countingCategories {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.mini)
-                        Text(WLocalizedString("sidebar.counting", comment: "正在统计…"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Section(WLocalizedString("sidebar.locations", comment: "位置")) {
-                Label {
-                    Text(L("place.applications", "应用程序"))
-                } icon: {
-                    Image(systemName: "square.grid.2x2.fill").foregroundStyle(.blue)
-                }
-                .tag(SidebarSelection.applications)
-
-                Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
-                    .tag(SidebarSelection.appData)
-
-                AndroidSidebarSection()
-            }
-
-            Section {
-                Label(L("cleanup.title", "空间清理"), systemImage: "externaldrive.badge.minus")
-                    .tag(SidebarSelection.storageCleanup)
-            }
+                .buttonStyle(.borderless)
+                .help(L("sidebar.manage", "管理侧边栏…"))
+                .accessibilityLabel(L("sidebar.manage", "管理侧边栏…"))
+            }.padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 4)
+            navigationList
+            sidebarFooter
         }
-        .sheet(isPresented: $showSidebarManager) {
-            SidebarManagerSheet(engine: engine)
-        }
+        .background(InterfaceStyle.chrome)
+        .sheet(isPresented: $showSidebarManager) { SidebarManagerSheet(engine: engine) }
         .sheet(isPresented: $showAddFolder) {
             FolderPickerSheet(initialDirectory: model.currentSidebarFolder) { model.addFoldersToSidebar($0) }
-        }
-        .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(L("sidebar.dropHint", "拖入文件夹以添加到个人收藏"))
-                    .font(.caption2).foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
-
-                HStack {
-                    Button {
-                        showAddFolder = true
-                    } label: {
-                        Label(L("action.addFolder", "添加文件夹"), systemImage: "plus")
-                    }
-                    .buttonStyle(.borderless)
-                    Spacer()
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.bar)
-            .onDrop(of: [.fileURL], delegate: folderDropDelegate)
         }
         .onDrop(of: [.fileURL], delegate: folderDropDelegate)
         .overlay {
@@ -156,6 +40,149 @@ struct SidebarView: View {
                     .allowsHitTesting(false)
             }
         }
+    }
+
+    private var navigationList: some View {
+        List(selection: Binding<SidebarSelection?>(
+            get: { model.sidebarSelection },
+            set: { newValue in
+                guard let newValue else { return }
+                model.selectSidebarDestination(newValue)
+            }
+        )) {
+            // Windows 资源管理器顶部两个页面
+            Section {
+                Label {
+                    Text(L("view.home", "主页"))
+                } icon: {
+                    Image(systemName: "house.fill").foregroundStyle(Color.secondary)
+                }
+                .tag(SidebarSelection.home)
+
+                Label {
+                    Text(L("view.thisPC", "此电脑"))
+                } icon: {
+                    Image(systemName: "pc").foregroundStyle(Color.secondary)
+                }
+                .tag(SidebarSelection.thisPC)
+
+            }
+
+            Section {
+                if favoritesExpanded {
+                    ForEach(Array(engine.authorizedRoots.enumerated()), id: \.element.path) { index, url in
+                        favoriteRow(url, index: index)
+                    }
+                    // 空列表时给出提示，避免看起来像坏了
+                    if engine.authorizedRoots.isEmpty {
+                        Text(L("sidebar.favorites.empty", "右键可管理收藏"))
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .onDrop(of: [.fileURL], delegate: folderDropDelegate)
+                    }
+                }
+            } header: {
+                sectionHeader(WLocalizedString("sidebar.favorites", comment: "个人收藏"), expanded: $favoritesExpanded)
+            }
+
+            Section {
+                if categoriesExpanded {
+                    ForEach(SidebarPreferences.shared.visibleCategories) { category in
+                        Label {
+                            HStack {
+                                Text(category.localizedName)
+                                Spacer()
+                                if let count = engine.categoryCounts[category], count > 0 {
+                                    Text(count >= FileSystemService.categoryBudget ? "\(count)+" : "\(count)")
+                                        .help(L("scan.badgeScope", "初始扫描范围内的计数；可进入分类继续深入扫描。"))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Color.secondary.opacity(0.09), in: Capsule())
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: category.symbol)
+                                .foregroundStyle(Color.secondary)
+                        }
+                        .tag(SidebarSelection.category(category))
+                        .contextMenu {
+                            Button(L("sidebar.moveUp", "上移")) { preferences.move(category, by: -1) }
+                                .disabled(!preferences.canMove(category, by: -1))
+                            Button(L("sidebar.moveDown", "下移")) { preferences.move(category, by: 1) }
+                                .disabled(!preferences.canMove(category, by: 1))
+                            Divider()
+                            Button(L("sidebar.remove", "从侧边栏移除")) { preferences.hide(category) }
+                                .disabled(preferences.visibleCategories.count <= 1)
+                            Button(L("sidebar.manage", "管理侧边栏…")) { showSidebarManager = true }
+                        }
+                    }
+                    if engine.countingCategories {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text(WLocalizedString("sidebar.counting", comment: "正在统计…"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                sectionHeader(WLocalizedString("sidebar.categories", comment: "按类型分类"), expanded: $categoriesExpanded)
+            }
+
+            Section(WLocalizedString("sidebar.locations", comment: "位置")) {
+                Label {
+                    Text(L("place.applications", "应用程序"))
+                } icon: {
+                    Image(systemName: "square.grid.2x2.fill").foregroundStyle(.secondary)
+                }
+                .tag(SidebarSelection.applications)
+
+                Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
+                    .tag(SidebarSelection.appData)
+
+            }
+            AndroidSidebarSection()
+        }
+        .listStyle(.sidebar)
+    }
+
+    private func sectionHeader(_ title: String, expanded: Binding<Bool>) -> some View {
+        Button { expanded.wrappedValue.toggle() } label: {
+            HStack {
+                Text(title)
+                Spacer()
+                Image(systemName: expanded.wrappedValue ? "chevron.up" : "chevron.down").font(.caption2)
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(expanded.wrappedValue ? L("sidebar.expanded", "已展开") : L("sidebar.collapsed", "已折叠"))
+    }
+
+    private var sidebarFooter: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { model.selectSidebarDestination(.storageCleanup) } label: {
+                Label(L("cleanup.title", "空间清理"), systemImage: "externaldrive.badge.minus")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 9)
+                    .foregroundStyle(model.sidebarSelection == .storageCleanup ? Color.accentColor : .primary)
+                    .background(model.sidebarSelection == .storageCleanup ? Color.accentColor.opacity(0.13) : .clear,
+                                in: RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(model.sidebarSelection == .storageCleanup ? .isSelected : [])
+            Divider().opacity(0.6)
+            Button { showAddFolder = true } label: {
+                Label(L("action.addFolder", "添加文件夹"), systemImage: "plus")
+            }.buttonStyle(.borderless)
+            Label(L("sidebar.dropHint", "拖入文件夹以添加到个人收藏"), systemImage: "folder.badge.plus")
+                .font(.caption2).foregroundStyle(isDropTargeted ? Color.accentColor : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .onDrop(of: [.fileURL], delegate: folderDropDelegate)
     }
 
     private var folderDropDelegate: SidebarFolderDropDelegate {
@@ -171,7 +198,7 @@ struct SidebarView: View {
             Text(url.lastPathComponent)
         } icon: {
             Image(systemName: "folder.fill")
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.secondary)
         }
         .tag(SidebarSelection.folder(url))
         .help(url.path)
@@ -214,7 +241,7 @@ struct AndroidSidebarSection: View {
                         }
                     } icon: {
                         Image(systemName: "candybarphone")
-                            .foregroundStyle(device.isReady ? Color.accentColor : Color.orange)
+                            .foregroundStyle(device.isReady ? Color.secondary : Color.orange)
                     }
                     .tag(SidebarSelection.androidDevice(serial: device.serial))
                 }

@@ -699,7 +699,7 @@ struct FileTile: View {
     let selected: Bool
 
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 4) {
             FileIconView(engine: engine, item: item, size: 44)
             // 名称固定占两行高度（见 FileItem.tileNameAreaHeight）。
             // 若按内容自适应，同一行里矮的磁贴下方会留出空白。
@@ -713,7 +713,7 @@ struct FileTile: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .padding(8)
+        .padding(.horizontal, 8).padding(.vertical, 6)
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 6)

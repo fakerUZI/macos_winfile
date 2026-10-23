@@ -996,7 +996,7 @@ final class BrowserModel: ObservableObject {
             let alert = NSAlert()
             alert.alertStyle = .warning
             alert.messageText = L("android.deleteTitle", "永久删除设备上的 %d 项？", entries.count)
-            alert.informativeText = L("android.deleteMessage", "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 WinFile 撤销。")
+            alert.informativeText = L("android.deleteMessage", "这些项目会从安卓设备永久删除，不会移到废纸篓，无法通过 LeafFiles 撤销。")
             alert.addButton(withTitle: L("android.deleteConfirm", "永久删除"))
             alert.addButton(withTitle: L("button.cancel", "取消"))
             confirmed = alert.runModal() == .alertFirstButtonReturn
@@ -1355,7 +1355,7 @@ final class BrowserModel: ObservableObject {
 
     static func androidConnectionMessage(_ device: AndroidDevice?) -> String {
         if device?.state == "unavailable" {
-            return L("android.connection.busy", "无法建立 MTP 会话。设备可能被「预览」「照片」「图像捕捉」或其他传输软件占用；请完全退出占用的应用，仅关闭窗口可能不会释放设备。若刚切换 USB 模式，请稍候，WinFile 会自动重试。")
+            return L("android.connection.busy", "无法建立 MTP 会话。设备可能被「预览」「照片」「图像捕捉」或其他传输软件占用；请完全退出占用的应用，仅关闭窗口可能不会释放设备。若刚切换 USB 模式，请稍候，LeafFiles 会自动重试。")
         }
         if device?.needsFileTransfer == true {
             return L("android.connection.notReady", "请解锁安卓设备，选择 USB「文件传输」，并关闭其他占用设备的传输软件；就绪后将自动恢复。")

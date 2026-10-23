@@ -8,6 +8,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Retain the on-disk app/executable names for existing curl and Sparkle installs.
+# The product's user-visible name is LeafFiles (Info.plist + localized resources).
 NAME="WinFile"
 SRC="$ROOT/native/WinFile"
 BUILD="$ROOT/native/native-build"
@@ -111,8 +113,8 @@ for lproj in "$ROOT/native/Resources"/*.lproj; do
   fi
   # 应用名本地化（Dock / 菜单栏显示）
   printf '"CFBundleDisplayName" = "%s";\n"CFBundleName" = "%s";\n' \
-    "$( [ "$name" = "zh-Hans.lproj" ] && echo "WinFile 文件管理器" || echo "WinFile" )" \
-    "WinFile" > "$APP/Contents/Resources/$name/InfoPlist.strings"
+    "LeafFiles" \
+    "LeafFiles" > "$APP/Contents/Resources/$name/InfoPlist.strings"
   /usr/bin/plutil -convert binary1 "$APP/Contents/Resources/$name/InfoPlist.strings"
   echo "   - $name"
 done
@@ -173,7 +175,7 @@ if [ -n "$INSTALL_DIR" ]; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
     -f "$INSTALL_DIR/$NAME.app" 2>/dev/null || true
   echo "   已安装：$INSTALL_DIR/$NAME.app"
-  echo "   可在启动台 / 聚焦搜索中找到「WinFile 文件管理器」"
+  echo "   可在启动台 / 聚焦搜索中找到「LeafFiles」"
 else
   echo
   echo "仅构建未安装（--in-place）：$APP"

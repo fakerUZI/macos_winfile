@@ -39,15 +39,22 @@ enum SnapshotRenderer {
         for (name, content) in files {
             try? content.write(to: base.appendingPathComponent(name), atomically: true, encoding: .utf8)
         }
+        if let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let data = NSImage(contentsOf: icon)?.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: data), let png = bitmap.representation(using: .png, properties: [:]) {
+            try? png.write(to: base.appendingPathComponent("产品海报.png"))
+        }
         return base
     }
 
     /// 视图模式：详情 / 大图标 / 主页 / 此电脑
     /// （分类与搜索依赖 Table 异步回填，不适合离屏截图，见文件头说明）
-    enum Mode: String { case details, icons, home, thisPC, category, wechat, storage, software }
+    enum Mode: String { case details, icons, home, thisPC, category, wechat, storage, software, search, archive }
 
     @MainActor
     static func render(path: String, mode: Mode = .details) {
+        NSApp.appearance = NSAppearance(named: CommandLine.arguments.contains("--dark-preview") ? .darkAqua : .aqua)
+        if mode == .search || mode == .archive { renderDialogPreview(path: path, mode: mode); return }
         if mode == .storage { renderStoragePreview(path: path); return }
         if mode == .software { renderStoragePreview(path: path, softwareMode: true); return }
         if mode == .wechat { renderWeChatPreview(path: path); return }
@@ -84,7 +91,7 @@ enum SnapshotRenderer {
             if let first = model.items.first(where: { !$0.isContainer }) {
                 model.selectedIDs = [first.id]
             }
-        case .home, .thisPC, .wechat, .storage, .software:
+        case .home, .thisPC, .wechat, .storage, .software, .search, .archive:
             engine.restrictScopeForTesting([demo])
         case .category:
             // 分类视图：用于验证网格是否完整渲染所有条目
@@ -106,7 +113,8 @@ enum SnapshotRenderer {
         // 通过真实的 NSWindow + NSHostingView 渲染：
         // ImageRenderer 在无窗口环境下无法解析 SF Symbols，会画出占位符，
         // 而真实窗口会走完整的绘制管线，得到的画面与应用中看到的一致。
-        let contentSize = NSSize(width: 1180, height: 720)
+        let contentSize = NSSize(width: CommandLine.arguments.contains("--compact-preview") ? 860 : 1180,
+                                 height: CommandLine.arguments.contains("--short-preview") ? 560 : 720)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .resizable],
@@ -128,22 +136,25 @@ enum SnapshotRenderer {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
 
-        // 主页 / 此电脑 需要加载数据后才能如实反映界面
-        switch mode {
-        case .home:
-            model.loadHome()
+        // MainView owns its tab model. Configure that displayed model rather
+        // than the preparatory model used to populate fixture preferences.
+        if let displayed = MainView.currentTabManager?.activeModel {
+            switch mode {
+            case .home: displayed.loadHome()
+            case .thisPC: displayed.loadThisPC()
+            case .icons: displayed.setLayout(.icons)
+            case .details:
+                displayed.setLayout(.details)
+                if let first = displayed.items.first(where: { $0.supportsThumbnail }) { displayed.selectedIDs = [first.id] }
+            case .category:
+                displayed.setLayout(.icons)
+                displayed.navigate(to: .category(.pdf))
+            default: break
+            }
             let deadline = Date().addingTimeInterval(10)
-            while model.isLoadingHome && Date() < deadline {
+            while (displayed.isLoadingHome || displayed.isLoadingDrives || displayed.isLoadingCategory) && Date() < deadline {
                 RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             }
-        case .thisPC:
-            model.loadThisPC()
-            let deadline = Date().addingTimeInterval(10)
-            while model.isLoadingDrives && Date() < deadline {
-                RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-            }
-        default:
-            break
         }
         let settleAgain = Date().addingTimeInterval(1.2)
         while Date() < settleAgain {
@@ -303,6 +314,51 @@ enum SnapshotRenderer {
             }
         }
         window.orderOut(nil)
+    }
+
+    /// Dialog fixtures never browse or extract the user's files. Interactive mode
+    /// lets the same fixture verify real table selection, resizing and Quick Look.
+    private static func renderDialogPreview(path: String, mode: Mode) {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("WinFile-Dialog-Preview-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        do {
+            try fm.createDirectory(at: root, withIntermediateDirectories: true)
+            let note = root.appendingPathComponent("项目说明.txt")
+            let table = root.appendingPathComponent("文件清单.csv")
+            try "WinFile 界面验收\n\n压缩包支持目录浏览和文件预览。\n此处仅包含测试数据。\n".write(to: note, atomically: true, encoding: .utf8)
+            try "名称,类型\n项目说明,文档\n文件清单,表格\n".write(to: table, atomically: true, encoding: .utf8)
+            let archive = try ArchiveService.compress([note, table], to: root, name: "项目资料")
+            let engine = FSEngine(); engine.restrictScopeForTesting([root])
+            let browser = BrowserModel(engine: engine, startDirectory: root)
+            if CommandLine.arguments.contains("--advanced-preview") { browser.searchCriteria = FileSearchCriteria(extensions: ["txt"]) }
+            let content: AnyView
+            if mode == .archive {
+                content = AnyView(ArchivePreviewSheet(request: ArchivePreviewRequest(archive: archive, destination: root), browser: browser))
+            } else { content = AnyView(AdvancedSearchSheet(model: browser, initialQuery: "项目")) }
+            let width: CGFloat = CommandLine.arguments.contains("--compact-preview") ? 760 : 1080
+            let height: CGFloat = CommandLine.arguments.contains("--short-preview") ? 560 : 720
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                                  styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+            window.title = "WinFile — Interface QA"
+            let hosting = NSHostingView(rootView: content.environment(\.locale, Localization.shared.locale))
+            hosting.sizingOptions = []; hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
+            window.contentView = hosting; window.setContentSize(NSSize(width: width, height: height))
+            window.makeKeyAndOrderFront(nil)
+            let deadline = Date().addingTimeInterval(3)
+            while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)); hosting.layoutSubtreeIfNeeded() }
+            guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { exit(1) }
+            hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+            guard let png = bitmap.representation(using: .png, properties: [:]) else { exit(1) }
+            try png.write(to: URL(fileURLWithPath: path))
+            if CommandLine.arguments.contains("--interactive-preview") {
+                while window.isVisible {
+                    if let event = NSApp.nextEvent(matching: .any, until: Date().addingTimeInterval(0.05), inMode: .default, dequeue: true) { NSApp.sendEvent(event) }
+                    NSApp.updateWindows()
+                }
+            }
+            window.orderOut(nil)
+        } catch { print("Dialog preview failed: \(error)"); exit(1) }
     }
 
     /// 在示例目录里造出 16 个 PDF（含重名与长短名，用于复现网格问题）

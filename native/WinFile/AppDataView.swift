@@ -52,7 +52,7 @@ struct AppDataView: View {
                   systemImage: "lock.shield")
                 .fontWeight(.medium)
             Text(L("appData.needAccess.detail",
-                   "macOS 会保护其它应用的数据目录，此权限只能由你手动授予，应用无法自行申请。\n路径：系统设置 → 隐私与安全性 → 完整磁盘访问权限 → 勾选 WinFile，然后重新打开应用。"))
+                   "macOS 会保护其它应用的数据目录，此权限只能由你手动授予，应用无法自行申请。\n路径：系统设置 → 隐私与安全性 → 完整磁盘访问权限 → 勾选 LeafFiles，然后重新打开应用。"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
