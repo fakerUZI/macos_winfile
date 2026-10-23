@@ -129,6 +129,12 @@ button:focus-visible,a:focus-visible,summary:focus-visible,[tabindex]:focus-visi
 .brand img {
   object-fit: contain;
 }
+.brand-history {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
 .brand-dot {
   color: #77a35b;
 }
