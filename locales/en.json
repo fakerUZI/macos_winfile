@@ -131,7 +131,6 @@
   "macOS {{MIN_MACOS}}+ · Apple 芯片与 Intel": "macOS {{MIN_MACOS}}+ · Apple Silicon & Intel",
   "复制一键安装命令": "Copy install command",
   "复制命令": "Copy command",
-  "也可在终端运行上方命令安装。": "Or run the command above in Terminal.",
   "更新记录 ↗": "Release notes ↗",
   "熟悉的操作，清爽的文件日常。": "A calmer way to manage everyday files.",
   "关闭截图": "Close screenshot",
@@ -190,5 +189,11 @@
   "解锁手机或平板，用支持数据传输的 USB 线连接，选择「文件传输」，按提示允许访问。无需 USB 调试、ADB 或额外工具；WinFile 会自动识别插拔。可见范围由设备决定，Android/data 和应用私有目录可能不可见。如果设备提示被占用，请完全退出「预览」「照片」「图像捕捉」或其他传输软件，仅关闭窗口可能不会释放 USB 接口；WinFile 会自动重试。": "Unlock your phone or tablet, connect with a data-capable USB cable, select File Transfer and allow access if prompted. No USB debugging, ADB or extra tools; connection changes are detected automatically. The device controls visibility; Android/data and private app folders may be hidden. If another app is using the device, quit Preview, Photos, Image Capture or the transfer app completely. Closing a window may not release USB access; WinFile retries automatically.",
   "安卓图片和 PDF 怎样打开？": "How do Android images and PDFs open?",
   "从 1.4.1 起，双击或右键打开安卓图片和 PDF，默认使用 WinFile 内置 Quick Look；空格也可预览。文件经校验后使用可复用的只读本机副本，修改不会自动回传到设备。需要用外部应用打开或编辑，请先手动下载。": "From 1.4.1, double-click or choose Open for Android images and PDFs to use WinFile’s Quick Look panel. Space previews them too. Files are verified and use reusable read-only local copies; edits are not sent back to the device. Download first to open or edit them in an external app.",
-  "这次修复避免自动启动外部「预览」及相机导入进程后占用 MTP 的 USB 接口。若你主动打开了外部相机导入或传输应用，仍可能发生设备独占；完全退出占用应用后，WinFile 会自动恢复。": "This fix avoids automatically launching Preview and its camera importer, which can claim the USB interface used by MTP. An external camera-import or transfer app you open yourself can still claim the device. Quit the app holding access and WinFile recovers automatically."
+  "这次修复避免自动启动外部「预览」及相机导入进程后占用 MTP 的 USB 接口。若你主动打开了外部相机导入或传输应用，仍可能发生设备独占；完全退出占用应用后，WinFile 会自动恢复。": "This fix avoids automatically launching Preview and its camera importer, which can claim the USB interface used by MTP. An external camera-import or transfer app you open yourself can still claim the device. Quit the app holding access and WinFile recovers automatically.",
+  "一行命令，即刻安装": "ONE COMMAND TO INSTALL",
+  "把 WinFile 装进你的 Mac。": "Bring WinFile to your Mac.",
+  "无需 Xcode 或 Homebrew": "No Xcode or Homebrew required",
+  "复制命令，粘贴到「终端」运行即可。": "Copy the command and run it in Terminal.",
+  "查看安装脚本 ↗": "View install script ↗",
+  "使用一键安装命令 ↑": "Use the install command ↑"
 }

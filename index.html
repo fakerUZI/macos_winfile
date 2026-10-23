@@ -45,6 +45,11 @@
   </header>
 
   <main id="main">
+    <section class="quick-install wrap" id="quick-install" aria-labelledby="install-title">
+      <div class="install-heading"><div><p class="install-eyebrow">一行命令，即刻安装</p><h2 id="install-title">把 WinFile 装进你的 Mac。</h2></div><p class="install-compatibility">macOS {{MIN_MACOS}}+ · Apple 芯片与 Intel<br>无需 Xcode 或 Homebrew</p></div>
+      <div class="install-command"><span class="terminal-symbol" aria-hidden="true">$</span><code id="install-command">curl -fsSL https://raw.githubusercontent.com/fakerUZI/macos_winfile/main/install.sh | /bin/bash</code><button id="copy-command" type="button" hidden aria-label="复制一键安装命令">复制命令 <span aria-hidden="true">⧉</span></button></div>
+      <p class="install-note"><span id="copy-status" role="status" aria-live="polite">复制命令，粘贴到「终端」运行即可。</span><a href="https://github.com/fakerUZI/macos_winfile/blob/main/install.sh">查看安装脚本 ↗</a></p>
+    </section>
     <section class="hero wrap" aria-labelledby="hero-title">
       <div class="hero-copy">
         <a class="version-pill" href="#whats-new"><span class="status-dot"></span> v{{VERSION}} 已发布 · 看看新变化 <span aria-hidden="true">↗</span></a>
@@ -128,7 +133,7 @@
       <details><summary>以后怎样更新？<span aria-hidden="true">+</span></summary><p>从 v1.2.0 起，WinFile 支持启动时检查更新。你可以安装、跳过某个版本或下次再说；也可以在应用中手动检查。更新包与更新源经过 Ed25519 签名校验。更早版本请先从 GitHub 手动升级一次。</p></details>
     </div></section>
 
-    <section class="download-section wrap" id="download" aria-labelledby="download-title"><span class="download-decoration" aria-hidden="true">✳</span><img src="./assets/app-icon.png" alt="" width="76" height="76" loading="lazy"><p class="eyebrow">一个窗口，让文件回到秩序。</p><h2 id="download-title">下一次整理文件，<br>试试顺手的方式。</h2><a class="button primary" href="https://github.com/fakerUZI/macos_winfile/releases/latest/download/WinFile.zip"><svg class="icon"><use href="#download-icon"/></svg> 免费下载 WinFile <span class="button-version">v{{DOWNLOAD_VERSION}}</span></a><p class="system-note">macOS {{MIN_MACOS}}+ · Apple 芯片与 Intel</p><div class="install-command"><span class="terminal-symbol" aria-hidden="true">$</span><code id="install-command">curl -fsSL https://raw.githubusercontent.com/fakerUZI/macos_winfile/main/install.sh | /bin/bash</code><button id="copy-command" type="button" hidden aria-label="复制一键安装命令">复制命令 <span aria-hidden="true">⧉</span></button></div><p class="install-note"><span id="copy-status" role="status" aria-live="polite">也可在终端运行上方命令安装。</span> <a href="https://github.com/fakerUZI/macos_winfile/releases/latest">更新记录 ↗</a></p></section>
+    <section class="download-section wrap" id="download" aria-labelledby="download-title"><span class="download-decoration" aria-hidden="true">✳</span><img src="./assets/app-icon.png" alt="" width="76" height="76" loading="lazy"><p class="eyebrow">一个窗口，让文件回到秩序。</p><h2 id="download-title">下一次整理文件，<br>试试顺手的方式。</h2><a class="button primary" href="https://github.com/fakerUZI/macos_winfile/releases/latest/download/WinFile.zip"><svg class="icon"><use href="#download-icon"/></svg> 免费下载 WinFile <span class="button-version">v{{DOWNLOAD_VERSION}}</span></a><p class="system-note">macOS {{MIN_MACOS}}+ · Apple 芯片与 Intel</p><p class="install-note"><a href="#quick-install">使用一键安装命令 ↑</a><a href="https://github.com/fakerUZI/macos_winfile/releases/latest">更新记录 ↗</a></p></section>
   </main>
 
   <footer class="site-footer wrap"><a class="brand" href="#"><img src="./assets/app-icon.png" width="32" height="32" alt=""><span>WinFile<span class="brand-dot">.</span></span></a><p>熟悉的操作，清爽的文件日常。</p><div><a href="https://github.com/fakerUZI/macos_winfile">GitHub ↗</a><a href="https://github.com/fakerUZI/macos_winfile/blob/main/README.en.md" lang="en">English docs ↗</a><a href="https://github.com/fakerUZI/macos_winfile/blob/main/LICENSE">MIT License</a></div></footer>

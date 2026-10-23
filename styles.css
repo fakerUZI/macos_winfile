@@ -1050,44 +1050,84 @@ details a {
   z-index: -1;
   transform: rotate(15deg);
 }
+.quick-install {
+  margin-top: 28px;
+  padding: 26px 30px 20px;
+  background: #e0efcf;
+  border: 1px solid #b5ce9e;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px #244e3b08;
+}
+.install-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.install-eyebrow {
+  color: #4c7038;
+  font-size: 11px;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.install-heading h2 {
+  font-family: var(--sans);
+  font-size: 24px;
+  line-height: 1.5;
+  letter-spacing: -.5px;
+}
+.install-compatibility {
+  color: #4b6342;
+  font-size: 11px;
+  text-align: right;
+}
+.quick-install .install-note {
+  justify-content: space-between;
+  color: #435c38;
+}
 .install-command {
   display: flex;
   align-items: center;
-  gap: 12px;
-  background: #f7faf1;
-  border: 1px solid #d1ddc4;
-  border-radius: 7px;
-  padding: 12px 14px;
-  margin: 31px auto 0;
-  width: fit-content;
-  max-width: 100%;
+  gap: 14px;
+  background: #183f32;
+  color: #f1f8e9;
+  border: 1px solid #244e3b;
+  border-radius: 9px;
+  padding: 17px 18px;
+  margin-top: 18px;
+  width: 100%;
   text-align: left;
 }
 .terminal-symbol {
-  color: #7b9467;
-  font-size: 13px;
+  color: #b9e994;
+  font-family: "SFMono-Regular",Consolas,monospace;
+  font-size: 16px;
 }
 .install-command code {
+  flex: 1;
   font-family: "SFMono-Regular",Consolas,monospace;
-  font-size: 10px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 1.8;
   overflow-wrap: anywhere;
   user-select: all;
   min-width: 0;
 }
 .install-command button {
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 600;
   white-space: nowrap;
-  background: none;
-  border: 0;
-  border-left: 1px solid #d9e1d0;
-  padding: 4px 0 4px 13px;
+  color: #183f32;
+  background: #c6edab;
+  border: 1px solid #c6edab;
+  border-radius: 6px;
+  padding: 11px 15px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   gap: 9px;
 }
 .install-command button:hover {
-  color: #648648;
+  background: #d8f4c4;
 }
 .install-note {
   font-size: 10px;
@@ -1516,11 +1556,10 @@ details a {
     gap: 10px;
   }
   .install-command code {
-    font-size: 9px;
+    font-size: 12px;
   }
   .install-command button {
-    font-size: 9px;
-    padding-left: 10px;
+    font-size: 12px;
   }
   .site-footer {
     flex-wrap: wrap;
@@ -1890,27 +1929,43 @@ details a {
     gap: 9px;
     padding-inline: 20px;
   }
+  .quick-install {
+    margin-top: 20px;
+    padding: 20px 16px 16px;
+  }
+  .install-heading {
+    display: block;
+  }
+  .install-heading h2 {
+    font-size: 21px;
+  }
+  .install-eyebrow {
+    font-size: 10px;
+  }
+  .install-compatibility {
+    text-align: left;
+    margin-top: 8px;
+    font-size: 10px;
+  }
   .install-command {
-    padding: 11px;
-    gap: 8px;
+    padding: 14px;
+    gap: 12px;
     flex-wrap: wrap;
-    margin-top: 25px;
+    margin-top: 16px;
   }
   .install-command .terminal-symbol {
     display: none;
   }
   .install-command code {
-    font-size: 9px;
+    font-size: 12px;
     flex-basis: 100%;
   }
   .install-command button {
     margin-left: auto;
-    font-size: 9px;
-    border: 0;
-    padding: 3px 0;
+    font-size: 12px;
   }
   .install-note {
-    font-size: 8px;
+    font-size: 10px;
     gap: 8px;
   }
   .site-footer {
