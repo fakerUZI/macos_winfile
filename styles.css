@@ -2098,3 +2098,12 @@ details a {
   aspect-ratio: 75 / 49;
   object-fit: contain;
 }
+
+.release-card-preview {
+  background: #e3edda;
+}
+.release-card-preview .release-preview img,
+.archive-preview-figure img {
+  aspect-ratio: 9 / 7;
+  object-fit: contain;
+}
