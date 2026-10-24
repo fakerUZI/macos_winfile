@@ -144,7 +144,7 @@ def build():
     # Use an allowlist: never publish source, signing material, or the whole docs tree.
     for name in ("styles.css", "app.js"):
         shutil.copy2(SOURCE / name, OUTPUT / name)
-    for name in ("main-window.png", "interface-refresh.jpg", "storage-cleanup.jpg", "software-cleanup.jpg", "wechat-cleanup.jpg", "android-files.png", "android-video-memory.png", "archive-extraction.png", "archive-preview.jpg", "archive-preview-201.jpg", "folder-picker.png"):
+    for name in ("main-window.png", "interface-refresh.jpg", "storage-cleanup.jpg", "software-cleanup.jpg", "wechat-cleanup.jpg", "android-files.png", "android-video-memory.png", "archive-extraction.png", "archive-preview.jpg", "archive-preview-201.jpg", "archive-default-open-202.png", "folder-picker.png"):
         shutil.copy2(SOURCE / "assets" / name, OUTPUT / "assets" / name)
     shutil.copy2(SOURCE / "assets/app-icon.png", OUTPUT / "assets/app-icon.png")
     def substitute(text):
