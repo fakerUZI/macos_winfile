@@ -15,6 +15,7 @@ struct ArchivePreviewSheet: View {
     @State private var showsDetails = false
     @State private var showsPreview = false
     @State private var previewMember: ArchiveMember?
+    @State private var pendingExternalOpen = false
 
     init(request: ArchivePreviewRequest, browser: BrowserModel) {
         self.request = request
@@ -64,16 +65,23 @@ struct ArchivePreviewSheet: View {
                         Text(L("archive.preview.method", "压缩方式") + ": " + member.method + " · " + L("archive.preview.packed", "压缩后") + ": " + bytes(member.packedSize))
                         if member.encrypted { Label(L("archive.preview.encrypted", "已加密"), systemImage: "lock") }
                     }
-                    Text(L("archive.preview.hint", "列表不解出普通压缩包；查看文件仅临时解出所选项（最大 64 MiB），不打开外部应用，关闭后删除。压缩 TAR 预览需临时展开中间归档（最大 512 MiB）。"))
+                    Text(L("archive.preview.hint", "双击使用默认应用打开小于 64 MiB 的文件，达到限制或大小未知时请先解压。仅临时解出所选文件，外部打开使用只读缓存，关闭此窗口后仍保留，后续按期限与容量清理；修改不会写回压缩包。空格使用内置预览，关闭后删除预览副本。压缩 TAR 需临时展开中间归档（最大 512 MiB）。"))
                 }.font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
             }.font(.caption)
             Divider().opacity(0.6)
             HStack {
+                Button(L("archive.open.default", "用默认应用打开")) { openSelected() }
+                    .disabled(selected == nil || selected?.directory == true || model.isPreparing)
                 Button(L("archive.preview.file", "查看所选文件")) { showSelected() }
                     .keyboardShortcut(.space, modifiers: [])
-                    .disabled(selected == nil || selected?.directory == true)
-                Text(L("archive.preview.gesture", "双击文件夹进入 · 空格预览文件"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .disabled(selected == nil || selected?.directory == true || model.isPreparing)
+                if model.isOpening {
+                    ProgressView().controlSize(.small)
+                    Button(L("button.cancel", "取消")) { model.clearPreview() }
+                } else {
+                    Text(L("archive.preview.gesture", "双击打开 · 空格预览"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer(minLength: 8)
                 Menu(L("archive.preview.extractAll", "解压全部")) {
                     Button(L("action.extractHere", "解压到当前文件夹")) { extract(to: request.destination) }
@@ -87,6 +95,14 @@ struct ArchivePreviewSheet: View {
         .onAppear { model.load() }
         .onDisappear { model.close(); password = "" }
         .onChange(of: query) { _ in selection = nil }
+        .onChange(of: model.needsPassword) { needed in
+            if needed && model.contents != nil { showsPreview = true }
+        }
+        .alert(L("archive.open.alert", "无法直接打开"), isPresented: Binding(
+            get: { model.openError != nil }, set: { if !$0 { model.dismissOpenError() } })) {
+                Button(L("action.extractTo", "解压到…")) { choosingDestination = true }.disabled(!browser.canMutateFiles)
+                Button(L("button.cancel", "取消"), role: .cancel) {}
+            } message: { Text(model.openError ?? "") }
         .sheet(isPresented: $choosingDestination) {
             FolderPickerSheet(initialDirectory: request.destination, title: L("archive.chooseDestination", "选择解压文件的保存位置")) { directory in
                 extract(to: directory)
@@ -168,7 +184,7 @@ struct ArchivePreviewSheet: View {
                 let entry = visible[row]
                 selection = entry.id
                 if entry.directory { navigate(to: entry.path) }
-                else { show(entry) }
+                else { open(entry) }
             }
         }.frame(width: 0, height: 0))
         .overlay {
@@ -206,7 +222,7 @@ struct ArchivePreviewSheet: View {
                 Button(L("android.retry", "重试")) { if let member = previewMember { model.show(member) } }
             } else {
                 InterfaceStateView(symbol: "doc.text.magnifyingglass", title: previewMember?.canPreview == false ? L("archive.preview.unavailable", "此项目无法直接预览") : L("archive.preview.choose", "选择文件后按空格预览"),
-                    detail: previewMember?.canPreview == false ? L("archive.preview.extractHint", "不预览链接。大于 64 MiB 的文件可先解压，再打开查看。") : L("archive.preview.explicitHint", "双击文件也可预览；单击选择不会解压文件。"))
+                    detail: previewMember?.canPreview == false ? L("archive.preview.extractHint", "不预览链接。大于 64 MiB 的文件可先解压，再打开查看。") : L("archive.preview.explicitHint", "双击使用默认应用打开，空格使用内置预览；单击选择不会解压文件。"))
                 if previewMember?.canPreview == false && previewMember?.isLink == false {
                     Button(L("archive.preview.extractAll", "解压全部")) { choosingDestination = true }.disabled(!browser.canMutateFiles)
                 }
@@ -229,11 +245,24 @@ struct ArchivePreviewSheet: View {
         let secret = password
         password = ""
         if model.contents == nil { model.load(password: secret) }
-        else if let member = previewMember { model.show(member, password: secret) }
+        else if let member = previewMember {
+            if pendingExternalOpen { model.open(member, password: secret) }
+            else { model.show(member, password: secret) }
+        }
+    }
+    private func openSelected() { if let selected { open(selected) } }
+    private func open(_ entry: ArchiveBrowserEntry) {
+        guard !entry.directory, let member = entry.member, !model.isPreparing else { return }
+        model.clearPreview()
+        password = ""
+        previewMember = member
+        pendingExternalOpen = true
+        model.open(member)
     }
     private func showSelected() { if let selected { show(selected) } }
     private func show(_ entry: ArchiveBrowserEntry) {
-        guard !entry.directory, let member = entry.member else { return }
+        guard !entry.directory, let member = entry.member, !model.isPreparing else { return }
+        pendingExternalOpen = false
         if previewMember?.id == member.id && (model.preview != nil || model.isPreparing) { showsPreview = true; return }
         model.clearPreview()
         password = ""

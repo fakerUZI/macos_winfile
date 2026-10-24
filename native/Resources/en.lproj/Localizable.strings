@@ -1072,7 +1072,7 @@
 "archive.preview.filter" = "Search archive names or paths";
 "archive.preview.summary" = "%d items · Known original size %@";
 "archive.preview.closeFile" = "Close file preview";
-"archive.preview.hint" = "Listing does not unpack ordinary archives. Viewing a file extracts only that item temporarily (up to 64 MiB), without opening an external app, and deletes it on close. Compressed TAR preview temporarily expands the intermediate archive (up to 512 MiB).";
+"archive.preview.hint" = "Double-click to open files smaller than 64 MiB with the default app. Extract larger files or files with unknown sizes first. Only the selected file is temporarily extracted. External apps use a read-only cache retained after this window closes and reclaimed later by age and size; edits are not saved to the archive. Space uses an embedded preview removed on close. Compressed TAR requires an intermediate archive (up to 512 MiB).";
 "archive.preview.file" = "View selected file";
 "archive.preview.path" = "Archive path";
 "archive.preview.packed" = "Packed size";
@@ -1100,7 +1100,7 @@
 "cleanup.scannedDisk" = "Scanned disk usage (estimated)";
 
 /* Native interface refinements */
-"archive.preview.gesture" = "Double-click folders · Space to preview";
+"archive.preview.gesture" = "Double-click to open · Space to preview";
 "archive.preview.extractAll" = "Extract all";
 "archive.preview.up" = "Up one level";
 "archive.preview.root" = "Archive";
@@ -1114,7 +1114,7 @@
 "archive.preview.unavailable" = "This item cannot be previewed directly";
 "archive.preview.choose" = "Select a file and press Space";
 "archive.preview.extractHint" = "Links are not previewed. Extract files larger than 64 MiB before opening them.";
-"archive.preview.explicitHint" = "Double-click to preview. Selecting a file does not extract it.";
+"archive.preview.explicitHint" = "Double-click to open with the default app; press Space for an embedded preview. Selecting a file does not extract it.";
 "search.clearFilter" = "Clear filter";
 "search.removeFilter" = "Remove filter: %@";
 "search.currentOnly" = "Current folder only";
@@ -1127,3 +1127,15 @@
 "android.status.reading" = "Reading";
 "android.status.connected" = "Connected";
 "android.status.attention" = "Waiting for device";
+
+"archive.open.default" = "Open with default app";
+
+"archive.open.alert" = "Unable to open directly";
+
+"archive.open.extractFirst" = "Only files smaller than 64 MiB can be opened directly. This file reaches the size limit or has an unknown size. Extract it before opening.";
+
+"archive.open.link" = "Links inside archives cannot be opened directly. Extract the archive and check the target first.";
+
+"archive.open.noApplication" = "No default app was found for this file. Set an application association, or extract the file before opening.";
+
+"archive.open.failed" = "The default app could not open this file. Extract it and try again.";

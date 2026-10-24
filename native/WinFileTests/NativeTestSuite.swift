@@ -4360,6 +4360,97 @@ enum NativeTestSuite {
         Task { await earlyClose.cleanupTask?.value; cleanupFinished = true }
         wait { !cleanupFinished }
         check("读取中关闭不会回写过期预览结果", earlyClose.contents == nil)
+
+        // External hand-off uses real extraction, but an injected launcher so tests never open user apps.
+        let openRoot = root.appendingPathComponent("external-open")
+        let openService = ArchiveOpenService(root: openRoot, budget: 1)
+        var openedFiles: [URL] = []
+        let external = ArchivePreviewModel(archive: archive, openService: openService) { openedFiles.append($0) }
+        external.load(); wait { external.isLoading }
+        external.open(member); wait { external.isPreparing }
+        let externalURL = openedFiles.first
+        check("默认应用打开收到真实解出的中文文本及原扩展名", externalURL.map { (try? Data(contentsOf: $0)) == text && $0.lastPathComponent == literalName } == true && external.openError == nil)
+        external.open(member); wait { external.isPreparing }
+        check("同一会话重复外部打开复用文件并避免重复写入", openedFiles.count == 2 && openedFiles.first == openedFiles.last)
+        let externalWork = external.contents?.workspace
+        external.close(); wait { externalWork.map { fm.fileExists(atPath: $0.path) } ?? false }
+        check("关闭压缩窗口只清理归档工作区，外部应用副本仍可读取", externalWork.map { !fm.fileExists(atPath: $0.path) } == true && externalURL.map { (try? Data(contentsOf: $0)) == text } == true)
+        check("外部打开副本保持只读", externalURL.map { ((try? fm.attributesOfItem(atPath: $0.path)[.posixPermissions]) as? NSNumber)?.intValue == 0o400 } == true)
+
+        func openMember(_ size: Int64?, link: Bool = false, directory: Bool = false) -> ArchiveMember {
+            ArchiveMember(id: 0, path: "sample.txt", size: size, packedSize: 1, isDirectory: directory, isLink: link, encrypted: false, method: "")
+        }
+        check("外部打开大小严格小于 64 MiB，空文件允许", openMember(0).canOpenExternally && openMember(ArchiveService.memberPreviewLimit - 1).canOpenExternally && !openMember(ArchiveService.memberPreviewLimit).canOpenExternally && !openMember(nil).canOpenExternally && !openMember(-1).canOpenExternally)
+        let rejected = ArchivePreviewModel(archive: archive, openService: openService) { _ in check("被拦截的文件不得启动外部应用", false) }
+        for item in [openMember(ArchiveService.memberPreviewLimit), openMember(nil), openMember(1, link: true)] {
+            rejected.open(item)
+            check("达到限制、大小未知或链接显示先解压提示（\(item.size ?? -1)、\(item.isLink)）", rejected.openError != nil && !rejected.isPreparing)
+            rejected.dismissOpenError()
+        }
+        rejected.close()
+
+        for name in ["sample.md", "picture.png", "video.mp4", "empty.txt"] {
+            try (name == "empty.txt" ? Data() : text).write(to: source.appendingPathComponent(name))
+        }
+        let typesArchive = root.appendingPathComponent("open-types.zip")
+        try run(engine, ["a", "-tzip", typesArchive.path, "sample.md", "picture.png", "video.mp4", "empty.txt"])
+        let typesReport = try ArchiveService.previewContents(typesArchive)
+        defer { typesReport.close() }
+        for item in typesReport.entries {
+            let url = try openService.prepare(item, contents: typesReport)
+            check("外部打开按原文件名保留类型：\(item.path)", url.lastPathComponent == item.path && (try? Data(contentsOf: url)) == (item.path == "empty.txt" ? Data() : text))
+        }
+        check("容量回收不移除本次运行已交给外部应用的文件", externalURL.map { fm.fileExists(atPath: $0.path) } == true)
+        let janitor = ArchiveOpenService(root: openRoot, budget: 0, lifetime: 0)
+        _ = try janitor.prepare(typesReport.entries[0], contents: typesReport)
+        check("后续会话按期限与容量回收旧外部打开缓存", externalURL.map { !fm.fileExists(atPath: $0.path) } == true)
+
+        let cancelledOpen = ScanCancellation(); cancelledOpen.cancel()
+        fails("外部打开取消后不解出文件", { _ = try openService.prepare(member, contents: report, cancellation: cancelledOpen) }, expected: { if case ArchiveError.cancelled = $0 { return true }; return false })
+        let failureModel = ArchivePreviewModel(archive: archive, openService: openService) { _ in throw ArchiveOpenError.failed }
+        failureModel.load(); wait { failureModel.isLoading }
+        failureModel.open(member); wait { failureModel.isPreparing }
+        check("外部应用启动失败明确显示错误并结束准备状态", failureModel.openError != nil && !failureModel.isOpening)
+        failureModel.close()
+
+        let cancelledModel = ArchivePreviewModel(archive: archive, openService: openService) { _ in check("关闭中的外部打开不得启动应用", false) }
+        cancelledModel.load(); wait { cancelledModel.isLoading }
+        cancelledModel.open(member); cancelledModel.close()
+        var cancelledFinished = false
+        Task { await cancelledModel.cleanupTask?.value; cancelledFinished = true }
+        wait { !cancelledFinished }
+        check("准备外部文件时关闭窗口不会启动应用或回写结果", cancelledFinished && cancelledModel.contents == nil && !cancelledModel.isOpening)
+
+        let protectedReport = try ArchiveService.previewContents(protected, password: "preview-test")
+        let protectedMember = protectedReport.entries[0]
+        fails("加密文件外部打开错误密码不产生副本", { _ = try openService.prepare(protectedMember, contents: protectedReport, password: "wrong") })
+        let protectedURL = try openService.prepare(protectedMember, contents: protectedReport, password: "preview-test")
+        fails("复用加密副本仍需验证密码", { _ = try openService.prepare(protectedMember, contents: protectedReport, password: "wrong") })
+        var unlockedOpenCount = 0
+        let encryptedModel = ArchivePreviewModel(archive: protected, openService: openService) { _ in unlockedOpenCount += 1 }
+        encryptedModel.load(password: "preview-test"); wait { encryptedModel.isLoading }
+        encryptedModel.open(protectedMember, password: "wrong"); wait { encryptedModel.isPreparing }
+        check("外部打开密码错误后仍可继续输入密码", encryptedModel.needsPassword && encryptedModel.error != nil && unlockedOpenCount == 0)
+        encryptedModel.open(protectedMember, password: "preview-test"); wait { encryptedModel.isPreparing }
+        check("外部打开重新输入正确密码后只启动一次应用", unlockedOpenCount == 1 && !encryptedModel.needsPassword && encryptedModel.openError == nil)
+        encryptedModel.close()
+        protectedReport.close()
+        check("加密文件正确密码外部打开且关闭后仍可读取", (try? Data(contentsOf: protectedURL)) == text)
+
+        let priorMD = FileAssociations.shared.map["md"]
+        let textEdit = URL(fileURLWithPath: "/System/Applications/TextEdit.app")
+        if fm.fileExists(atPath: textEdit.path) {
+            FileAssociations.shared.setApplication(textEdit, forExtension: "md")
+            check("包内 Markdown 优先采用 LeafFiles 设置的默认应用", ArchiveOpenService.application(for: URL(fileURLWithPath: "/tmp/sample.md")) == textEdit)
+            if let priorMD { FileAssociations.shared.setApplication(URL(fileURLWithPath: priorMD), forExtension: "md") }
+            else { FileAssociations.shared.clear(extension: "md") }
+        }
+        check("文本类型可回退到 macOS 默认应用", ArchiveOpenService.application(for: source.appendingPathComponent("sample.txt")) != nil)
+
+        // A reused cache must still reject a changed archive, rather than open stale contents.
+        _ = try openService.prepare(typesReport.entries[0], contents: typesReport)
+        try fm.setAttributes([.modificationDate: Date().addingTimeInterval(10)], ofItemAtPath: typesArchive.path)
+        fails("压缩包变化时禁止复用旧外部副本", { _ = try openService.prepare(typesReport.entries[0], contents: typesReport) }, expected: { if case ArchiveError.archiveChanged = $0 { return true }; return false })
         let fs = FSEngine(); fs.restrictScopeForTesting([root])
         let browser = BrowserModel(engine: fs, startDirectory: root)
         wait { browser.isBusy }

@@ -111,7 +111,8 @@ struct InspectorView: View {
                         Button(L("action.reveal", "在访达中显示")) { engine.revealInFinder(items) }
                     }
                 } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).fixedSize().help(L("inspector.more", "更多操作"))
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("inspector.more", "更多操作"))
+                    .accessibilityLabel(L("inspector.more", "更多操作"))
             }
             Button {
                 if let item = items.first { model.openContainingFolder(of: item.url, inNewTab: true) }

@@ -16,6 +16,10 @@ final class ArchivePreviewModel: ObservableObject {
     @Published private(set) var needsPassword = false
     @Published private(set) var error: String?
     @Published private(set) var preview: ArchiveMemberPreview?
+    @Published private(set) var isOpening = false
+    @Published private(set) var openError: String?
+    private let openService: ArchiveOpenService
+    private let openFile: @MainActor (URL) async throws -> Void
     private var password: String?
     private var loadToken: ScanCancellation?
     private var memberToken: ScanCancellation?
@@ -27,7 +31,12 @@ final class ArchivePreviewModel: ObservableObject {
     private var closed = false
     let archive: URL
 
-    init(archive: URL) { self.archive = archive }
+    init(archive: URL, openService: ArchiveOpenService = .shared,
+         openFile: @escaping @MainActor (URL) async throws -> Void = { try await ArchiveOpenService.openDefault($0) }) {
+        self.archive = archive
+        self.openService = openService
+        self.openFile = openFile
+    }
 
     func load(password: String? = nil) {
         guard !closed, !isLoading, contents == nil else { return }
@@ -59,31 +68,58 @@ final class ArchivePreviewModel: ObservableObject {
     }
 
     func show(_ member: ArchiveMember, password: String? = nil) {
-        guard !closed, let contents, !isPreparing, member.canPreview else { return }
+        prepare(member, password: password, externally: false)
+    }
+
+    func open(_ member: ArchiveMember, password: String? = nil) {
+        guard !closed, !isPreparing, !isOpening else { return }
+        guard !member.isLink else { openError = ArchiveOpenError.link.localizedDescription; return }
+        guard member.canOpenExternally else { openError = ArchiveOpenError.extractFirst.localizedDescription; return }
+        prepare(member, password: password, externally: true)
+    }
+
+    func dismissOpenError() { openError = nil }
+
+    private func prepare(_ member: ArchiveMember, password: String?, externally: Bool) {
+        guard !closed, let contents, !isPreparing, !isOpening,
+              externally ? member.canOpenExternally : member.canPreview else { return }
         clearPreview()
         let token = ScanCancellation()
         let id = UUID()
         let secret = password ?? self.password
         if let password { self.password = password }
         memberID = id; memberToken = token
-        isPreparing = true; needsPassword = false; error = nil
+        isPreparing = true; isOpening = externally; needsPassword = false; error = nil; openError = nil
+        let service = openService
         let previous = memberTask
         memberTask = Task { [weak self] in
             await previous?.value
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try ArchiveService.prepareMemberPreview(member, contents: contents, password: secret, cancellation: token)
-                }.value
-                guard let self, !self.closed, self.memberID == id else { result.close(); return }
-                self.preview = result
+                if externally {
+                    let url = try await Task.detached(priority: .userInitiated) {
+                        try service.prepare(member, contents: contents, password: secret, cancellation: token)
+                    }.value
+                    guard let self, !self.closed, self.memberID == id, !token.isCancelled else { return }
+                    try await self.openFile(url)
+                } else {
+                    let result = try await Task.detached(priority: .userInitiated) {
+                        try ArchiveService.prepareMemberPreview(member, contents: contents, password: secret, cancellation: token)
+                    }.value
+                    guard let self, !self.closed, self.memberID == id else { result.close(); return }
+                    self.preview = result
+                }
             } catch {
                 guard let self, !self.closed, self.memberID == id else { return }
                 if case ArchiveError.passwordRequired = error { self.needsPassword = true }
                 else if case ArchiveError.wrongPassword = error { self.needsPassword = true; self.error = error.localizedDescription }
-                else if !token.isCancelled { self.error = error.localizedDescription }
+                else if !token.isCancelled {
+                    if externally { self.openError = error.localizedDescription }
+                    else { self.error = error.localizedDescription }
+                }
             }
             guard let self, self.memberID == id else { return }
             self.isPreparing = false
+            self.isOpening = false
             self.memberTask = nil
         }
     }
@@ -92,6 +128,7 @@ final class ArchivePreviewModel: ObservableObject {
         memberToken?.cancel()
         memberID = UUID()
         isPreparing = false
+        isOpening = false
         needsPassword = false
         if contents != nil { error = nil }
         let old = preview
@@ -103,7 +140,7 @@ final class ArchivePreviewModel: ObservableObject {
     func close() {
         guard !closed else { return }
         closed = true
-        isLoading = false; isPreparing = false
+        isLoading = false; isPreparing = false; isOpening = false; openError = nil
         loadToken?.cancel(); memberToken?.cancel()
         password = nil
         preview = nil

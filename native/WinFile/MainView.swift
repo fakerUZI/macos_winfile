@@ -319,8 +319,9 @@ struct MainView: View {
                     Button(L("tab.restore", "恢复关闭的标签页")) { tabManager.restoreClosedTab() }
                         .disabled(tabManager.closedTabs.isEmpty)
                 } label: { Image(systemName: "chevron.down").frame(width: 20, height: 22) }
-                .menuStyle(.borderlessButton).fixedSize()
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                 .help(L("tab.all", "所有标签页（%d）", tabs.count))
+                .accessibilityLabel(L("tab.all", "所有标签页（%d）", tabs.count))
                 Spacer(minLength: 0)
             }.padding(.horizontal, 8).padding(.vertical, 5)
         }.frame(height: 36).background(InterfaceStyle.chrome).background(BrowserInteractionBoundary())
@@ -344,6 +345,7 @@ struct MainView: View {
                     Label(WLocalizedString("action.new", comment: "新建"), systemImage: "plus")
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .labelStyle(.titleAndIcon)
                 .fixedSize()
                 .help(WLocalizedString("action.new", comment: "新建"))
@@ -376,6 +378,7 @@ struct MainView: View {
                 Label(WLocalizedString("action.copyAs", comment: "复制为"), systemImage: "link")
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
             .help(WLocalizedString("action.copyAs", comment: "复制为"))
             .disabled(model.selectedIDs.isEmpty)
@@ -420,7 +423,8 @@ struct MainView: View {
                     }
                     Button(L("duplicates.title", "查找重复文件")) { dialog = .duplicates }
                 } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).fixedSize().help(L("organize.tools", "文件整理工具"))
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("organize.tools", "文件整理工具"))
+                .accessibilityLabel(L("organize.tools", "文件整理工具"))
             }
 
             if model.showsFileList {
@@ -430,6 +434,7 @@ struct MainView: View {
                     Menu {
                         presentationMenu
                     } label: { Image(systemName: "slider.horizontal.3") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
                     .help(L("layout.options", "显示与排序"))
                 }.frame(maxWidth: 260, alignment: .trailing)
             }

@@ -1090,7 +1090,7 @@
 "archive.preview.filter" = "筛选包内文件名或路径";
 "archive.preview.summary" = "%d 个项目 · 已知原始大小 %@";
 "archive.preview.closeFile" = "关闭文件预览";
-"archive.preview.hint" = "列表不解出普通压缩包；查看文件仅临时解出所选项（最大 64 MiB），不打开外部应用，关闭后删除。压缩 TAR 预览需临时展开中间归档（最大 512 MiB）。";
+"archive.preview.hint" = "双击使用默认应用打开小于 64 MiB 的文件，达到限制或大小未知时请先解压。仅临时解出所选文件，外部打开使用只读缓存，关闭此窗口后仍保留，后续按期限与容量清理；修改不会写回压缩包。空格使用内置预览，关闭后删除预览副本。压缩 TAR 需临时展开中间归档（最大 512 MiB）。";
 "archive.preview.file" = "查看所选文件";
 "archive.preview.path" = "包内路径";
 "archive.preview.packed" = "压缩后";
@@ -1118,7 +1118,7 @@
 "cleanup.scannedDisk" = "已扫描磁盘占用（估算）";
 
 /* Native interface refinements */
-"archive.preview.gesture" = "双击文件夹进入 · 空格预览文件";
+"archive.preview.gesture" = "双击打开 · 空格预览";
 "archive.preview.extractAll" = "解压全部";
 "archive.preview.up" = "上一级";
 "archive.preview.root" = "压缩包";
@@ -1132,7 +1132,7 @@
 "archive.preview.unavailable" = "此项目无法直接预览";
 "archive.preview.choose" = "选择文件后按空格预览";
 "archive.preview.extractHint" = "不预览链接。大于 64 MiB 的文件可先解压，再打开查看。";
-"archive.preview.explicitHint" = "双击文件也可预览；单击选择不会解压文件。";
+"archive.preview.explicitHint" = "双击使用默认应用打开，空格使用内置预览；单击选择不会解压文件。";
 "search.clearFilter" = "清除筛选";
 "search.removeFilter" = "移除条件：%@";
 "search.currentOnly" = "仅当前文件夹";
@@ -1145,3 +1145,15 @@
 "android.status.reading" = "正在读取";
 "android.status.connected" = "已连接";
 "android.status.attention" = "等待设备就绪";
+
+"archive.open.default" = "用默认应用打开";
+
+"archive.open.alert" = "无法直接打开";
+
+"archive.open.extractFirst" = "仅支持直接打开小于 64 MiB 的文件。此文件达到大小限制或大小未知，请先解压再打开。";
+
+"archive.open.link" = "不直接打开压缩包中的链接，请先解压并确认目标。";
+
+"archive.open.noApplication" = "未找到可打开此文件的默认应用，请设置打开方式，或先解压后打开。";
+
+"archive.open.failed" = "默认应用未能打开文件，请先解压后重试。";

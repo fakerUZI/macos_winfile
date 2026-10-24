@@ -11,6 +11,9 @@ struct ArchiveMember: Identifiable, Equatable {
     let method: String
 
     var canPreview: Bool { !isDirectory && !isLink && (size ?? 0) <= ArchiveService.memberPreviewLimit }
+    var canOpenExternally: Bool {
+        !isDirectory && !isLink && size.map { $0 >= 0 && $0 < ArchiveService.memberPreviewLimit } == true
+    }
 }
 
 /// Browsing rows keep archive member IDs intact; inferred directories never become extraction targets.
@@ -210,11 +213,9 @@ extension ArchiveService {
         } catch { removeStaging(work); throw error }
     }
 
-    /// Extract one literal regular member to an isolated read-only copy; never launch its default app.
-    static func prepareMemberPreview(_ member: ArchiveMember, contents: ArchiveContents, password: String? = nil,
-                                     cancellation: ScanCancellation = ScanCancellation()) throws -> ArchiveMemberPreview {
+    static func validateMember(_ member: ArchiveMember, contents: ArchiveContents, password: String?,
+                               cancellation: ScanCancellation) throws {
         try checkCancellation(cancellation)
-        guard member.canPreview else { throw ArchiveError.previewTooLarge }
         guard contents.entries.contains(member), contents.entries.filter({ $0.path == member.path }).count == 1 else {
             throw ArchiveError.invalidListing
         }
@@ -222,6 +223,14 @@ extension ArchiveService {
         guard let engine = sevenZipURL else { throw ArchiveError.engineMissing }
         let current = try listMembers(contents.container, engine: engine, password: password, work: contents.workspace, cancellation: cancellation)
         guard current == contents.entries else { throw ArchiveError.archiveChanged }
+    }
+
+    /// Extract one literal regular member to an isolated read-only copy; never launch its default app.
+    static func prepareMemberPreview(_ member: ArchiveMember, contents: ArchiveContents, password: String? = nil,
+                                     cancellation: ScanCancellation = ScanCancellation()) throws -> ArchiveMemberPreview {
+        guard member.canPreview else { throw ArchiveError.previewTooLarge }
+        try validateMember(member, contents: contents, password: password, cancellation: cancellation)
+        guard let engine = sevenZipURL else { throw ArchiveError.engineMissing }
         let payload = contents.workspace.appendingPathComponent("member-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: payload, withIntermediateDirectories: false)
         do {
