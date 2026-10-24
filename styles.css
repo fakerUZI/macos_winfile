@@ -519,6 +519,17 @@ h2 {
   font-size: 12px;
   line-height: 1.7;
 }
+.release-credit {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.release-credit a {
+  color: var(--green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .release-grid {
   display: grid;
   grid-template-columns: repeat(3,minmax(0,1fr));
