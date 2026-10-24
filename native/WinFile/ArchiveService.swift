@@ -14,7 +14,7 @@ enum ArchiveError: LocalizedError {
     case unsupported, engineMissing, passwordRequired, wrongPassword, cancelled, unsafePath, insufficientSpace
     case invalidListing, previewTooLarge, archiveChanged
     case missingVolume(String)
-    case noSelection
+    case noSelection, noCompressibleFiles
     case commandFailed(String, Int32)
     case alreadyExists(URL)
 
@@ -34,6 +34,8 @@ enum ArchiveError: LocalizedError {
 
         case .noSelection:
             return L("archive.error.noSelection", "请先选择要压缩的项目")
+        case .noCompressibleFiles:
+            return L("archive.error.noCompressibleFiles", "所选项目均为 macOS 杂项文件，没有可压缩的内容。")
         case .commandFailed(let message, let code):
             return L("archive.error.failed", "操作失败（%d）：%@", Int(code), message)
         case .alreadyExists(let url):
@@ -93,13 +95,15 @@ enum ArchiveService {
     @discardableResult
     static func compress(_ urls: [URL], to destination: URL, name: String) throws -> URL {
         guard !urls.isEmpty else { throw ArchiveError.noSelection }
+        let sources = urls.filter { !isMacMetadataName($0.lastPathComponent) }
+        guard !sources.isEmpty else { throw ArchiveError.noCompressibleFiles }
 
         let target = uniqueArchiveURL(in: destination, baseName: name)
         let fm = FileManager.default
 
         // 全部项目应位于同一父目录，才能用相对名一次打包
-        let parents = Set(urls.map { $0.deletingLastPathComponent().standardizedFileURL.path })
-        guard parents.count == 1, let workingDirectory = urls.first?.deletingLastPathComponent() else {
+        let parents = Set(sources.map { $0.deletingLastPathComponent().standardizedFileURL.path })
+        guard parents.count == 1, let workingDirectory = sources.first?.deletingLastPathComponent() else {
             // 来自不同目录：先汇集到临时目录再打包
             let staging = fm.temporaryDirectory
                 .appendingPathComponent("winfile-archive-\(UUID().uuidString)")
@@ -108,7 +112,7 @@ enum ArchiveService {
             var groups: [String: URL] = [:]
             var names: [String] = []
             var seen = Set<String>()
-            for url in urls where seen.insert(FileItem.canonicalID(for: url)).inserted {
+            for url in sources where seen.insert(FileItem.canonicalID(for: url)).inserted {
                 let parent = url.deletingLastPathComponent()
                 let key = parent.standardizedFileURL.resolvingSymlinksInPath().path
                 let group: URL
@@ -125,16 +129,23 @@ enum ArchiveService {
             return target
         }
 
-        try runZip(at: workingDirectory, names: urls.map(\.lastPathComponent), target: target)
+        try runZip(at: workingDirectory, names: sources.map(\.lastPathComponent), target: target)
         return target
+    }
+
+    private static func isMacMetadataName(_ name: String) -> Bool {
+        name == ".DS_Store" || name == "__MACOSX" || name.hasPrefix("._")
     }
 
     /// 以 base 为工作目录执行 zip
     private static func runZip(at base: URL, names: [String], target: URL) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        // -r 递归；-y 保留符号链接；-q 安静模式
-        process.arguments = ["-r", "-y", "-q", target.path] + names
+        // Exclude only macOS metadata at every depth; retain other hidden files and symlinks.
+        // End the exclude list before literal input names, including names starting with a dash.
+        let excluded = [".DS_Store", "*/.DS_Store", "._*", "*/._*",
+                        "__MACOSX", "__MACOSX/*", "*/__MACOSX", "*/__MACOSX/*"]
+        process.arguments = ["-r", "-y", "-q", target.path, "-x"] + excluded + ["--"] + names
         process.currentDirectoryURL = base
 
         let errPipe = Pipe()

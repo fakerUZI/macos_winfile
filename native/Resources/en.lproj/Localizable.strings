@@ -1139,3 +1139,5 @@
 "archive.open.noApplication" = "No default app was found for this file. Set an application association, or extract the file before opening.";
 
 "archive.open.failed" = "The default app could not open this file. Extract it and try again.";
+
+"archive.error.noCompressibleFiles" = "The selected items contain only macOS metadata. There is nothing to compress.";

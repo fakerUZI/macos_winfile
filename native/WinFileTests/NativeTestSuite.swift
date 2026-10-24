@@ -96,6 +96,7 @@ enum NativeTestSuite {
             testAndroidBrowsing()
             testCustomPagesNotReportedEmpty()
             try testArchive()
+            try testArchiveMacMetadata(sandbox)
             try testExpandedArchives(sandbox)
             testArchiveDirectoryNavigation()
             try testArchivePreview(sandbox)
@@ -3881,6 +3882,68 @@ enum NativeTestSuite {
     }
 
     // MARK: - 压缩与解压
+
+    @MainActor
+    private static func testArchiveMacMetadata(_ sandbox: URL) throws {
+        print("\n[压缩时过滤 macOS 杂项并保留其他隐藏文件]")
+        let fm = FileManager.default
+        let root = sandbox.appendingPathComponent("archive-metadata-filter")
+        let source = root.appendingPathComponent("Source")
+        let other = root.appendingPathComponent("Other")
+        let output = root.appendingPathComponent("Output")
+        for dir in [source, other, output] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let retained = ["ordinary.txt", ".env", ".git/config", ".gitignore", ".config/settings.json", ".localized",
+                        "Nested/.env", "Nested/.git/config", ".DS_Store.backup", "report._draft.txt", "__MACOSX_notes/readme.txt", "-notes.txt"]
+        let junk = [".DS_Store", "._ordinary.txt", "__MACOSX/._ordinary.txt", "__MACOSX/deep/metadata",
+                    "Nested/.DS_Store", "Nested/._child", "Nested/deep/.DS_Store", "Nested/__MACOSX/data"]
+        for name in retained + junk {
+            let url = source.appendingPathComponent(name)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(name.utf8).write(to: url)
+        }
+        try fm.createDirectory(at: source.appendingPathComponent(".empty"), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: source.appendingPathComponent("document-link").path, withDestinationPath: "ordinary.txt")
+        func members(_ archive: URL) throws -> [ArchiveMember] {
+            let contents = try ArchiveService.previewContents(archive)
+            defer { contents.close() }
+            return contents.entries
+        }
+        func isJunk(_ path: String) -> Bool {
+            path.split(separator: "/").contains { $0 == ".DS_Store" || $0 == "__MACOSX" || $0.hasPrefix("._") }
+        }
+        let archive = try ArchiveService.compress([source], to: output, name: "folder")
+        let listing = try members(archive)
+        let paths = Set(listing.map(\.path))
+        check("ZIP 原始目录不包含根层或嵌套 macOS 杂项", !listing.contains { isJunk($0.path) })
+        check("压缩保留其他隐藏文件及相似名称", retained.allSatisfy { paths.contains("Source/" + $0) })
+        check("压缩保留空隐藏目录", listing.contains { $0.path == "Source/.empty" && $0.isDirectory })
+        check("压缩保留符号链接本身", listing.contains { $0.path == "Source/document-link" && $0.isLink })
+        let restore = root.appendingPathComponent("Restore")
+        try fm.createDirectory(at: restore, withIntermediateDirectories: true)
+        _ = try ArchiveService.extract(archive, to: restore)
+        check("隐藏文件解压后字节完整且没有误删", retained.allSatisfy {
+            (try? Data(contentsOf: restore.appendingPathComponent("Source/" + $0))) == Data($0.utf8)
+        })
+        let direct = try ArchiveService.compress([source.appendingPathComponent(".env"), source.appendingPathComponent("-notes.txt"), source.appendingPathComponent(".DS_Store"), source.appendingPathComponent("._ordinary.txt"), source.appendingPathComponent("__MACOSX")], to: output, name: "direct")
+        check("直接多选只过滤杂项并保留点文件及横线开头名称", Set(try members(direct).map(\.path)) == [".env", "-notes.txt"])
+        for name in [".env", ".DS_Store", "._extra", "Nested/.git/config", "Nested/__MACOSX/data"] {
+            let url = other.appendingPathComponent(name)
+            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(("other:" + name).utf8).write(to: url)
+        }
+        let combined = try ArchiveService.compress([source.appendingPathComponent(".env"), source.appendingPathComponent("Nested"), source.appendingPathComponent(".DS_Store"), other.appendingPathComponent(".env"), other.appendingPathComponent("Nested"), other.appendingPathComponent("._extra")], to: output, name: "combined")
+        let combinedEntries = try members(combined)
+        check("跨目录合并压缩同样过滤所有层级的杂项", !combinedEntries.contains { isJunk($0.path) })
+        check("跨目录合并保留各来源的隐藏文件", Set(combinedEntries.filter { !$0.isDirectory }.map(\.path)) == ["Source/.env", "Source/Nested/.env", "Source/Nested/.git/config", "Other/.env", "Other/Nested/.git/config"])
+        do {
+            _ = try ArchiveService.compress([source.appendingPathComponent(".DS_Store"), source.appendingPathComponent("._ordinary.txt"), source.appendingPathComponent("__MACOSX")], to: output, name: "junk-only")
+            check("仅选杂项时明确告知没有可压缩内容", false)
+        } catch ArchiveError.noCompressibleFiles {
+            check("仅选杂项时明确告知没有可压缩内容", true)
+        }
+        check("仅选杂项时不生成空或残缺压缩包", !fm.fileExists(atPath: output.appendingPathComponent("junk-only.zip").path))
+        check("过滤不删除或修改源目录中的杂项", junk.allSatisfy { (try? Data(contentsOf: source.appendingPathComponent($0))) == Data($0.utf8) })
+    }
 
     @MainActor
     static func testArchive() throws {

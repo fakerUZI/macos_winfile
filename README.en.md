@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1264%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1275%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles (formerly WinFile) brings a native file management workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -42,14 +42,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v2.0.2
+## What’s new in v2.0.3
 
-- **Open archive members with the default app:** double-click text, Markdown, images, videos and other files. LeafFiles associations take priority, followed by the macOS default. Space keeps the embedded Quick Look preview.
-- **Extract large files first:** direct opening requires a file smaller than 64 MiB. Files at the limit, unknown sizes and links show an extraction prompt with a destination picker entry.
-- **Reuse temporary copies:** external apps receive read-only cached copies that remain available after the archive window closes. Repeated opens in the same preview session reuse the copy; edits are not written back to the archive.
-- **Consistent menu icons:** one chevron in the tab bar and one ellipsis for More, without duplicate arrows; improved accessibility labels.
+- **Create ZIPs without macOS clutter:** exclude `.DS_Store`, `._*` and `__MACOSX` at every level, including combined selections from different directories.
+- **Keep other hidden files:** `.git`, `.env`, `.config`, empty folders, symlinks and similar names stay in the archive. Source files remain untouched.
+- **Clear feedback for metadata-only selections:** no empty archive is created; filenames beginning with a dash are supported.
+- Default-app opening of archive members, Space for Quick Look, WeChat cleanup and MTP Android features remain available.
 
-See the [v2.0.2 release notes](docs/releases/v2.0.2.md), [release QA record](docs/qa/2026-10-24-release-2.0.2.md) and [v2.0.1 release notes](docs/releases/v2.0.1.md).
+See the [v2.0.3 release notes](docs/releases/v2.0.3.md), [release QA record](docs/qa/2026-10-24-release-2.0.3.md) and [v2.0.2 release notes](docs/releases/v2.0.2.md).
 
 ## Features
 
@@ -95,6 +95,8 @@ Double-click a local archive, select one and press Space, or choose **Preview ar
 A single click only selects a row. Double-click a file or click **Open with default app** to temporarily extract the selected member smaller than 64 MiB. LeafFiles file associations take priority, falling back to the macOS default. Text, Markdown, images, videos and other types retain their original names and extensions. Files at or above 64 MiB, unknown sizes and links show an extract-first prompt. External apps use read-only cached copies that survive closing the archive window; repeated opens in the same preview session reuse the copy. Later file opens reclaim previous sessions older than seven days or above a 512 MiB target. Files handed off during the current app run are protected, so the size target is not a hard cap. Edits are not written back to the archive.
 
 Click **View selected file** or press Space for embedded Quick Look, limited to 64 MiB. Changing selection keeps the current preview; replacing or closing it removes its separate temporary copy. The preview can be collapsed, and **Extract All** offers extraction destinations. Extracting selected members is not supported.
+
+Creating a ZIP excludes `.DS_Store`, `._*` and `__MACOSX` at every level, while preserving `.git`, `.env`, other hidden files, empty folders and symlinks. This also applies to combined selections from different directories; source files are not deleted.
 
 Listing ordinary archives does not extract their members. Compressed TAR preview temporarily expands an intermediate archive, limited to 512 MiB and removed on close. Larger archives can still be extracted from the main context menu. Listings are limited to 100,000 entries / 32 MiB and fail explicitly if they cannot be parsed safely.
 
@@ -284,6 +286,8 @@ Non-video files download a verified, read-only local copy with progress and canc
 Add `--skip-device-tests` to skip real-device file operations and browsing when an Android device is connected.
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
+
+Final v2.0.3 release: **1,275 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-24-release-2.0.3.md).
 
 Final v2.0.2 release: **1,264 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-24-release-2.0.2.md).
 

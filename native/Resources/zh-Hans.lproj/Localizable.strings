@@ -1157,3 +1157,5 @@
 "archive.open.noApplication" = "未找到可打开此文件的默认应用，请设置打开方式，或先解压后打开。";
 
 "archive.open.failed" = "默认应用未能打开文件，请先解压后重试。";
+
+"archive.error.noCompressibleFiles" = "所选项目均为 macOS 杂项文件，没有可压缩的内容。";
