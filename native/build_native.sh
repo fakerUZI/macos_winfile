@@ -1,5 +1,5 @@
 #!/bin/bash
-# 构建原生 SwiftUI 版 WinFile.app
+# 构建原生 SwiftUI 版 LeafFiles.app
 #
 #   ./native/build_native.sh                # 构建并安装到 /Applications（启动台可见）
 #   ./native/build_native.sh --in-place     # 只构建到项目目录，不安装
@@ -8,16 +8,16 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# Retain the on-disk app/executable names for existing curl and Sparkle installs.
-# The product's user-visible name is LeafFiles (Info.plist + localized resources).
+# Keep the executable identity; only the user-facing application directory changes.
 NAME="WinFile"
+APP_NAME="LeafFiles"
 SRC="$ROOT/native/WinFile"
 BUILD="$ROOT/native/native-build"
-OUTPUT_APP="$ROOT/$NAME.app"
+OUTPUT_APP="$ROOT/$APP_NAME.app"
 # Assemble/sign away from synced Documents folders, whose FinderInfo attributes
 # can reappear during signing and invalidate a release archive.
 APP_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/winfile-build.XXXXXX")"
-APP="$APP_STAGE/$NAME.app"
+APP="$APP_STAGE/$APP_NAME.app"
 INSTALL_DIR="/Applications"
 OPT=-O
 
@@ -167,14 +167,22 @@ if [ -n "$INSTALL_DIR" ]; then
   echo
   echo "== 安装到 $INSTALL_DIR =="
   # 先退出正在运行的实例，避免替换时文件被占用
-  pkill -f "$INSTALL_DIR/$NAME.app/Contents/MacOS/$NAME" 2>/dev/null || true
+  pkill -f "$INSTALL_DIR/$APP_NAME.app/Contents/MacOS/$NAME" 2>/dev/null || true
   sleep 1
-  rm -rf "$INSTALL_DIR/$NAME.app"
-  /usr/bin/ditto --noextattr --norsrc "$APP" "$INSTALL_DIR/$NAME.app"
+  if [ -e "$INSTALL_DIR/WinFile.app" ]; then
+    [ ! -L "$INSTALL_DIR/WinFile.app" ] && \
+    [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INSTALL_DIR/WinFile.app/Contents/Info.plist")" = 'local.winfile.mac' ] || { echo 'Unexpected legacy application; refusing migration.' >&2; exit 1; }
+    pkill -f "$INSTALL_DIR/WinFile.app/Contents/MacOS/$NAME" 2>/dev/null || true
+    mkdir -p "$INSTALL_DIR/.WinFile-backups"
+    [ ! -L "$INSTALL_DIR/.WinFile-backups" ] || exit 1
+    mv "$INSTALL_DIR/WinFile.app" "$INSTALL_DIR/.WinFile-backups/WinFile-$(date +%Y%m%d-%H%M%S)-$$.app"
+  fi
+  rm -rf "$INSTALL_DIR/$APP_NAME.app"
+  /usr/bin/ditto --noextattr --norsrc "$APP" "$INSTALL_DIR/$APP_NAME.app"
   # 让 LaunchServices 立即登记（启动台据此显示）
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
-    -f "$INSTALL_DIR/$NAME.app" 2>/dev/null || true
-  echo "   已安装：$INSTALL_DIR/$NAME.app"
+    -f "$INSTALL_DIR/$APP_NAME.app" 2>/dev/null || true
+  echo "   已安装：$INSTALL_DIR/$APP_NAME.app"
   echo "   可在启动台 / 聚焦搜索中找到「LeafFiles」"
 else
   echo

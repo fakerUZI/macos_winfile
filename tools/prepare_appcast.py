@@ -50,8 +50,12 @@ def prepare(app, sdk, destination, notes=None):
     destination.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="winfile-appcast-") as work:
         stage = pathlib.Path(work)
+        # Public download URLs remain stable, but the app inside the archive has the new name.
+        release_app = stage / "LeafFiles.app"
+        subprocess.run(["/usr/bin/ditto", "--noextattr", "--norsrc", str(app), str(release_app)], check=True)
+        subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(release_app)], check=True)
         archive = stage / f"WinFile-{version}.zip"
-        subprocess.run(["/usr/bin/ditto", "-c", "-k", "--keepParent", "--noextattr", "--norsrc", str(app), str(archive)], check=True)
+        subprocess.run(["/usr/bin/ditto", "-c", "-k", "--keepParent", "--noextattr", "--norsrc", str(release_app), str(archive)], check=True)
         if notes:
             shutil.copyfile(notes, archive.with_suffix(pathlib.Path(notes).suffix))
         feed = stage / "appcast.xml"

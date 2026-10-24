@@ -14,7 +14,7 @@ struct InspectorView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(header)
+            Label(header, systemImage: "info.circle")
                 .font(.headline)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -31,12 +31,13 @@ struct InspectorView: View {
                 }
                 .padding(14)
             }
+            if !items.isEmpty { pinnedActions }
         }
-        .background(.regularMaterial)
+        .background(InterfaceStyle.canvas)
     }
 
     private var header: String {
-        if items.count == 1 { return items[0].name }
+        if items.count == 1 { return L("inspector.details", "详细信息") }
         if items.count > 1 { return String(format: WLocalizedString("inspector.multiSelect", comment: "已选择项目"), items.count) }
         return WLocalizedString("inspector.currentFolder", comment: "当前文件夹")
     }
@@ -49,17 +50,19 @@ struct InspectorView: View {
                 .padding(.vertical, 8)
             Text(item.name)
                 .font(.headline)
-                .multilineTextAlignment(.center)
+                .multilineTextAlignment(.center).textSelection(.enabled)
             Text(item.typeDescription)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .padding(12)
         .frame(maxWidth: .infinity)
+        .background(InterfaceStyle.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(InterfaceStyle.border.opacity(0.6)))
 
-        Divider()
-        attributeRows(item)
+        attributeRows(item).padding(10).modifier(InsetSurface(radius: 10))
 
-        if item.isDirectory && !item.isBundle {
+        if item.isDirectory && !item.isBundle && item.url.isFileURL {
             Divider()
             VStack(alignment: .leading, spacing: 4) {
                 Text(WLocalizedString("inspector.folderSize", comment: "文件夹大小"))
@@ -80,14 +83,6 @@ struct InspectorView: View {
             }
             .task(id: "\(item.id)-\(sizeLimit)") { await computeSize(item) }
         }
-
-        Divider()
-        VStack(alignment: .leading, spacing: 6) {
-            Button(WLocalizedString("action.open", comment: "打开")) { model.activate(item) }
-            Button(WLocalizedString("action.reveal", comment: "在访达中显示")) { engine.revealInFinder([item]) }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
     }
 
     @ViewBuilder
@@ -100,10 +95,33 @@ struct InspectorView: View {
                 .foregroundStyle(.secondary)
         }
         .font(.callout)
-        Divider()
-        Button(WLocalizedString("action.reveal", comment: "在访达中显示")) { engine.revealInFinder(selected) }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+    }
+
+    private var pinnedActions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().opacity(0.6)
+            HStack {
+                Button { if let item = items.first { model.activate(item) } } label: {
+                    Label(L("action.open", "打开"), systemImage: "arrow.up.forward.square")
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent).tint(InterfaceStyle.accent).disabled(items.count != 1)
+                Menu {
+                    Button(L("action.copyPath", "复制完整路径")) { model.copyPathToClipboard() }
+                    if items.allSatisfy({ $0.url.isFileURL }) {
+                        Button(L("action.reveal", "在访达中显示")) { engine.revealInFinder(items) }
+                    }
+                } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).fixedSize().help(L("inspector.more", "更多操作"))
+            }
+            Button {
+                if let item = items.first { model.openContainingFolder(of: item.url, inNewTab: true) }
+            } label: {
+                Label(L("search.locate", "在新页签中打开所在文件夹"), systemImage: "folder.badge.plus")
+                    .font(.caption).fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 4)
+            }.buttonStyle(.borderless).disabled(items.count != 1)
+        }.padding(.horizontal, 14).padding(.bottom, 12)
+            .background(InterfaceStyle.surface)
     }
 
     @ViewBuilder
@@ -111,7 +129,7 @@ struct InspectorView: View {
         if let dir = model.currentDirectory {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Image(systemName: "folder.fill").foregroundStyle(.yellow)
+                    Image(systemName: "folder.fill").foregroundStyle(InterfaceStyle.accent)
                     Text(dir.lastPathComponent).font(.headline)
                 }
                 Text(FileSystemService.abbreviate(dir))

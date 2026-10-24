@@ -42,15 +42,14 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
-## What’s new in v2.0.0
+## What’s new in v2.0.1
 
-- **Meet LeafFiles:** WinFile is now LeafFiles, with the new name across both languages, app menus, About and system permission descriptions.
-- **A calmer interface:** consistent tabs, toolbar and address bar; collapsible sidebar groups retain their state, with Storage Cleanup anchored at the bottom.
-- **Clearer cleanup:** General Cleanup and WeChat attachments emphasize total and selected usage, with distinct scan, filter and Move to Trash actions.
-- **Easier search and previews:** advanced filters fold away with an active count; archive previews use side-by-side or stacked layouts to fit the window. File details feature larger thumbnails and grouped properties.
-- **Compatible updates:** keep the existing curl command, automatic updates, favorites and settings. App and download filenames retain `WinFile` for compatibility.
+- **Better archive browsing:** folder hierarchy, breadcrumbs, empty directories and archive-wide search with full paths. Double-click a file or press Space to prepare its preview.
+- **Clearer everyday pages:** native colors, improved toolbar icons and compact layouts, grouped file details, removable search filters and cleanup totals.
+- **LeafFiles in Finder:** install as `LeafFiles.app`; the curl installer backs up and migrates the old name while retaining settings and update compatibility.
+- **Thanks for the feedback:** [@KaKi87](https://github.com/KaKi87) reported bugs and followed up; the reporter confirmed the [OrbStack opening issue #3](https://github.com/fakerUZI/macos_winfile/issues/3) seems fixed.
 
-See the [v2.0.0 release notes](docs/releases/v2.0.0.md), [interface QA record](docs/qa/2026-10-23-interface-refresh.md) and [v1.5.0 release notes](docs/releases/v1.5.0.md).
+See the [v2.0.1 release notes](docs/releases/v2.0.1.md), [release QA record](docs/qa/2026-10-24-release-2.0.1.md) and [v2.0.0 release notes](docs/releases/v2.0.0.md).
 
 ## Features
 
@@ -91,9 +90,9 @@ See the [v2.0.0 release notes](docs/releases/v2.0.0.md), [interface QA record](d
 
 ![Built-in ZIPX archive and file preview with generated sample files](docs/screenshots/archive-preview.jpg)
 
-Double-click a local archive, select one and press Space, or choose **Preview archive** from its context menu. The built-in window lists archive paths, original/packed sizes, encryption and compression methods, with a name/path filter. A custom default app takes priority over double-click preview.
+Double-click a local archive, select one and press Space, or choose **Preview archive** from its context menu. Browse the built-in folder hierarchy using double-click, breadcrumbs and Up navigation, including empty folders. Search the entire archive by name/path with full paths in results. The table shows name, size and type; packed size, encryption and compression methods appear in Details. A custom default app takes priority over double-click preview.
 
-Select a regular file and click **View selected file** (or double-click its row) to extract only that item to a temporary read-only copy and view it using embedded Quick Look. No external app is launched or changes written back. The per-file limit is 64 MiB; directories and links are not previewed. Copies are removed when switched or closed, and the window includes extraction destinations.
+A single click only selects a row. Click **View selected file**, double-click a file or press Space to extract only that item to a temporary read-only copy and view it using embedded Quick Look. No external app is launched or changes written back. The per-file limit is 64 MiB; directories and links are not previewed. Changing selection keeps the current preview; replacing or closing the preview removes its temporary copy. The preview can be collapsed, and **Extract All** offers extraction destinations. Extracting selected members is not supported.
 
 Listing ordinary archives does not extract their members. Compressed TAR preview temporarily expands an intermediate archive, limited to 512 MiB and removed on close. Larger archives can still be extracted from the main context menu. Listings are limited to 100,000 entries / 32 MiB and fail explicitly if they cannot be parsed safely.
 
@@ -204,7 +203,7 @@ A full Xcode install is not required, and neither is a paid Apple Developer acco
 
 ### One-command install (recommended)
 
-The app is now named **LeafFiles**. The existing installation command remains valid. The legacy `WinFile.app` path, `WinFile.zip` assets, application identifier and repository URL are retained for compatible updates and settings. See [name and update compatibility](docs/branding.md).
+The app is now named **LeafFiles**. The existing installation command remains valid. The installed bundle is `LeafFiles.app`; the installer migrates the old `WinFile.app`. The `WinFile.zip` assets, application identifier and repository URL remain compatible. See [name and update compatibility](docs/branding.md).
 
 Quit LeafFiles and paste this into Terminal:
 
@@ -218,7 +217,7 @@ See the [v1.1.0 release notes](docs/releases/v1.1.0.md) for WeChat Cleanup, Andr
 
 ### Option 1: Download the release
 
-Download `WinFile.zip` from [Releases](../../releases/latest), unzip it, and drag `WinFile.app` into Applications.
+Download `WinFile.zip` from [Releases](../../releases/latest), unzip it, and drag `LeafFiles.app` into Applications.
 
 The current release is ad-hoc signed and has not been notarized with a Developer ID. If macOS blocks a browser download, first check the provided `WinFile.zip.sha256`, then follow the allow-opening steps in System Settings → Privacy & Security. Do not proceed with an unexpected source or a mismatched checksum.
 
@@ -236,7 +235,7 @@ cd macos_winfile
 
 The build script generates the icon, compiles for arm64 and x86_64, merges them into a universal binary, assembles the app bundle, copies localizations, signs it (ad-hoc when no identity is available), then installs and registers it.
 
-The first build downloads and verifies the pinned Sparkle SDK, then embeds the update framework. Release packaging uses the verified build in the system temporary directory; the project’s `WinFile.app` is a convenience copy.
+The first build downloads and verifies the pinned Sparkle SDK, then embeds the update framework. Release packaging uses the verified build in the system temporary directory; the project’s `LeafFiles.app` is a convenience copy.
 
 ### In-app updates (from v1.2.0)
 
@@ -284,6 +283,8 @@ Add `--skip-device-tests` to skip real-device file operations and browsing when 
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
 
+Final v2.0.1 release: **1,239 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-24-release-2.0.1.md).
+
 Final v2.0.0 release: **1,225 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and six isolated installation/rollback scenarios passed. See the [interface and release QA record](docs/qa/2026-10-23-interface-refresh.md).
 
 v1.5.0 feature validation: **1,220 logic checks** and **1,225 checks each in arm64 and Intel/Rosetta app bundles**, all passing; physical-device operations excluded. Real-window checks covered ZIPX member listing/filtering, embedded text/CSV previews, the built-in destination picker, extraction bytes and right-click source isolation. See the [archive-preview QA record](docs/qa/2026-10-23-archive-preview.md).
@@ -295,7 +296,7 @@ Regression coverage includes invalid mouse coordinates during app switching (NaN
 The app binary itself also exposes a test entry point:
 
 ```bash
-./WinFile.app/Contents/MacOS/WinFile --run-tests
+./LeafFiles.app/Contents/MacOS/WinFile --run-tests
 ```
 
 ## Project Layout
@@ -359,7 +360,7 @@ macos_winfile/
 └── README.md
 ```
 
-Build artifacts (`WinFile.app/`) and release packages (`dist/`) are not committed — the scripts regenerate them.
+Build artifacts (`LeafFiles.app/`) and release packages (`dist/`) are not committed — the scripts regenerate them.
 
 ## Tech Stack
 

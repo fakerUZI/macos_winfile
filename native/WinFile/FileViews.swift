@@ -697,6 +697,7 @@ struct FileTile: View {
     @ObservedObject var engine: FSEngine
     let item: FileItem
     let selected: Bool
+    @State private var hovering = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -717,13 +718,15 @@ struct FileTile: View {
         .frame(maxWidth: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(selected ? Color.accentColor.opacity(0.18) : .clear)
+                .fill(selected ? Color.accentColor.opacity(0.18) : hovering ? InterfaceStyle.border.opacity(0.12) : .clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
                 .stroke(selected ? Color.accentColor.opacity(0.5) : .clear)
         )
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

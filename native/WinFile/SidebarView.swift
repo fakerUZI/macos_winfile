@@ -28,7 +28,7 @@ struct SidebarView: View {
             navigationList
             sidebarFooter
         }
-        .background(InterfaceStyle.chrome)
+        .background(InterfaceStyle.sidebar)
         .sheet(isPresented: $showSidebarManager) { SidebarManagerSheet(engine: engine) }
         .sheet(isPresented: $showAddFolder) {
             FolderPickerSheet(initialDirectory: model.currentSidebarFolder) { model.addFoldersToSidebar($0) }
@@ -146,6 +146,7 @@ struct SidebarView: View {
             AndroidSidebarSection()
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     private func sectionHeader(_ title: String, expanded: Binding<Bool>) -> some View {

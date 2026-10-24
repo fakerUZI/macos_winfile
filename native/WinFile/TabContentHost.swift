@@ -81,6 +81,7 @@ struct TabContentHost: View {
             if model.isBusy {
                 HStack {
                     ProgressView().controlSize(.small)
+                    Text(model.statusMessage).font(.callout).lineLimit(2)
                     if model.isSearching || model.isLoadingCategory {
                         Button(L("button.cancel", "取消")) { model.cancelScan() }
                     }

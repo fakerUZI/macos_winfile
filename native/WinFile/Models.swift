@@ -433,6 +433,9 @@ struct FileItem: Identifiable, Hashable {
     /// Normalize the parent (/var vs /private/var), while preserving the entry itself.
     /// A symbolic link and its target are distinct rows and mutation targets.
     static func canonicalID(for url: URL) -> String {
+        if let (serial, path) = AndroidURL.split(url) {
+            return AndroidURL.make(serial: serial, path: path).absoluteString
+        }
         let entry = url.standardizedFileURL
         guard entry.path != "/" else { return "/" }
         return entry.deletingLastPathComponent().resolvingSymlinksInPath()

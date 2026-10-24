@@ -97,6 +97,7 @@ enum NativeTestSuite {
             testCustomPagesNotReportedEmpty()
             try testArchive()
             try testExpandedArchives(sandbox)
+            testArchiveDirectoryNavigation()
             try testArchivePreview(sandbox)
             try testSelectAllConsistency()
             testTileLayoutUniformity()
@@ -3148,6 +3149,10 @@ enum NativeTestSuite {
         check("MTP 保留存储 ID 和对象 ID", entry?.objectID == 42 && entry?.storageID == 65537)
         check("MTP 中文和特殊文件名可往返", entry.flatMap { AndroidURL.split($0.url) }?.path == object.path)
         check("MTP 序列号可保留大小写", entry.flatMap { AndroidURL.split($0.url) }?.serial == "TestSerial")
+        check("安卓定位选中标识保留设备及特殊文件名", entry.map { FileItem.canonicalID(for: $0.url) == $0.asFileItem().id } == true)
+        let firstDevice = AndroidURL.make(serial: "PhoneA", path: "/storage-65537/Download/photo.jpg")
+        let secondDevice = AndroidURL.make(serial: "PhoneB", path: "/storage-65537/Download/photo.jpg")
+        check("不同安卓设备的同名文件定位标识不同", FileItem.canonicalID(for: firstDevice) != FileItem.canonicalID(for: secondDevice))
         let invalid = MTPObject(
             name: "../escape", path: "/storage-65537/escape", objectID: 1, storageID: 65537, isDirectory: false,
             size: 1, modified: 0)
@@ -4169,6 +4174,33 @@ enum NativeTestSuite {
         model.extractSelection(to: try output("批量分卷"))
         wait()
         check("同时选中多个分卷只解压一次", model.lastTransferOutcome?.completed.count == 1 && model.lastTransferOutcome?.failures.isEmpty == true)
+    }
+
+    @MainActor
+    static func testArchiveDirectoryNavigation() {
+        print("\n[压缩包目录导航]")
+        func member(_ id: Int, _ path: String, directory: Bool = false, link: Bool = false) -> ArchiveMember {
+            ArchiveMember(id: id, path: path, size: 12, packedSize: 8, isDirectory: directory, isLink: link, encrypted: false, method: "Deflate")
+        }
+        let members = [member(0, "资料/图片/猫.png"), member(1, "资料/说明.txt"),
+                       member(2, "readme.txt"), member(3, "资料/", directory: true),
+                       member(4, "空目录/", directory: true), member(5, "目录链接", directory: true, link: true),
+                       member(6, "资料/说明.txt")]
+        let index = ArchiveDirectoryIndex(entries: members)
+        let root = index.rows()
+        check("压缩包根目录不平铺子目录文件", Set(root.map(\.path)) == ["资料", "空目录", "readme.txt", "目录链接"])
+        check("显式和隐式目录合并为一个入口", root.filter { $0.path == "资料" }.count == 1 && root.first { $0.path == "资料" }?.member?.id == 3)
+        let children = index.rows(in: "资料")
+        check("浏览当前层级且文件夹排在最前", children.count == 3 && children.first?.path == "资料/图片")
+        check("隐式目录不能作为解压成员", children.first?.member == nil && children.first?.directory == true)
+        check("中文多层目录保留原始成员身份", index.rows(in: "资料/图片").first?.member == members[0])
+        check("空目录可进入且无项目", index.rows(in: "空目录").isEmpty)
+        check("搜索跨目录并显示完整路径", index.rows(in: "空目录", matching: "猫").map(\.path) == ["资料/图片/猫.png"])
+        check("搜索支持目录路径", index.rows(matching: "图片").count == 2)
+        check("空白搜索恢复当前目录", index.rows(in: "资料", matching: "  ").map(\.id) == children.map(\.id))
+        check("重复成员仍有不同浏览标识", Set(children.map(\.id)).count == children.count)
+        check("目录链接不作为可进入文件夹", root.first { $0.path == "目录链接" }?.directory == false)
+        check("未知目录与空索引安全返回空列表", index.rows(in: "missing").isEmpty && ArchiveDirectoryIndex().rows().isEmpty)
     }
 
     @MainActor

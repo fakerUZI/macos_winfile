@@ -18,14 +18,17 @@ struct CleanupHubView: View {
             } else {
                 StorageCleanupView(store: model.storageCleanup, model: model, nestedInHub: true)
             }
-        }.background(Color(nsColor: .textBackgroundColor))
+        }.background(InterfaceStyle.canvas)
     }
 
     private var heading: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(L("cleanup.title", "空间清理")).font(.title2.weight(.semibold))
-            Text(L("cleanup.subtitle", "先查看占用，再选择需要清理的文件"))
-                .font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            PageIcon(symbol: "externaldrive")
+            VStack(alignment: .leading, spacing: 5) {
+                Text(L("cleanup.title", "空间清理")).font(.title2.weight(.semibold))
+                Text(L("cleanup.subtitle", "先查看占用，再选择需要清理的文件"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }.fixedSize(horizontal: true, vertical: false)
     }
 
@@ -75,7 +78,7 @@ struct SoftwareCleanupView: View {
                 StorageCleanupView(store: store, model: model).id(store.selectedSoftwareID)
             }
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(InterfaceStyle.canvas)
     }
 }
 
@@ -137,7 +140,7 @@ struct WeChatCleanupView: View {
             .padding(compact ? 10 : 16)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(InterfaceStyle.canvas)
         .onAppear { if !store.hasScanned { store.scan() } }
         .sheet(isPresented: $showFolderPicker) {
             FolderPickerSheet(title: L("wechat.choose", "选择微信文件夹…"), onSelect: store.addFolder)
@@ -236,7 +239,7 @@ struct WeChatCleanupView: View {
             else {
                 Button { store.scan() } label: {
                     Label(L("appData.rescan", "重新扫描"), systemImage: "arrow.clockwise")
-                }.buttonStyle(.borderedProminent).disabled(operationInProgress)
+                }.buttonStyle(.borderedProminent).tint(InterfaceStyle.accent).disabled(operationInProgress)
             }
         }.fixedSize(horizontal: true, vertical: false)
     }
@@ -288,16 +291,7 @@ struct WeChatCleanupView: View {
                     ScrollView(.horizontal) {
                         HStack(spacing: 6) {
                             ForEach(store.activeFilters) { filter in
-                                Button { store.clearFilter(filter) } label: {
-                                    HStack(spacing: 4) {
-                                        Text(store.filterTitle(filter)).lineLimit(1)
-                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                    }.padding(.horizontal, 8).padding(.vertical, 4)
-                                        .background(Color.accentColor.opacity(0.1), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .help(L("wechat.filters.remove", "移除此筛选：%@", store.filterTitle(filter)))
-                                .accessibilityLabel(L("wechat.filters.remove", "移除此筛选：%@", store.filterTitle(filter)))
+                                ActiveFilterChip(title: store.filterTitle(filter)) { store.clearFilter(filter) }
                             }
                         }
                     }.scrollIndicators(.hidden).frame(height: 28)
@@ -446,11 +440,15 @@ struct WeChatCleanupView: View {
         .disabled(operationInProgress)
         .overlay {
             if store.matchingCount == 0 {
-                Text(store.isScanning ? L("wechat.scanning", "正在扫描微信附件…")
-                     : store.result.files.isEmpty ? L("wechat.empty", "未发现可清理的附件。可手动选择微信数据目录；无法读取的位置请检查访问权限。")
-                     : L("wechat.noMatch", "没有符合筛选条件的文件。"))
-                    .foregroundStyle(.secondary).multilineTextAlignment(.center).padding(30)
-                    .allowsHitTesting(false)
+                VStack(spacing: 0) {
+                    InterfaceStateView(symbol: "bubble.left.and.bubble.right",
+                        title: store.isScanning ? L("wechat.scanning", "正在扫描微信附件…") : L("wechat.noMatch", "没有符合筛选条件的文件。"),
+                        detail: store.result.files.isEmpty && !store.isScanning ? L("wechat.empty", "未发现可清理的附件。可手动选择微信数据目录；无法读取的位置请检查访问权限。") : "",
+                        loading: store.isScanning)
+                    if !store.activeFilters.isEmpty && !operationInProgress {
+                        Button(L("wechat.filters.reset", "重置筛选")) { store.resetFilters() }.padding(.bottom, 20)
+                    }
+                }
             }
         }
     }
@@ -458,6 +456,8 @@ struct WeChatCleanupView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().opacity(0.6)
+            Text(L("cleanup.selectionSummary", "已选 %d 项 · %@", store.selectedFiles.count, FileItem.formatSize(store.selectedSize)))
+                .font(.caption.weight(.medium)).monospacedDigit()
             Text(L("wechat.summary", "共 %d 项（%@），筛选后 %d 项", store.result.files.count,
                    FileItem.formatSize(store.totalSize), store.matchingCount))
                 .font(.caption).foregroundStyle(.secondary)

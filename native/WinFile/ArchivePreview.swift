@@ -13,6 +13,65 @@ struct ArchiveMember: Identifiable, Equatable {
     var canPreview: Bool { !isDirectory && !isLink && (size ?? 0) <= ArchiveService.memberPreviewLimit }
 }
 
+/// Browsing rows keep archive member IDs intact; inferred directories never become extraction targets.
+struct ArchiveBrowserEntry: Identifiable {
+    let id: String
+    let path: String
+    let member: ArchiveMember?
+    let directory: Bool
+    var name: String { path.split(separator: "/").last.map(String.init) ?? path }
+}
+
+/// Built once per listing, so selecting a row does not repeatedly walk the archive.
+struct ArchiveDirectoryIndex {
+    private var children: [String: [ArchiveBrowserEntry]] = [:]
+    private var searchable: [ArchiveBrowserEntry] = []
+
+    init(entries: [ArchiveMember] = []) {
+        var folders: [String: ArchiveBrowserEntry] = [:]
+        for member in entries {
+            let parts = member.path.split(separator: "/").map(String.init)
+            guard !parts.isEmpty else { continue }
+            let path = parts.joined(separator: "/")
+            let isFolder = member.isDirectory && !member.isLink
+            if isFolder {
+                folders[path] = ArchiveBrowserEntry(id: "folder:" + path, path: path, member: member, directory: true)
+            } else {
+                let row = ArchiveBrowserEntry(id: "member:\(member.id)", path: path, member: member, directory: false)
+                children[parts.dropLast().joined(separator: "/"), default: []].append(row)
+                searchable.append(row)
+            }
+            if parts.count > 1 {
+                var parent = ""
+                for part in parts.dropLast() {
+                    parent = parent.isEmpty ? part : parent + "/" + part
+                    if folders[parent] == nil {
+                        folders[parent] = ArchiveBrowserEntry(id: "folder:" + parent, path: parent, member: nil, directory: true)
+                    }
+                }
+            }
+        }
+        for folder in folders.values {
+            let parent = folder.path.split(separator: "/").dropLast().joined(separator: "/")
+            children[parent, default: []].append(folder)
+            searchable.append(folder)
+        }
+        for key in Array(children.keys) { children[key]?.sort(by: Self.ordered) }
+        searchable.sort(by: Self.ordered)
+    }
+
+    func rows(in directory: String = "", matching query: String = "") -> [ArchiveBrowserEntry] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? children[directory] ?? [] : searchable.filter { $0.path.localizedStandardContains(query) }
+    }
+
+    private static func ordered(_ lhs: ArchiveBrowserEntry, _ rhs: ArchiveBrowserEntry) -> Bool {
+        if lhs.directory != rhs.directory { return lhs.directory }
+        let order = lhs.path.localizedStandardCompare(rhs.path)
+        return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+    }
+}
+
 struct ArchiveSourceStamp: Equatable {
     let inode: UInt64
     let device: UInt64

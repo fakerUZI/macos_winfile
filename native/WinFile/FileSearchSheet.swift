@@ -69,12 +69,14 @@ struct AdvancedSearchSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label(L("search.windowTitle", "搜索文件"), systemImage: "magnifyingglass").font(.title2.bold())
+                PageIcon(symbol: "magnifyingglass")
+                Text(L("search.windowTitle", "搜索文件")).font(.title2.weight(.semibold))
                 Spacer()
                 Text("LeafFiles").foregroundStyle(.secondary)
             }
             scopeControls
             queryControls
+            if advancedFilterCount > 0 { activeFilters }
             DisclosureGroup(isExpanded: $showsAdvanced) {
                 filterControls.padding(.top, 10)
             } label: {
@@ -96,6 +98,7 @@ struct AdvancedSearchSheet: View {
                 } else {
                     Button(L("search.reset", "重置条件")) { reset() }
                     Button(L("search.start", "搜索")) { runSearch() }
+                        .buttonStyle(.borderedProminent).tint(InterfaceStyle.accent)
                         .keyboardShortcut(.defaultAction).disabled(!valid)
                         .accessibilityIdentifier("search.start")
                 }
@@ -106,7 +109,7 @@ struct AdvancedSearchSheet: View {
             footer
         }
         .padding(20).frame(minWidth: 740, idealWidth: 920, maxWidth: 1100, minHeight: 560, idealHeight: 700, maxHeight: 900)
-        .background(InterfaceStyle.content).textFieldStyle(.roundedBorder)
+        .background(InterfaceStyle.canvas).textFieldStyle(.roundedBorder)
         .onAppear { queryFocused = true; if search.request == nil && valid { runSearch() } }
         .onDisappear { search.close() }
         .sheet(isPresented: $choosingScope) {
@@ -149,6 +152,34 @@ struct AdvancedSearchSheet: View {
          kind != "folders" && !extensions.trimmingCharacters(in: .whitespaces).isEmpty,
          kind != "folders" && !minimum.isEmpty, kind != "folders" && !maximum.isEmpty,
          useStart, useEnd, !recursive, showHidden].filter { $0 }.count
+    }
+
+    private var activeFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if kind != "all" {
+                    ActiveFilterChip(title: kind == "folders" ? L("search.folders", "文件夹") : L("search.files", "文件")) { kind = "all" }
+                }
+                if kind != "folders" {
+                    if let selectedCategory = FileCategory(rawValue: category) {
+                        ActiveFilterChip(title: selectedCategory.localizedName) { category = "all" }
+                    }
+                    if !extensions.trimmingCharacters(in: .whitespaces).isEmpty {
+                        ActiveFilterChip(title: extensions) { extensions = "" }
+                    }
+                    if !minimum.isEmpty { ActiveFilterChip(title: "≥ " + minimum + " MB") { minimum = "" } }
+                    if !maximum.isEmpty { ActiveFilterChip(title: "≤ " + maximum + " MB") { maximum = "" } }
+                }
+                if useStart {
+                    ActiveFilterChip(title: L("search.after", "修改日期从") + " " + start.formatted(date: .abbreviated, time: .omitted)) { useStart = false }
+                }
+                if useEnd {
+                    ActiveFilterChip(title: L("search.before", "修改日期至") + " " + end.formatted(date: .abbreviated, time: .omitted)) { useEnd = false }
+                }
+                if !recursive { ActiveFilterChip(title: L("search.currentOnly", "仅当前文件夹")) { recursive = true } }
+                if showHidden { ActiveFilterChip(title: L("settings.showHidden", "显示隐藏文件")) { showHidden = false } }
+            }.padding(.vertical, 2)
+        }.frame(height: 30)
     }
 
     private var filterControls: some View {
@@ -201,12 +232,13 @@ struct AdvancedSearchSheet: View {
     private var resultTable: some View {
         Table(results, selection: $selectedID) {
             TableColumn(L("column.name", "名称")) { item in
-                Label(item.name, systemImage: item.category.symbol).lineLimit(1).help(item.url.path)
+                Label(item.name, systemImage: item.category.symbol).fontWeight(.medium).lineLimit(1).help(item.url.path)
             }.width(min: 200, ideal: 260)
             TableColumn(L("column.size", "大小")) { Text($0.sizeText).foregroundStyle(.secondary) }.width(85)
             TableColumn(L("column.type", "类型")) { Text($0.category.localizedName) }.width(90)
             TableColumn(L("search.location", "所在文件夹")) {
                 Text(FileSystemService.abbreviate($0.url.deletingLastPathComponent()))
+                    .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle).help($0.url.deletingLastPathComponent().path)
             }
         }
@@ -231,10 +263,10 @@ struct AdvancedSearchSheet: View {
         }.frame(width: 0, height: 0))
         .overlay {
             if search.report.items.isEmpty {
-                Text(search.isSearching ? L("search.searching", "正在搜索…") : search.request == nil
-                     ? L("search.ready", "选择范围，输入名称或筛选条件后开始搜索。")
-                     : L("search.noMatches", "没有找到匹配项，可调整条件或搜索范围。"))
-                    .foregroundStyle(.secondary).allowsHitTesting(false)
+                InterfaceStateView(symbol: "magnifyingglass",
+                    title: search.isSearching ? L("search.searching", "正在搜索…") : L("search.noResultsTitle", "暂无搜索结果"),
+                    detail: search.request == nil ? L("search.ready", "选择范围，输入名称或筛选条件后开始搜索。") : L("search.noMatches", "没有找到匹配项，可调整条件或搜索范围。"),
+                    loading: search.isSearching).allowsHitTesting(false)
             }
         }
     }

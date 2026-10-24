@@ -27,7 +27,7 @@ struct AndroidDeviceView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(InterfaceStyle.canvas)
         .task {
             await registry.refresh()
         }
@@ -36,11 +36,14 @@ struct AndroidDeviceView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                Image(systemName: "candybarphone")
-                    .foregroundStyle(Color.accentColor)
+                PageIcon(symbol: "candybarphone")
                 Text(device?.displayName ?? L("view.androidDevice", "安卓设备"))
                     .font(.title3).fontWeight(.semibold)
-                if isLoading { ProgressView().controlSize(.small) }
+                Spacer(minLength: 8)
+                Label(isLoading ? L("android.status.reading", "正在读取") : device?.isReady == true ? L("android.status.connected", "已连接") : L("android.status.attention", "等待设备就绪"),
+                      systemImage: isLoading ? "arrow.triangle.2.circlepath" : device?.isReady == true ? "checkmark.circle" : "exclamationmark.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 10).padding(.vertical, 6).modifier(InsetSurface())
             }
             if let device {
                 Text(L("android.mtp.detail", "序列号 %@ · MTP", device.serial))
@@ -53,14 +56,12 @@ struct AndroidDeviceView: View {
     @ViewBuilder
     private var content: some View {
         if isLoading {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text(L("android.storage.loading", "正在读取设备存储…")).foregroundStyle(.secondary)
-            }
+            InterfaceStateView(symbol: "candybarphone", title: L("android.storage.loading", "正在读取设备存储…"), loading: true)
+                .frame(minHeight: 180)
         } else if let errorText {
             VStack(alignment: .leading, spacing: 8) {
-                Label(errorText, systemImage: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
+                InterfaceStateView(symbol: "candybarphone", title: L("android.status.attention", "等待设备就绪"), detail: errorText)
+                    .frame(minHeight: 140)
                 Button(L("android.retry", "重试")) {
                     Task { await registry.refresh() }
                 }
@@ -97,7 +98,7 @@ struct StorageCard: View {
             HStack(spacing: 12) {
                 Image(systemName: storage.isRemovable ? "sdcard.fill" : "internaldrive.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(Color(nsColor: .systemBlue))
+                    .foregroundStyle(InterfaceStyle.accent)
                     .frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(storage.label).fontWeight(.medium)
@@ -119,13 +120,9 @@ struct StorageCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(
-                        Color(
-                            nsColor: hovering
-                                ? .selectedContentBackgroundColor.withAlphaComponent(0.12)
-                                : .controlBackgroundColor))
+                    .fill(hovering ? InterfaceStyle.softAccent : InterfaceStyle.surface)
             )
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(InterfaceStyle.accent.opacity(0.18)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -163,8 +160,7 @@ struct AndroidTransferBanner: View {
             }
         }
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
+        .modifier(InsetSurface())
         .padding(12)
     }
 }

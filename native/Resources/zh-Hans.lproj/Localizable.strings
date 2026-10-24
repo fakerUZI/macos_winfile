@@ -1116,3 +1116,32 @@
 "search.moreFilters" = "更多条件";
 "search.moreFilterCount" = "更多条件（%d）";
 "cleanup.scannedDisk" = "已扫描磁盘占用（估算）";
+
+/* Native interface refinements */
+"archive.preview.gesture" = "双击文件夹进入 · 空格预览文件";
+"archive.preview.extractAll" = "解压全部";
+"archive.preview.up" = "上一级";
+"archive.preview.root" = "压缩包";
+"archive.preview.allMatches" = "搜索整个压缩包";
+"archive.preview.visibleCount" = "%d 项";
+"archive.preview.toggle" = "显示或隐藏文件预览";
+"archive.preview.link" = "链接";
+"archive.preview.noMatches" = "试试其他名称，或清除搜索返回目录。";
+"archive.preview.preparing" = "正在准备预览…";
+"archive.preview.failed" = "暂时无法预览";
+"archive.preview.unavailable" = "此项目无法直接预览";
+"archive.preview.choose" = "选择文件后按空格预览";
+"archive.preview.extractHint" = "不预览链接。大于 64 MiB 的文件可先解压，再打开查看。";
+"archive.preview.explicitHint" = "双击文件也可预览；单击选择不会解压文件。";
+"search.clearFilter" = "清除筛选";
+"search.removeFilter" = "移除条件：%@";
+"search.currentOnly" = "仅当前文件夹";
+"search.noResultsTitle" = "暂无搜索结果";
+"inspector.details" = "详细信息";
+"inspector.more" = "更多操作";
+"cleanup.scanning" = "正在扫描空间占用…";
+"cleanup.noCandidates" = "暂无清理候选";
+"cleanup.selectionSummary" = "已选 %d 项 · %@";
+"android.status.reading" = "正在读取";
+"android.status.connected" = "已连接";
+"android.status.attention" = "等待设备就绪";

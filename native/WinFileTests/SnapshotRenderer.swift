@@ -326,9 +326,14 @@ enum SnapshotRenderer {
             try fm.createDirectory(at: root, withIntermediateDirectories: true)
             let note = root.appendingPathComponent("项目说明.txt")
             let table = root.appendingPathComponent("文件清单.csv")
-            try "WinFile 界面验收\n\n压缩包支持目录浏览和文件预览。\n此处仅包含测试数据。\n".write(to: note, atomically: true, encoding: .utf8)
+            try "LeafFiles 界面验收\n\n压缩包支持目录浏览和文件预览。\n此处仅包含测试数据。\n".write(to: note, atomically: true, encoding: .utf8)
             try "名称,类型\n项目说明,文档\n文件清单,表格\n".write(to: table, atomically: true, encoding: .utf8)
-            let archive = try ArchiveService.compress([note, table], to: root, name: "项目资料")
+            let folders = root.appendingPathComponent("设计资料")
+            let nested = folders.appendingPathComponent("图标与说明")
+            try fm.createDirectory(at: nested, withIntermediateDirectories: true)
+            try "LeafFiles\n\n这是嵌套目录中的安全测试文档。\n".write(to: nested.appendingPathComponent("阅读说明.txt"), atomically: true, encoding: .utf8)
+            try fm.createDirectory(at: folders.appendingPathComponent("空文件夹"), withIntermediateDirectories: true)
+            let archive = try ArchiveService.compress([note, table, folders], to: root, name: "项目资料")
             let engine = FSEngine(); engine.restrictScopeForTesting([root])
             let browser = BrowserModel(engine: engine, startDirectory: root)
             if CommandLine.arguments.contains("--advanced-preview") { browser.searchCriteria = FileSearchCriteria(extensions: ["txt"]) }
@@ -340,7 +345,7 @@ enum SnapshotRenderer {
             let height: CGFloat = CommandLine.arguments.contains("--short-preview") ? 560 : 720
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                                   styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-            window.title = "WinFile — Interface QA"
+            window.title = "LeafFiles — Interface QA"
             let hosting = NSHostingView(rootView: content.environment(\.locale, Localization.shared.locale))
             hosting.sizingOptions = []; hosting.frame = NSRect(x: 0, y: 0, width: width, height: height)
             window.contentView = hosting; window.setContentSize(NSSize(width: width, height: height))

@@ -17,6 +17,7 @@ struct StorageCleanupView: View {
                 header
                 summary(compact: compact)
                 filters
+                if hasFilters { activeFilters }
                 files.frame(minHeight: 100).modifier(InsetSurface())
                 footer
             }
@@ -24,7 +25,7 @@ struct StorageCleanupView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .controlSize(compact ? .small : .regular)
         }
-        .background(InterfaceStyle.content)
+        .background(InterfaceStyle.canvas)
         .sheet(isPresented: $showsFolderPicker) {
             FolderPickerSheet(initialDirectory: (store.isBaidu ? store.downloadFolder : store.largeFolder) ?? FileSystemService.realHomeDirectory(),
                               title: store.folderPickerTitle) { url in
@@ -97,7 +98,7 @@ struct StorageCleanupView: View {
             } else {
                 Button { store.scan() } label: {
                     Label(store.hasScanned ? L("appData.rescan", "重新扫描") : L("cleanup.scan", "开始扫描"), systemImage: "arrow.clockwise")
-                }.buttonStyle(.borderedProminent)
+                }.buttonStyle(.borderedProminent).tint(InterfaceStyle.accent)
             }
         }.fixedSize(horizontal: true, vertical: false)
     }
@@ -174,6 +175,21 @@ struct StorageCleanupView: View {
         }.disabled(store.busy)
     }
 
+    private var hasFilters: Bool { !store.search.isEmpty || store.category != "all" || store.owner != "all" }
+    private var activeFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if !store.search.isEmpty { ActiveFilterChip(title: store.search) { store.search = "" } }
+                if store.category != "all" {
+                    ActiveFilterChip(title: store.availableKinds.first { $0.rawValue == store.category }?.title ?? store.category) { store.category = "all" }
+                }
+                if store.owner != "all" { ActiveFilterChip(title: store.ownerTitle(store.owner)) { store.owner = "all" } }
+                Button(L("wechat.filters.reset", "重置筛选")) { resetFilters() }.buttonStyle(.link).font(.caption)
+            }.padding(.vertical, 2)
+        }.frame(height: 30).disabled(store.busy)
+    }
+    private func resetFilters() { store.search = ""; store.category = "all"; store.owner = "all" }
+
     private var filterSearch: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -242,15 +258,23 @@ struct StorageCleanupView: View {
         }.frame(width: 0, height: 0))
         .disabled(store.busy)
         .overlay {
-            if !store.busy && store.display.filtered.isEmpty {
-                Text(store.hasScanned ? L("cleanup.empty", "当前范围内没有符合条件的文件，可调整筛选或扫描设置。") : L("cleanup.ready", "点击“开始扫描”查看空间占用和清理候选。"))
-                    .font(.callout).foregroundStyle(.secondary).padding().allowsHitTesting(false)
+            if store.display.filtered.isEmpty {
+                VStack(spacing: 0) {
+                    InterfaceStateView(symbol: "externaldrive",
+                        title: store.busy ? L("cleanup.scanning", "正在扫描空间占用…") : hasFilters ? L("wechat.noMatch", "没有符合筛选条件的文件。") : L("cleanup.noCandidates", "暂无清理候选"),
+                        detail: store.busy ? "" : store.hasScanned ? L("cleanup.empty", "当前范围内没有符合条件的文件，可调整筛选或扫描设置。") : L("cleanup.ready", "点击“开始扫描”查看空间占用和清理候选。"), loading: store.busy)
+                    if hasFilters && !store.busy {
+                        Button(L("wechat.filters.reset", "重置筛选")) { resetFilters() }.padding(.bottom, 20)
+                    }
+                }
             }
         }
     }
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().opacity(0.6)
+            Text(L("cleanup.selectionSummary", "已选 %d 项 · %@", store.selection.count, FileItem.formatSize(store.selectedBytes)))
+                .font(.caption.weight(.medium)).monospacedDigit()
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) { selectionActions; Spacer(minLength: 8); pageActions; trashAction }
                 VStack(alignment: .leading, spacing: 8) {

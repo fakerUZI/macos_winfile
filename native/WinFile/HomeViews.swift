@@ -69,7 +69,7 @@ struct HomeView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(InterfaceStyle.canvas)
         .background(pageBackground)
     }
 
@@ -107,7 +107,7 @@ struct HomeView: View {
                 ForEach(Array(model.pinnedFolders.enumerated()), id: \.element.path) { index, url in
                     HStack(spacing: 10) {
                         Image(systemName: "folder.fill")
-                            .foregroundStyle(Color(nsColor: .systemYellow))
+                            .foregroundStyle(.secondary)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(url.lastPathComponent).fontWeight(.medium)
                             Text(FileSystemService.abbreviate(url))
@@ -137,7 +137,7 @@ struct HomeView: View {
                     }
                 }
             }
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(InterfaceStyle.surface))
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
         }
     }
@@ -177,7 +177,7 @@ struct HomeView: View {
                         }
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+                .background(RoundedRectangle(cornerRadius: 8).fill(InterfaceStyle.surface))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
 
                 if model.recentEntries.count > 12 {
@@ -194,10 +194,10 @@ struct HomeView: View {
     }
 
     private func sectionHeader(_ title: String, subtitle: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.title3).fontWeight(.semibold)
-            if let subtitle {
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.title3).fontWeight(.semibold)
+                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary) }
             }
         }
     }
@@ -223,7 +223,7 @@ struct FolderTile: View {
                 HStack(alignment: .center, spacing: 10) {
                     Image(systemName: place.symbol)
                         .font(.system(size: 24))
-                        .foregroundStyle(Color(nsColor: .systemBlue))
+                        .foregroundStyle(.secondary)
                         .frame(width: 30, height: 30, alignment: .center)
                     Text(place.name)
                         .fontWeight(.medium)
@@ -245,7 +245,7 @@ struct FolderTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: hovering ? .selectedContentBackgroundColor.withAlphaComponent(0.12) : .controlBackgroundColor))
+                    .fill(hovering ? InterfaceStyle.softAccent : InterfaceStyle.surface)
             )
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
             .contentShape(Rectangle())
@@ -404,7 +404,7 @@ struct ThisPCView: View {
                             ForEach(Array(engine.authorizedRoots.enumerated()), id: \.element.path) { index, url in
                                 HStack(spacing: 10) {
                                     Image(systemName: "lock.open.fill")
-                                        .foregroundStyle(Color(nsColor: .systemGreen))
+                                        .foregroundStyle(.secondary)
                                     Text(url.lastPathComponent).fontWeight(.medium)
                                     Text(FileSystemService.abbreviate(url))
                                         .font(.caption)
@@ -422,7 +422,7 @@ struct ThisPCView: View {
                                 }
                             }
                         }
-                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .controlBackgroundColor)))
+                        .background(RoundedRectangle(cornerRadius: 8).fill(InterfaceStyle.surface))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
                     }
                 }
@@ -430,7 +430,7 @@ struct ThisPCView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(InterfaceStyle.canvas)
         .background(pageBackground)
     }
 }
@@ -500,7 +500,7 @@ struct DriveCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: hovering ? .selectedContentBackgroundColor.withAlphaComponent(0.12) : .controlBackgroundColor))
+                    .fill(hovering ? InterfaceStyle.softAccent : InterfaceStyle.surface)
             )
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(nsColor: .separatorColor)))
             .contentShape(Rectangle())

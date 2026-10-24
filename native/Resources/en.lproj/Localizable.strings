@@ -1069,7 +1069,7 @@
 "android.connection.ready" = "Device connected. Choose a storage location.";
 
 "archive.preview.title" = "Preview archive";
-"archive.preview.filter" = "Filter names or paths inside the archive";
+"archive.preview.filter" = "Search archive names or paths";
 "archive.preview.summary" = "%d items · Known original size %@";
 "archive.preview.closeFile" = "Close file preview";
 "archive.preview.hint" = "Listing does not unpack ordinary archives. Viewing a file extracts only that item temporarily (up to 64 MiB), without opening an external app, and deletes it on close. Compressed TAR preview temporarily expands the intermediate archive (up to 512 MiB).";
@@ -1098,3 +1098,32 @@
 "search.moreFilters" = "More filters";
 "search.moreFilterCount" = "More filters (%d)";
 "cleanup.scannedDisk" = "Scanned disk usage (estimated)";
+
+/* Native interface refinements */
+"archive.preview.gesture" = "Double-click folders · Space to preview";
+"archive.preview.extractAll" = "Extract all";
+"archive.preview.up" = "Up one level";
+"archive.preview.root" = "Archive";
+"archive.preview.allMatches" = "Searching entire archive";
+"archive.preview.visibleCount" = "%d items";
+"archive.preview.toggle" = "Show or hide file preview";
+"archive.preview.link" = "Link";
+"archive.preview.noMatches" = "Try another name, or clear the search to return to the folder.";
+"archive.preview.preparing" = "Preparing preview…";
+"archive.preview.failed" = "Preview unavailable";
+"archive.preview.unavailable" = "This item cannot be previewed directly";
+"archive.preview.choose" = "Select a file and press Space";
+"archive.preview.extractHint" = "Links are not previewed. Extract files larger than 64 MiB before opening them.";
+"archive.preview.explicitHint" = "Double-click to preview. Selecting a file does not extract it.";
+"search.clearFilter" = "Clear filter";
+"search.removeFilter" = "Remove filter: %@";
+"search.currentOnly" = "Current folder only";
+"search.noResultsTitle" = "No results yet";
+"inspector.details" = "Details";
+"inspector.more" = "More actions";
+"cleanup.scanning" = "Scanning storage…";
+"cleanup.noCandidates" = "No cleanup candidates";
+"cleanup.selectionSummary" = "%d selected · %@";
+"android.status.reading" = "Reading";
+"android.status.connected" = "Connected";
+"android.status.attention" = "Waiting for device";

@@ -9,6 +9,7 @@ struct ArchivePreviewRequest: Identifiable {
 
 @MainActor
 final class ArchivePreviewModel: ObservableObject {
+    @Published private(set) var directoryIndex = ArchiveDirectoryIndex()
     @Published private(set) var contents: ArchiveContents?
     @Published private(set) var isLoading = false
     @Published private(set) var isPreparing = false
@@ -39,10 +40,12 @@ final class ArchivePreviewModel: ObservableObject {
         loadTask = Task { [weak self] in
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    try ArchiveService.previewContents(url, password: password, cancellation: token)
+                    let contents = try ArchiveService.previewContents(url, password: password, cancellation: token)
+                    return (contents, ArchiveDirectoryIndex(entries: contents.entries))
                 }.value
-                guard let self, !self.closed, self.loadID == id else { result.close(); return }
-                self.contents = result
+                guard let self, !self.closed, self.loadID == id else { result.0.close(); return }
+                self.directoryIndex = result.1
+                self.contents = result.0
             } catch {
                 guard let self, !self.closed, self.loadID == id else { return }
                 if case ArchiveError.passwordRequired = error { self.needsPassword = true }

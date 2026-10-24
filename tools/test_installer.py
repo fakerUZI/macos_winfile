@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='winfile-installer-test-') as temporary:
         return result
     target = base / 'fresh install'
     run(target)
-    installed = target / 'WinFile.app'
+    installed = target / 'LeafFiles.app'
     subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(installed)], check=True)
     print('PASS: verified first install, including a directory with spaces')
     (installed / 'previous-version.txt').write_text('keep this backup')
@@ -60,7 +60,7 @@ with tempfile.TemporaryDirectory(prefix='winfile-installer-test-') as temporary:
     print('PASS: a running app prevents replacement')
     # Corrupt only the newly moved app to exercise failure after replacement.
     move_wrapper = commands / 'mv'
-    move_wrapper.write_text('#!/bin/bash\nset -e\n/bin/mv "$@"\ncase "$1" in */.WinFile-install.*/WinFile.app) printf invalid > "$2/Contents/MacOS/WinFile";; esac\n')
+    move_wrapper.write_text('#!/bin/bash\nset -e\n/bin/mv "$@"\ncase "$1" in */.WinFile-install.*/LeafFiles.app) printf invalid > "$2/Contents/MacOS/WinFile";; esac\n')
     move_wrapper.chmod(0o755)
     before = (installed / 'Contents/MacOS/WinFile').read_bytes()
     run(target, success=False)
@@ -72,11 +72,50 @@ with tempfile.TemporaryDirectory(prefix='winfile-installer-test-') as temporary:
     original = (fixtures / 'WinFile.zip').read_bytes()
     bad = base / 'bad';bad.mkdir()
     subprocess.run(['/usr/bin/ditto', '-x', '-k', str(ARCHIVE), str(bad)], check=True)
-    (bad / 'WinFile.app/Contents/MacOS/WinFile').write_bytes(b'invalid executable')
-    subprocess.run(['/usr/bin/ditto', '-c', '-k', '--keepParent', str(bad / 'WinFile.app'), str(fixtures / 'WinFile.zip')], check=True)
+    bundle = next(bad.glob('*.app'))
+    (bundle / 'Contents/MacOS/WinFile').write_bytes(b'invalid executable')
+    subprocess.run(['/usr/bin/ditto', '-c', '-k', '--keepParent', str(bundle), str(fixtures / 'WinFile.zip')], check=True)
     checksum.write_text(hashlib.sha256((fixtures / 'WinFile.zip').read_bytes()).hexdigest() + '  WinFile.zip\n')
     run(target, success=False)
     assert sentinel.read_text() == 'old app'
     print('PASS: invalid code signature leaves the installed app untouched')
     (fixtures / 'WinFile.zip').write_bytes(original)
-print('6 installer integration scenarios passed.')
+    checksum.write_text(hashlib.sha256(original).hexdigest() + '  WinFile.zip\n')
+    # Migrate a legacy installation, including rollback after the new move.
+    migration = base / 'legacy migration'; migration.mkdir()
+    legacy = migration / 'WinFile.app'
+    shutil.copytree(installed, legacy)
+    legacy_sentinel = legacy / 'legacy-marker.txt'; legacy_sentinel.write_text('legacy data')
+    move_wrapper.write_text('#!/bin/bash\nset -e\n/bin/mv "$@"\ncase "$1" in */.WinFile-install.*/LeafFiles.app) printf invalid > "$2/Contents/MacOS/WinFile";; esac\n')
+    move_wrapper.chmod(0o755)
+    run(migration, success=False)
+    assert legacy_sentinel.read_text() == 'legacy data' and not (migration / 'LeafFiles.app').exists()
+    move_wrapper.unlink()
+    print('PASS: failed legacy migration restores the original WinFile.app path')
+    run(migration)
+    assert (migration / 'LeafFiles.app').is_dir() and not legacy.exists()
+    assert any((p / 'legacy-marker.txt').is_file() for p in (migration / '.WinFile-backups').glob('*.app'))
+    print('PASS: successful legacy migration installs only LeafFiles.app and backs up WinFile.app')
+    # Both historical names may already exist. Back up both, leaving one live app.
+    shutil.copytree(migration / 'LeafFiles.app', legacy)
+    run(migration)
+    assert not legacy.exists() and (migration / 'LeafFiles.app').is_dir()
+    print('PASS: coexisting old and new names are consolidated')
+    # A legacy symlink must not be followed or removed.
+    legacy.symlink_to(migration / 'LeafFiles.app', target_is_directory=True)
+    run(migration, success=False)
+    assert legacy.is_symlink()
+    legacy.unlink()
+    print('PASS: legacy symbolic link is rejected without replacement')
+    # Failure during replacement restores both preexisting directories.
+    shutil.copytree(migration / 'LeafFiles.app', legacy)
+    (legacy / 'both-old.txt').write_text('old')
+    (migration / 'LeafFiles.app/both-new.txt').write_text('new')
+    move_wrapper.write_text('#!/bin/bash\nset -e\n/bin/mv "$@"\ncase "$1" in */.WinFile-install.*/LeafFiles.app) printf invalid > "$2/Contents/MacOS/WinFile";; esac\n')
+    move_wrapper.chmod(0o755)
+    run(migration, success=False)
+    assert (legacy / 'both-old.txt').read_text() == 'old'
+    assert (migration / 'LeafFiles.app/both-new.txt').read_text() == 'new'
+    move_wrapper.unlink()
+    print('PASS: failed consolidation restores both original application directories')
+print('11 installer integration scenarios passed.')

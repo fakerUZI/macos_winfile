@@ -329,7 +329,7 @@ struct MainView: View {
     // MARK: - 命令栏
 
     private var commandBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             if model.supportsDirectoryCreation {
                 Menu {
                     Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
@@ -341,9 +341,10 @@ struct MainView: View {
                         }
                     }
                 } label: {
-                    Label(WLocalizedString("action.new", comment: "新建"), systemImage: "plus.square")
+                    Label(WLocalizedString("action.new", comment: "新建"), systemImage: "plus")
                 }
                 .menuStyle(.borderlessButton)
+                .labelStyle(.titleAndIcon)
                 .fixedSize()
                 .help(WLocalizedString("action.new", comment: "新建"))
                 .disabled(!model.canMutateFiles)
@@ -418,11 +419,12 @@ struct MainView: View {
                         Button(L("search.advanced", "组合搜索")) { dialog = .advancedSearch }
                     }
                     Button(L("duplicates.title", "查找重复文件")) { dialog = .duplicates }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: "ellipsis") }
                 .menuStyle(.borderlessButton).fixedSize().help(L("organize.tools", "文件整理工具"))
             }
 
             if model.showsFileList {
+                Divider().frame(height: 18)
                 ViewThatFits(in: .horizontal) {
                     presentationControls
                     Menu {
@@ -432,9 +434,9 @@ struct MainView: View {
                 }.frame(maxWidth: 260, alignment: .trailing)
             }
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(LeafToolbarButtonStyle())
         .labelStyle(.iconOnly)          // 图标按钮，避免中文标签被挤压裁剪
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .controlSize(.regular)
         .background(InterfaceStyle.chrome)
@@ -702,7 +704,7 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(model.statusMessage)
+            Text(model.statusMessage).lineLimit(1).truncationMode(.middle).help(model.statusMessage)
             // 计数统一用 selectedItems（与检查器一致）。
             // 若这里用 selectedIDs，会与检查器出现不同数字：
             // Table 自身维护一套高亮状态，程序化改选时两者可能短暂不一致。
@@ -718,11 +720,12 @@ struct StatusBarView: View {
                 Text(String(format: WLocalizedString("status.volume", comment: "磁盘空间"), info.free, info.total))
             }
         }
+        .lineLimit(1)
         .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 12)
         .padding(.vertical, 4)
-        .background(.bar)
+        .background(InterfaceStyle.chrome)
     }
 }
 
@@ -852,7 +855,7 @@ struct TabChipView: View {
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isActive ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+                    .fill(isActive ? InterfaceStyle.surface : Color.clear)
             )
             // A single accent marks the active tab; keyboard focus remains native.
             .overlay(alignment: .bottom) {

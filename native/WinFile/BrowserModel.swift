@@ -956,12 +956,7 @@ final class BrowserModel: ObservableObject {
     /// Opens a foreground tab while preserving this page's filters and selection.
     /// Standalone models can also be used to perform the destination navigation.
     func openContainingFolder(of url: URL, inNewTab: Bool = true) {
-        if AndroidURL.isAndroid(url) {
-            errorMessage = L("android.hint.revealUnsupported",
-                             "设备上的文件无法在访达中显示。如需在本机处理，请先复制到本地文件夹。")
-            return
-        }
-        guard url.isFileURL else {
+        guard url.isFileURL || AndroidURL.isAndroid(url) else {
             errorMessage = L("error.notAccessible", "无法访问该位置")
             return
         }
