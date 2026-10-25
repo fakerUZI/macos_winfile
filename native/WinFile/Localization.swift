@@ -21,7 +21,10 @@ final class Localization: ObservableObject {
     static let shared = Localization()
     static let preferenceKey = "AppLanguage"
     @Published var language: AppLanguage {
-        didSet { UserDefaults.standard.set(language.rawValue, forKey: Self.preferenceKey) }
+        didSet {
+            UserDefaults.standard.set(language.rawValue, forKey: Self.preferenceKey)
+            NotificationCenter.default.post(name: .leafLanguageChanged, object: nil)
+        }
     }
     @Published private var localeRevision = 0
     private var localeObserver: NSObjectProtocol?
@@ -30,7 +33,10 @@ final class Localization: ObservableObject {
         language = AppLanguage(rawValue: UserDefaults.standard.string(forKey: Self.preferenceKey) ?? "") ?? .system
         localeObserver = NotificationCenter.default.addObserver(
             forName: NSLocale.currentLocaleDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.localeRevision += 1 }
+        ) { [weak self] _ in
+            self?.localeRevision += 1
+            NotificationCenter.default.post(name: .leafLanguageChanged, object: nil)
+        }
     }
 
     static var languageCode: String {

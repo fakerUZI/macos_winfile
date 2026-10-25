@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1281%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1320%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles (formerly WinFile) brings a native file management workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -46,14 +46,14 @@ LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **witho
 
 As of October 25, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.0.4
+## What’s new in v2.1.0
 
-- **Smoother large-file grids:** reuse visible rows and tiles, and cache system icons and default-app lookups to reduce layout work while scrolling.
-- **Clear hover feedback:** scrolling under a stationary pointer updates the hovered tile without leaving stale backgrounds behind.
-- **Unobstructed file content:** scan notices, task banners and the bottom status bar reserve their own space. Files remain visible, and space is returned when a notice disappears.
-- Existing file management, archive preview, storage cleanup and MTP Android features remain available. Future work continues to focus on the interface, performance and bug fixes.
+- **Finder integration:** open supported archives with LeafFiles, or use Show in LeafFiles to reveal files and browse folders in new tabs. Multiple selections and cold launches are supported.
+- **Localized menus:** Settings, About, Hide, Quit and the top-level menu bar follow the selected language, with the duplicate Settings entry removed.
+- **New extraction folders:** create and enter folders directly in the built-in destination picker. Nested folders, name conflicts, invalid names and permission errors are handled explicitly.
+- Thanks to [@KaKi87](https://github.com/KaKi87) for suggestions, reports and follow-up in [#1](https://github.com/fakerUZI/macos_winfile/issues/1), [#2](https://github.com/fakerUZI/macos_winfile/issues/2) and [#3](https://github.com/fakerUZI/macos_winfile/issues/3). The website adds dedicated community acknowledgments; the release notes distinguish earlier fixes from this release.
 
-See the [v2.0.4 release notes](docs/releases/v2.0.4.md), [release QA record](docs/qa/2026-10-25-release-2.0.4.md) and [v2.0.3 release notes](docs/releases/v2.0.3.md).
+See the [v2.1.0 release notes](docs/releases/v2.1.0.md), [release QA record](docs/qa/2026-10-25-release-2.1.0.md) and [v2.0.4 release notes](docs/releases/v2.0.4.md).
 
 ## Features
 
@@ -107,6 +107,8 @@ Listing ordinary archives does not extract their members. Compressed TAR preview
 Added extraction formats: ZIPX, Zstandard (`.zst/.zstd`), LZMA, Unix compress (`.Z`), CAB, ARJ, LZH/LHA, CPIO, AR, DEB, RPM and XAR. Package formats expose archive contents only; no installation is performed. Codec and encryption variants depend on the bundled engine.
 
 Use the context menu to extract here, into a separate folder, or to a location of your choice. Aggregated pages default to each archive's parent folder. Multiple selected archives are processed individually; completed results and per-archive failures remain visible. Cancel removes the current archive's staging data and retains previously completed archives.
+
+The built-in destination picker supports **New Folder…** in the lower-left corner. Creating a folder opens it automatically; choose **Select Folder** to use it as the extraction destination. You can create nested folders in sequence. Name conflicts, invalid names and permission errors are reported without overwriting existing items.
 
 Encrypted ZIP / 7Z / RAR archives prompt for a password with retry and cancel. Passwords are passed through stdin, never saved to settings or command-line arguments. Put all volumes in one folder: `.partNN.rar`, `.rar/.r00`, `.7z.001`, `.zip.001`, `.zipx.001`, and `.zip/.z01` (or `.zipx/.z01`) entries are recognized. Later parts resolve to the first part, and multiple selected parts of the same set are processed once. Missing volumes and damaged archives report errors.
 
@@ -410,6 +412,15 @@ macOS protects certain directories with TCC (e.g. Safari's container). Even with
 **Does changing the default app affect macOS?**
 
 No. Defaults set inside LeafFiles are stored only in LeafFiles's own preferences and never call system-level association APIs. Finder and other apps keep their existing behavior.
+
+**How do I open files from Finder in LeafFiles?**
+
+- Right-click a supported archive and choose **Open With → LeafFiles** to preview it in a new tab. LeafFiles registers as an alternate viewer; you choose your default archive application.
+- Select files or folders and choose **Services → Show in LeafFiles**. Each file is revealed and selected in a new tab; folders open in new tabs. Existing tabs are preserved, and multiple selections are supported.
+
+Service registration can take a moment. If the entry is missing, check **System Settings → Keyboard → Keyboard Shortcuts → Services** and enable it. Finder's service label follows the system language; LeafFiles's own menu bar follows its language preference immediately.
+
+Some system-provided window commands, input methods, dictation and third-party services may retain the system language.
 
 ## Known Limitations
 

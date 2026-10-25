@@ -110,6 +110,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 标签页保护定时器（补齐后来创建的窗口）
     private var tabbingGuardTimer: Timer?
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        ExternalFileRequests.shared.receive(urls, intent: .open)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
@@ -130,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //
         // 必须在窗口创建前设置，因此放在 willFinishLaunching（而非 didFinish）。
         NSWindow.allowsAutomaticWindowTabbing = false
+        NSApp.servicesProvider = ExternalFileRequests.shared
         // 应用级设置可能被 SwiftUI 在创建窗口时覆盖，因此再加一道窗口级保险
         installTabbingGuard()
     }
@@ -218,11 +223,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 沙盒行为探测：验证沙盒是否真正生效、授权书签是否可用
 
         NSApp.setActivationPolicy(.regular)
+        NativeMenuLocalization.shared.start()
+        NSUpdateDynamicServices()
         AppUpdater.shared.start()
+        if let index = CommandLine.arguments.firstIndex(of: "--selftest-native-menus"),
+           index + 1 < CommandLine.arguments.count {
+            let target = CommandLine.arguments[index + 1]
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                let ok = await TabSmokeTest.runNativeMenus(to: target)
+                exit(ok ? 0 : 1)
+            }
+        }
     }
 }
 
 // MARK: - 菜单栏命令（中文，符合 macOS 习惯）
+
+private struct LocalizedApplicationCommands: Commands {
+    @ObservedObject private var localization = Localization.shared
+
+    var body: some Commands {
+        // The generated application commands keep macOS's launch language even
+        // after SwiftUI's locale changes. Own their labels and retain the native
+        // actions; SettingsLink keeps the system-managed Settings scene on 14+.
+        CommandGroup(replacing: .appInfo) {
+            Button(L("nativeMenu.about", "关于 LeafFiles")) {
+                NSApp.orderFrontStandardAboutPanel(nil)
+            }
+        }
+        CommandGroup(replacing: .appSettings) {
+            if #available(macOS 14.0, *) {
+                SettingsLink { Text(L("nativeMenu.settings", "设置…")) }
+                    .keyboardShortcut(",", modifiers: .command)
+            } else {
+                Button(L("nativeMenu.settings", "设置…")) {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+        }
+        CommandGroup(replacing: .appVisibility) {
+            Button(L("nativeMenu.hide", "隐藏 LeafFiles")) { NSApp.hide(nil) }
+                .keyboardShortcut("h", modifiers: .command)
+            Button(L("nativeMenu.hideOthers", "隐藏其他")) { NSApp.hideOtherApplications(nil) }
+                .keyboardShortcut("h", modifiers: [.command, .option])
+            Button(L("nativeMenu.showAll", "全部显示")) { NSApp.unhideAllApplications(nil) }
+        }
+        CommandGroup(replacing: .appTermination) {
+            Button(L("nativeMenu.quit", "退出 LeafFiles")) { NSApp.terminate(nil) }
+                .keyboardShortcut("q", modifiers: .command)
+        }
+    }
+}
 
 struct WinFileCommands: Commands {
     @ObservedObject private var localization = Localization.shared
@@ -240,6 +293,7 @@ struct WinFileCommands: Commands {
     }
 
     var body: some Commands {
+        LocalizedApplicationCommands()
         CommandGroup(after: .appInfo) {
             Button(L("update.check", "检查更新…")) { updater.checkForUpdates() }
                 .disabled(!updater.canCheckForUpdates)

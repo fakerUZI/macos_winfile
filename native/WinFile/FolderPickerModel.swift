@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import Darwin
 import Foundation
 
 /// A separate browser for the picker; navigating here never changes an open tab.
@@ -12,10 +13,14 @@ final class FolderPickerModel: ObservableObject {
     @Published var search = ""
     @Published var showHidden = false { didSet { if oldValue != showHidden { navigate(to: directory) } } }
     @Published private(set) var isLoading = false
+    @Published private(set) var isCreating = false
     @Published private(set) var canChooseDirectory = false
     @Published var errorMessage: String?
     private var generation = UUID()
     private var loadTask: Task<Void, Never>?
+
+    var isWorking: Bool { isLoading || isCreating }
+    var canCreateFolder: Bool { canChooseDirectory && !isWorking && FileManager.default.isWritableFile(atPath: directory.path) }
 
     init(initialDirectory: URL?) {
         let home = FileSystemService.realHomeDirectory()
@@ -64,6 +69,48 @@ final class FolderPickerModel: ObservableObject {
             return
         }
         navigate(to: target)
+    }
+
+    /// mkdir is atomic: an existing directory, file or link is a conflict, never
+    /// a successful creation. Names cannot escape the currently browsed folder.
+    nonisolated static func createFolder(in directory: URL, named rawName: String) throws -> URL {
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard directory.isFileURL, !name.isEmpty, name != ".", name != "..",
+              !name.contains("/"), !name.contains(":"), !name.contains("\0"),
+              (name as NSString).pathExtension.lowercased() != "app" else { throw FSError.invalidName }
+        let target = directory.appendingPathComponent(name, isDirectory: true)
+        let failure = target.withUnsafeFileSystemRepresentation { path -> Int32? in
+            guard let path else { return EINVAL }
+            return Darwin.mkdir(path, 0o755) == 0 ? nil : errno
+        }
+        if let code = failure {
+            if code == EEXIST { throw FSError.nameExists(name) }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [NSFilePathErrorKey: target.path])
+        }
+        return target
+    }
+
+    /// Only navigate after a successful creation for the same browsing request.
+    /// Dismissing or navigating while a worker finishes cannot reopen the picker.
+    func createFolder(named name: String) async -> Bool {
+        guard canChooseDirectory, !isWorking else { return false }
+        let parent = directory
+        let request = generation
+        isCreating = true
+        errorMessage = nil
+        defer { isCreating = false }
+        let result = await Task.detached(priority: .userInitiated) {
+            Result { try Self.createFolder(in: parent, named: name) }
+        }.value
+        guard generation == request else { return false }
+        switch result {
+        case .success(let created):
+            navigate(to: created)
+            return true
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     func navigate(to target: URL) {

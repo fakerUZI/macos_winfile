@@ -892,6 +892,9 @@
 "folderPicker.invalid" = "请选择可读取的本地文件夹。";
 "folderPicker.path" = "输入文件夹路径";
 "folderPicker.go" = "前往";
+"folderPicker.newFolder" = "新建文件夹…";
+"folderPicker.newFolderHint" = "创建后将进入新文件夹，可将它选为保存位置。";
+"folderPicker.create" = "创建";
 "folderPicker.search" = "筛选当前目录中的文件夹";
 "folderPicker.empty" = "没有可选择的子文件夹，可使用当前文件夹。";
 "folderPicker.addCurrent" = "添加当前文件夹";
@@ -1159,3 +1162,39 @@
 "archive.open.failed" = "默认应用未能打开文件，请先解压后重试。";
 
 "archive.error.noCompressibleFiles" = "所选项目均为 macOS 杂项文件，没有可压缩的内容。";
+
+/* AppKit-generated menus */
+"nativeMenu.file" = "文件";
+"nativeMenu.edit" = "编辑";
+"nativeMenu.view" = "显示";
+"nativeMenu.window" = "窗口";
+"nativeMenu.help" = "帮助";
+"nativeMenu.about" = "关于 LeafFiles";
+"nativeMenu.settings" = "设置…";
+"nativeMenu.settingsTitle" = "设置";
+"nativeMenu.hide" = "隐藏 LeafFiles";
+"nativeMenu.hideOthers" = "隐藏其他";
+"nativeMenu.showAll" = "全部显示";
+"nativeMenu.quit" = "退出 LeafFiles";
+"nativeMenu.quitKeepWindows" = "退出并保留窗口";
+"nativeMenu.services" = "服务";
+"nativeMenu.minimize" = "最小化";
+"nativeMenu.zoom" = "缩放";
+"nativeMenu.bringAllToFront" = "前置全部窗口";
+"nativeMenu.selectAll" = "全选";
+"nativeMenu.undo" = "撤销";
+"nativeMenu.redo" = "重做";
+"nativeMenu.enterFullScreen" = "进入全屏幕";
+"nativeMenu.exitFullScreen" = "退出全屏幕";
+"nativeMenu.close" = "关闭";
+"nativeMenu.closeAll" = "全部关闭";
+"nativeMenu.cut" = "剪切";
+"nativeMenu.copy" = "拷贝";
+"nativeMenu.paste" = "粘贴";
+"nativeMenu.delete" = "删除";
+"nativeMenu.dictation" = "开始听写…";
+"nativeMenu.emoji" = "表情与符号";
+"nativeMenu.autofill" = "自动填充";
+"nativeMenu.servicesSettings" = "服务设置…";
+"nativeMenu.noServices" = "没有服务可应用";
+"external.noFiles" = "未收到可定位的本地文件或文件夹。";

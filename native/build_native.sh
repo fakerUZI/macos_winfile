@@ -116,6 +116,11 @@ for lproj in "$ROOT/native/Resources"/*.lproj; do
     "LeafFiles" \
     "LeafFiles" > "$APP/Contents/Resources/$name/InfoPlist.strings"
   /usr/bin/plutil -convert binary1 "$APP/Contents/Resources/$name/InfoPlist.strings"
+  if [ -f "$lproj/ServicesMenu.strings" ]; then
+    /usr/bin/plutil -lint "$lproj/ServicesMenu.strings" >/dev/null
+    cp "$lproj/ServicesMenu.strings" "$APP/Contents/Resources/$name/"
+    /usr/bin/plutil -convert binary1 "$APP/Contents/Resources/$name/ServicesMenu.strings"
+  fi
   echo "   - $name"
 done
 

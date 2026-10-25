@@ -14,6 +14,9 @@ if [[ " ${*:-} " == *" --skip-device-tests "* ]]; then TEST_ARGS+=(--skip-device
 
 CORE=(
   "$SRC/Localization.swift"
+  "$SRC/NativeMenuLocalization.swift"
+  "$SRC/ExternalFileRequests.swift"
+  "$SRC/BrowserWindowCommands.swift"
   "$SRC/InterfaceStyle.swift"
   "$SRC/AppUpdatePolicy.swift"
   "$SRC/FolderPickerModel.swift"

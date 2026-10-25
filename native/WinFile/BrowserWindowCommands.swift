@@ -36,6 +36,7 @@ final class BrowserWindowCommands: ObservableObject {
     func register(_ manager: TabManager, for window: NSWindow) {
         guard managers.object(forKey: window) !== manager else { return }
         managers.setObject(manager, forKey: window)
+        ExternalFileRequests.shared.register(manager, window: window)
         DispatchQueue.main.async { [weak self] in self?.refresh() }
     }
 

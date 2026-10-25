@@ -8,6 +8,39 @@ import SwiftUI
 @MainActor
 enum TabSmokeTest {
 
+    /// Exercise the generated SwiftUI/AppKit menu, not only a synthetic NSMenu.
+    static func runNativeMenus(to path: String) async -> Bool {
+        let localization = Localization.shared
+        let original = localization.language
+        defer { localization.language = original }
+        var lines: [String] = []
+        var ok = true
+        func snapshot(_ menu: NSMenu, depth: Int = 0) {
+            for item in menu.items {
+                lines.append("\(String(repeating: "  ", count: depth))\(item.title) | \(item.action.map(NSStringFromSelector) ?? "-") | key=\(item.keyEquivalent) modifiers=\(item.keyEquivalentModifierMask.rawValue) | attributed=\(item.attributedTitle?.string ?? "-")")
+                if depth < 1, let submenu = item.submenu { snapshot(submenu, depth: depth + 1) }
+            }
+        }
+        for language in [AppLanguage.english, .simplifiedChinese, .english] {
+            localization.language = language
+            await pump(0.3)
+            NativeMenuLocalization.shared.refresh()
+            await pump(0.3)
+            lines.append("LANGUAGE \(language.rawValue)")
+            guard let menu = NSApp.mainMenu else {
+                lines.append("FAIL: mainMenu is nil")
+                ok = false
+                continue
+            }
+            snapshot(menu)
+            let expected = language == .english ? "File" : "文件"
+            if !menu.items.contains(where: { $0.title == expected && $0.submenu?.title == expected }) { ok = false }
+        }
+        lines.append(ok ? "PASS" : "FAIL")
+        write(lines, path)
+        return ok
+    }
+
     /// Measures main-thread scheduling and synchronous layout while continuously
     /// scrolling the real file grid. This is not a GPU/display FPS measurement.
     static func runScrollPerformance(to path: String) async -> Bool {

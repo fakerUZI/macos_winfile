@@ -82,6 +82,7 @@ enum NativeTestSuite {
             try testUpdatePolicy(sandbox)
             testEmptyAreaClassification()
             try testTabManager(sandbox)
+            try testExternalFileRequests(sandbox)
             try testSorting(sandbox)
             testAppData()
             testDoubleClickMechanism()
@@ -881,6 +882,52 @@ enum NativeTestSuite {
         picker.openPath()
         waitUntil { !picker.isLoading }
         check("输入路径可返回目录并清空旧选择", picker.directory.path == root.path && picker.selectedPaths.isEmpty)
+        for name in ["", "  ", ".", "..", "../outside", "a/b", "a:b", "nul\0name", "Example.app"] {
+            do {
+                _ = try FolderPickerModel.createFolder(in: root, named: name)
+                check("选择器拒绝无效新目录名", false, name)
+            } catch FSError.invalidName { check("选择器拒绝无效新目录名", true) }
+        }
+        let brokenLink = root.appendingPathComponent("Existing Link")
+        try fm.createSymbolicLink(atPath: brokenLink.path, withDestinationPath: root.appendingPathComponent("missing-target").path)
+        for name in [alpha.lastPathComponent, "note.txt", brokenLink.lastPathComponent] {
+            do {
+                _ = try FolderPickerModel.createFolder(in: root, named: name)
+                check("选择器不复用或覆盖同名目录、文件及链接", false, name)
+            } catch FSError.nameExists { check("选择器不复用或覆盖同名目录、文件及链接", true) }
+        }
+        check("创建冲突保留现有文件与失效链接", (try? Data(contentsOf: root.appendingPathComponent("note.txt"))) == Data("file".utf8)
+              && (try? fm.destinationOfSymbolicLink(atPath: brokenLink.path)) != nil)
+        picker.search = "no-match"
+        picker.selectedPaths = [alpha.path]
+        var created = false
+        var creationFinished = false
+        Task { @MainActor in created = await picker.createFolder(named: "  解压 目标  "); creationFinished = true }
+        waitUntil { creationFinished && !picker.isWorking }
+        let createdDirectory = root.appendingPathComponent("解压 目标", isDirectory: true)
+        check("选择器可新建含中文空格的目录并自动进入", created && picker.directory == createdDirectory && fm.fileExists(atPath: createdDirectory.path))
+        check("新目录清除旧筛选和选择并可直接确认", picker.search.isEmpty && picker.selectedPaths.isEmpty && picker.canChooseDirectory && picker.candidates == [createdDirectory])
+        creationFinished = false
+        Task { @MainActor in created = await picker.createFolder(named: "下一层"); creationFinished = true }
+        waitUntil { creationFinished && !picker.isWorking }
+        let nestedDirectory = createdDirectory.appendingPathComponent("下一层", isDirectory: true)
+        check("可连续新建多级目录", created && picker.directory == nestedDirectory)
+        let archive = try ArchiveService.compress([root.appendingPathComponent("note.txt")], to: root, name: "Picker Extract")
+        let extracted = try ArchiveService.extract(archive, to: picker.candidates[0])
+        check("新建目录可实际作为解压位置", extracted.count == 1 && (try? Data(contentsOf: nestedDirectory.appendingPathComponent("note.txt"))) == Data("file".utf8))
+        let readOnly = root.appendingPathComponent("Read Only", isDirectory: true)
+        try fm.createDirectory(at: readOnly, withIntermediateDirectories: false)
+        try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: readOnly.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: readOnly.path) }
+        picker.navigate(to: readOnly)
+        waitUntil { !picker.isLoading }
+        check("只读目录禁用选择器的新建操作", !picker.canCreateFolder)
+        creationFinished = false
+        Task { @MainActor in created = await picker.createFolder(named: "blocked"); creationFinished = true }
+        waitUntil { creationFinished && !picker.isWorking }
+        check("创建失败显示错误并保留当前目录", !created && picker.directory == readOnly && picker.errorMessage != nil && !fm.fileExists(atPath: readOnly.appendingPathComponent("blocked").path))
+        picker.navigate(to: root)
+        waitUntil { !picker.isLoading }
         let providers = [SidebarFolderDrop.provider(for: beta)!, SidebarFolderDrop.provider(for: alpha)!, NSItemProvider(object: "invalid" as NSString)]
         var resolved: [URL] = []
         var failed = 0
@@ -1063,9 +1110,76 @@ enum NativeTestSuite {
             check("手动选择持久化", UserDefaults.standard.string(forKey: Localization.preferenceKey) == "en")
             check("运行时切到英文", L("wechat.title", "") == "WeChat Cleanup")
             check("旧界面文本走同一语言入口", WLocalizedString("button.cancel", comment: "取消") == "Cancel")
+            let menu = NSMenu()
+            let fileMenu = NSMenuItem(title: "文件", action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            let settings = NSMenuItem(title: "设置…", action: Selector(("showSettingsWindow:")), keyEquivalent: ",")
+            submenu.addItem(settings)
+            fileMenu.submenu = submenu
+            menu.addItem(fileMenu)
+            NativeMenuLocalization.translate(menu, topLevel: true)
+            check("英文即时翻译系统菜单栏标题和设置", fileMenu.title == "File" && settings.title == "Settings…")
+            check("菜单栏同时翻译子菜单标题", submenu.title == "File")
+            check("翻译保留原生菜单动作和快捷键", settings.action == Selector(("showSettingsWindow:")) && settings.keyEquivalent == ",")
+            let swiftUISettings = NSMenuItem(title: "设置…", action: Selector(("menuAction:")), keyEquivalent: ",")
+            let appMenu = NSMenu()
+            appMenu.addItem(swiftUISettings)
+            NativeMenuLocalization.translate(appMenu, applicationMenu: true)
+            check("SwiftUI 通用动作的设置菜单也能翻译", swiftUISettings.title == "Settings…" && swiftUISettings.action == Selector(("menuAction:")))
+            let duplicateSettings = NSMenuItem(title: "设置…", action: Selector(("menuAction:")), keyEquivalent: ",")
+            appMenu.addItem(duplicateSettings)
+            NativeMenuLocalization.translate(appMenu, applicationMenu: true)
+            check("系统追加的重复设置菜单隐藏且保留主入口", !swiftUISettings.isHidden && duplicateSettings.isHidden)
             localization.language = .simplifiedChinese
+            NativeMenuLocalization.translate(menu, topLevel: true)
+            check("原生菜单可即时切回中文", fileMenu.title == "文件" && settings.title == "设置…")
             check("运行时切回中文", L("wechat.title", "") == "微信文件清理")
             check("已有文件类型即时切换", FileTypeDB.info(name: "sample.pdf", isDirectory: false, isSymlink: false, isBundle: false).description == "PDF 文档")
+        }
+    }
+
+    @MainActor
+    private static func testExternalFileRequests(_ sandbox: URL) throws {
+        print("\n[访达文件入口]")
+        let folder = sandbox.appendingPathComponent("Finder 中文 folder", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let archive = folder.appendingPathComponent("test.zip")
+        let text = folder.appendingPathComponent("notes.md")
+        try Data().write(to: archive)
+        try Data("hello".utf8).write(to: text)
+        let manager = TabManager(engine: FSEngine(), startDirectory: nil)
+        let original = manager.activeTab
+        ExternalFileRequests.apply([archive], intent: .open, to: manager)
+        check("访达打开压缩包保留原页签", manager.count == 2 && manager.tabs.first === original)
+        check("访达打开压缩包进入预览", manager.activeModel.archivePreviewRequest?.archive == archive)
+        check("外部压缩预览的解压目录正确", manager.activeModel.currentDirectory == folder)
+        ExternalFileRequests.apply([archive], intent: .reveal, to: manager)
+        check("显示压缩包只定位不预览", manager.activeModel.archivePreviewRequest == nil)
+        check("定位保留待选文件", manager.activeModel.pendingSelectionID == FileItem.canonicalID(for: archive))
+        ExternalFileRequests.apply([text], intent: .open, to: manager)
+        check("外部普通文件只定位防止默认应用循环", manager.activeModel.archivePreviewRequest == nil && manager.activeModel.currentDirectory == folder)
+        ExternalFileRequests.apply([folder], intent: .reveal, to: manager)
+        check("外部文件夹直接进入目录", manager.activeModel.currentDirectory == folder)
+        let count = manager.count
+        ExternalFileRequests.apply([URL(string: "https://example.com/a.zip")!], intent: .open, to: manager)
+        check("忽略非本地文件请求", manager.count == count)
+        ExternalFileRequests.apply([folder.appendingPathComponent("missing.zip")], intent: .open, to: manager)
+        check("不存在的文件显示错误而不创建无效页签", manager.count == count && manager.activeModel.errorMessage != nil)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.writeObjects([text as NSURL, folder as NSURL])
+        check("服务接收多项含中文空格的文件 URL", ExternalFileRequests.fileURLs(from: pasteboard) == [text, folder])
+        pasteboard.clearContents()
+        pasteboard.setPropertyList([text.path], forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
+        check("兼容旧版文件路径剪贴板", ExternalFileRequests.fileURLs(from: pasteboard) == [text])
+        pasteboard.clearContents()
+        pasteboard.setString("https://example.com/file.zip", forType: .string)
+        check("服务不把普通文字或网络地址作为文件", ExternalFileRequests.fileURLs(from: pasteboard).isEmpty)
+        if let declarations = Bundle.main.object(forInfoDictionaryKey: "UTImportedTypeDeclarations") as? [[String: Any]] {
+            let extensions = declarations.flatMap { ($0["UTTypeTagSpecification"] as? [String: Any])?["public.filename-extension"] as? [String] ?? [] }
+            check("访达声明覆盖所有可识别压缩格式", Set(extensions) == ArchiveService.archiveExtensions)
+            let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleDocumentTypes") as? [[String: Any]] ?? []
+            check("仅注册备用查看器不抢占默认应用", !types.isEmpty && types.allSatisfy { $0["LSHandlerRank"] as? String == "Alternate" && $0["CFBundleTypeRole"] as? String == "Viewer" })
         }
     }
 

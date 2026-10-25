@@ -874,6 +874,9 @@
 "folderPicker.invalid" = "Choose a readable local folder.";
 "folderPicker.path" = "Enter a folder path";
 "folderPicker.go" = "Go";
+"folderPicker.newFolder" = "New Folder…";
+"folderPicker.newFolderHint" = "After creating the folder, you can choose it as the save location.";
+"folderPicker.create" = "Create";
 "folderPicker.search" = "Filter folders in this directory";
 "folderPicker.empty" = "No matching subfolders. You can use the current folder.";
 "folderPicker.addCurrent" = "Add Current Folder";
@@ -1141,3 +1144,39 @@
 "archive.open.failed" = "The default app could not open this file. Extract it and try again.";
 
 "archive.error.noCompressibleFiles" = "The selected items contain only macOS metadata. There is nothing to compress.";
+
+/* AppKit-generated menus */
+"nativeMenu.file" = "File";
+"nativeMenu.edit" = "Edit";
+"nativeMenu.view" = "View";
+"nativeMenu.window" = "Window";
+"nativeMenu.help" = "Help";
+"nativeMenu.about" = "About LeafFiles";
+"nativeMenu.settings" = "Settings…";
+"nativeMenu.settingsTitle" = "Settings";
+"nativeMenu.hide" = "Hide LeafFiles";
+"nativeMenu.hideOthers" = "Hide Others";
+"nativeMenu.showAll" = "Show All";
+"nativeMenu.quit" = "Quit LeafFiles";
+"nativeMenu.quitKeepWindows" = "Quit and Keep Windows";
+"nativeMenu.services" = "Services";
+"nativeMenu.minimize" = "Minimize";
+"nativeMenu.zoom" = "Zoom";
+"nativeMenu.bringAllToFront" = "Bring All to Front";
+"nativeMenu.selectAll" = "Select All";
+"nativeMenu.undo" = "Undo";
+"nativeMenu.redo" = "Redo";
+"nativeMenu.enterFullScreen" = "Enter Full Screen";
+"nativeMenu.exitFullScreen" = "Exit Full Screen";
+"nativeMenu.close" = "Close";
+"nativeMenu.closeAll" = "Close All";
+"nativeMenu.cut" = "Cut";
+"nativeMenu.copy" = "Copy";
+"nativeMenu.paste" = "Paste";
+"nativeMenu.delete" = "Delete";
+"nativeMenu.dictation" = "Start Dictation…";
+"nativeMenu.emoji" = "Emoji & Symbols";
+"nativeMenu.autofill" = "AutoFill";
+"nativeMenu.servicesSettings" = "Services Settings…";
+"nativeMenu.noServices" = "No Services Apply";
+"external.noFiles" = "No local files or folders were received.";
