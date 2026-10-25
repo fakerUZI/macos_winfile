@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 
 /// Keep preferred pane widths when the window temporarily becomes narrower.
 enum PaneLayout {
@@ -113,40 +112,5 @@ struct IconGridMetrics {
     func indices(row: Int) -> Range<Int> {
         let start = min(count, max(0, row * columns))
         return start..<min(count, start + columns)
-    }
-}
-
-/// Observe native scrolling to keep only nearby rows materialized. Programmatic
-/// location uses SwiftUI's ScrollViewReader and a stable content anchor.
-@MainActor
-final class IconGridViewport: ObservableObject {
-    @Published private(set) var offset: CGFloat = 0
-    private weak var scrollView: NSScrollView?
-    private var observations: [NSObjectProtocol] = []
-    private var applying = false
-    deinit { for token in observations { NotificationCenter.default.removeObserver(token) } }
-    func attach(_ view: NSView) {
-        guard let scroll = view.enclosingScrollView else { return }
-        if scroll !== scrollView {
-            for token in observations { NotificationCenter.default.removeObserver(token) }
-            observations = []
-            scrollView = scroll
-            scroll.contentView.postsBoundsChangedNotifications = true
-            if let document = scroll.documentView { document.postsFrameChangedNotifications = true }
-            for (name, object) in [(NSView.boundsDidChangeNotification, scroll.contentView as NSView),
-                                   (NSView.frameDidChangeNotification, scroll.documentView ?? scroll.contentView)] {
-                observations.append(NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
-                    DispatchQueue.main.async { [weak self] in self?.synchronize() }
-                })
-            }
-        }
-        synchronize()
-    }
-    private func synchronize() {
-        guard !applying, let scrollView else { return }
-        applying = true
-        let next = max(0, scrollView.contentView.bounds.minY)
-        if abs(next - offset) > 0.5 { offset = next }
-        applying = false
     }
 }

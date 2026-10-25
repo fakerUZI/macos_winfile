@@ -1,6 +1,6 @@
 // 图标视图的磁贴标记
 //
-// 图标视图用的是 LazyVGrid，没有 NSTableView，因此无法用表格的 doubleAction。
+// 图标视图使用原生滚动容器与复用行，没有 NSTableView，因此不能使用表格的 doubleAction。
 // 这里给每个磁贴挂一个零尺寸的 AppKit 视图，记录它代表的项目与"打开"动作；
 // 窗口级鼠标监听在识别到双击时，从这个标记取出项目并执行打开。
 import AppKit

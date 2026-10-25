@@ -6,7 +6,6 @@ import SwiftUI
 
 struct FileIconView: View {
     @ObservedObject private var localization = Localization.shared
-    @ObservedObject var engine: FSEngine
     let item: FileItem
     var size: CGFloat = 18
     /// 观察关联设置：改动后徽标需立即更新（此前依赖 .task(id:)，
@@ -86,16 +85,8 @@ struct FileIconView: View {
 
         guard !Task.isCancelled else { return }
         // NSWorkspace 提供系统真实图标（包含 Assets.car 中的系统应用图标）
-        let url = item.url
-        let target = size * 2
-        let loaded = await Task.detached(priority: .userInitiated) {
-            let icon = NSWorkspace.shared.icon(forFile: url.path)
-            var bounds = NSRect(x: 0, y: 0, width: target, height: target)
-            let compact = icon.cgImage(forProposedRect: &bounds, context: nil, hints: nil).map {
-                NSImage(cgImage: $0, size: bounds.size)
-            }
-            return ImageBox(image: compact ?? icon)
-        }.value
+        let loaded = await FileIconService.shared.thumbnail(for: item.url, size: size,
+            version: "\(item.modified?.timeIntervalSince1970 ?? 0)|\(item.size ?? 0)")
         guard !Task.isCancelled else { return }
         image = loaded.image
     }
@@ -108,8 +99,6 @@ struct FileTableView: View {
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
-    /// 列表容器标记（用于把空白右键限定在本列表内）
-    @State private var listMarker: NSView?
 
     private var selection: Binding<Set<String>> {
         Binding(
@@ -124,14 +113,13 @@ struct FileTableView: View {
             .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
-            .onChange(of: model.displayedItems.map(\.id)) { _ in
+            .onReceive(model.$items.combineLatest(model.$categoryResults, model.$searchResults).receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
             // 行以下空白处的右键菜单（Windows 资源管理器行为）
             .background(
                 EmptyAreaContextMenu(
-                    buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) },
-                    onMarker: { listMarker = $0 }
+                    buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) }
                 )
                 .frame(width: 0, height: 0)
             )
@@ -162,7 +150,7 @@ struct FileTableView: View {
         Table(of: FileItem.self, selection: selection, sortOrder: sortOrder) {
             TableColumn(WLocalizedString("column.name", comment: "名称"), value: \FileItem.name, comparator: .localizedStandard) { item in
                 HStack(spacing: 6) {
-                    FileIconView(engine: engine, item: item, size: 18)
+                    FileIconView(item: item, size: 18)
                     Text(item.name)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -400,65 +388,21 @@ struct FileIconGridView: View {
     @ObservedObject var engine: FSEngine
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
-    /// 列表容器标记（用于把空白右键限定在本列表内）
-    @State private var listMarker: NSView?
 
-    @StateObject private var viewport = IconGridViewport()
     private struct LocateTarget: Equatable { let index: Int; let request = UUID() }
     @State private var locateTarget: LocateTarget?
 
     var body: some View {
-        GeometryReader { proxy in
-            let items = model.displayedItems
-            let metrics = IconGridMetrics(count: items.count, width: proxy.size.width)
-            let rows = metrics.visibleRows(offset: viewport.offset, viewport: proxy.size.height)
-            ScrollViewReader { scroller in
-            ScrollView {
-                let targetY = locateTarget.map {
-                    IconGridMetrics.padding + CGFloat($0.index / metrics.columns) * IconGridMetrics.pitch + (IconGridMetrics.pitch - 10) / 2
-                } ?? 0
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: min(targetY, metrics.height - 1))
-                    Color.clear.frame(height: 1).id("grid.locate.anchor")
-                    Color.clear.frame(height: max(0, metrics.height - min(targetY, metrics.height - 1) - 1))
-                }
-                    .frame(height: metrics.height)
-                    .overlay(alignment: .topLeading) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(rows, id: \.self) { row in
-                                let indices = metrics.indices(row: row)
-                                HStack(alignment: .top, spacing: 10) {
-                                    ForEach(indices, id: \.self) { index in
-                                        tile(for: items[index])
-                                            .frame(maxWidth: .infinity)
-                                            .frame(height: IconGridMetrics.pitch - 10, alignment: .top)
-                                    }
-                                    ForEach(0..<(metrics.columns - indices.count), id: \.self) { _ in
-                                        Color.clear.frame(maxWidth: .infinity)
-                                    }
-                                }.frame(height: IconGridMetrics.pitch - 10, alignment: .top)
-                            }
-                        }
-                        .padding(.horizontal, IconGridMetrics.padding)
-                        .offset(y: IconGridMetrics.padding + CGFloat(rows.lowerBound) * IconGridMetrics.pitch)
-                    }
-                    .background(IconGridScrollObserver(viewport: viewport))
-            }
-            .task(id: locateTarget) {
-                guard locateTarget != nil else { return }
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                scroller.scrollTo("grid.locate.anchor", anchor: .center)
-            }
+        NativeIconGrid(items: model.displayedItems, selectedIDs: model.selectedIDs,
+            locateIndex: locateTarget?.index, locateRequest: locateTarget?.request,
+            makeTile: { AnyView(tile(for: $0)) })
             .onAppear { selectPendingItem() }
             .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
-            .onChange(of: items.count) { _ in
+            .onReceive(model.$items.combineLatest(model.$categoryResults, model.$searchResults).receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
-            }
-        }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let directory = model.currentDirectory else { return false }
             let group = DispatchGroup()
@@ -477,15 +421,14 @@ struct FileIconGridView: View {
             return true
         }
         // 空白处右键菜单（与详细信息视图一致）
-        // GeometryReader 的空白区可能不命中底层 NSScrollView，使用 SwiftUI 菜单兜底。
+        // 未命中原生滚动容器的空白区域仍使用同一份菜单兜底。
         // 磁贴自己的菜单优先，仍由 FileItemContextMenu 处理。
         .contextMenu {
             FileBackgroundContextMenu(engine: engine, model: model, dialog: $dialog)
         }
         .background(
             EmptyAreaContextMenu(
-                buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) },
-                onMarker: { listMarker = $0 }
+                buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) }
             )
             .frame(width: 0, height: 0)
         )
@@ -500,7 +443,7 @@ struct FileIconGridView: View {
     }
 
     private func tile(for item: FileItem) -> some View {
-        FileTile(engine: engine, item: item, selected: model.selectedIDs.contains(item.id))
+        FileTile(item: item, selected: model.selectedIDs.contains(item.id))
             .modifier(LocalFileDrag(url: item.url))
             // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
             .background(
@@ -694,62 +637,20 @@ struct FileItemContextMenu: View {
 
 struct FileTile: View {
     @ObservedObject private var localization = Localization.shared
-    @ObservedObject var engine: FSEngine
     let item: FileItem
     let selected: Bool
-    @State private var hovering = false
+    @ObservedObject private var defaultApps = DefaultAppService.shared
 
     var body: some View {
-        VStack(spacing: 4) {
-            FileIconView(engine: engine, item: item, size: 44)
-            // 名称固定占两行高度（见 FileItem.tileNameAreaHeight）。
-            // 若按内容自适应，同一行里矮的磁贴下方会留出空白。
-            Text(item.name)
-                .font(.caption)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .truncationMode(.middle)
-                .frame(height: FileItem.tileNameAreaHeight, alignment: .top)
-            Text(item.isContainer ? item.typeDescription : item.sizeText)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 8).padding(.vertical, 6)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(selected ? Color.accentColor.opacity(0.18) : hovering ? InterfaceStyle.border.opacity(0.12) : .clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(selected ? Color.accentColor.opacity(0.5) : .clear)
-        )
+        NativeFileTile(item: item, selected: selected, badge: badge)
+        .frame(maxWidth: .infinity, minHeight: IconGridMetrics.pitch - 10, maxHeight: IconGridMetrics.pitch - 10)
         .contentShape(Rectangle())
-        .onHover { hovering = $0 }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(item.name + " " + (item.isContainer ? item.typeDescription : item.sizeText)))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
-}
-
-private struct IconGridScrollObserver: NSViewRepresentable {
-    let viewport: IconGridViewport
-    func makeNSView(context: Context) -> IconGridObservationView { IconGridObservationView(viewport: viewport) }
-    func updateNSView(_ view: IconGridObservationView, context: Context) {
-        DispatchQueue.main.async { viewport.attach(view) }
-    }
-}
-private final class IconGridObservationView: NSView {
-    let viewport: IconGridViewport
-    init(viewport: IconGridViewport) { self.viewport = viewport; super.init(frame: .zero) }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        syncViewport()
-    }
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        syncViewport()
-    }
-    private func syncViewport() {
-        DispatchQueue.main.async { [weak self] in if let self { self.viewport.attach(self) } }
+    private var badge: NSImage? {
+        guard !item.isContainer, defaultApps.showsBadges, !AndroidURL.isAndroid(item.url) else { return nil }
+        return defaultApps.badgeIcon(for: item.url, size: 36)
     }
 }

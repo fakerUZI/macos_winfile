@@ -49,6 +49,7 @@ CORE=(
   "$SRC/ArchivePreviewModel.swift"
   "$SRC/ArchiveOpenService.swift"
   "$SRC/ThumbnailService.swift"
+  "$SRC/FileIconService.swift"
   "$SRC/FileAssociations.swift"
   "$SRC/DefaultAppService.swift"
   "$SRC/SidebarPreferences.swift"

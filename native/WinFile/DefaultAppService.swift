@@ -22,8 +22,10 @@ final class DefaultAppService: ObservableObject {
     private var appCache: [String: String?] = [:]
     /// 应用路径 → 图标
     private var iconCache: [String: NSImage] = [:]
+    private let resolveSystemApplication: (URL) -> URL?
 
-    private init() {
+    init(resolveSystemApplication: @escaping (URL) -> URL? = { NSWorkspace.shared.urlForApplication(toOpen: $0) }) {
+        self.resolveSystemApplication = resolveSystemApplication
         // 默认开启
         if UserDefaults.standard.object(forKey: Self.badgesKey) == nil {
             showsBadges = true
@@ -42,9 +44,11 @@ final class DefaultAppService: ObservableObject {
         if let custom = FileAssociations.shared.application(forExtension: ext) {
             resolved = custom
         } else {
-            resolved = NSWorkspace.shared.urlForApplication(toOpen: url)
+            resolved = resolveSystemApplication(url)
         }
-        appCache[ext] = resolved?.path
+        // A bare nil removes the dictionary entry. Cache a missing association
+        // too, otherwise every visible file of that type queries LaunchServices.
+        appCache[ext] = .some(resolved?.path)
         return resolved
     }
 

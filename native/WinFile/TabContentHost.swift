@@ -44,6 +44,20 @@ struct TabContentHost: View {
 
     var body: some View {
         let _ = logRender()
+        VStack(spacing: 0) {
+            activityBanners
+            content
+            if !model.isCleanupView {
+                StatusBarView(engine: engine, model: model)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+        .background(FileKeyboardShortcuts(model: model).frame(width: 0, height: 0))
+        .onAppear { model.beginWatchingDirectory() }
+        .onChange(of: model.currentDirectory) { _ in model.beginWatchingDirectory() }
+    }
+
+    private var content: some View {
         ZStack {
             if model.isHomeView, let manager = model.tabManager {
                 HomeView(engine: engine, manager: manager, tabModel: model)
@@ -92,36 +106,32 @@ struct TabContentHost: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
-        .background(FileKeyboardShortcuts(model: model).frame(width: 0, height: 0))
-        .onAppear { model.beginWatchingDirectory() }
-        .onChange(of: model.currentDirectory) { _ in model.beginWatchingDirectory() }
-        .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                if let message = model.scanCompletenessMessage {
-                    HStack {
-                        Text(message).font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button(L("scan.continue", "继续加载 / 深入扫描")) { model.expandScan() }
-                            .disabled(!model.canExpandScan)
-                    }.padding(8).background(.regularMaterial)
-                }
-                if let outcome = model.lastTransferOutcome {
-                    FileTransferSummary(outcome: outcome, dismiss: { model.lastTransferOutcome = nil },
-                                        openResult: model.openTransferResult, retry: model.retryFileTransfer)
-                }
-                if let progress = model.fileTransferProgress {
-                    FileTransferBanner(progress: progress, cancel: { model.cancelFileTransfer() })
-                }
-                if let progress = model.transferProgress {
-                    AndroidTransferBanner(progress: progress, cancel: androidTransferCancellation)
-                }
-                if let progress = model.archiveProgress {
-                    ArchiveProgressBanner(progress: progress, cancel: model.cancelArchiveExtraction)
-                }
+    }
+
+    private var activityBanners: some View {
+        VStack(spacing: 0) {
+            if let message = model.scanCompletenessMessage {
+                HStack {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("scan.continue", "继续加载 / 深入扫描")) { model.expandScan() }
+                        .disabled(!model.canExpandScan)
+                }.padding(8).background(.regularMaterial)
+            }
+            if let outcome = model.lastTransferOutcome {
+                FileTransferSummary(outcome: outcome, dismiss: { model.lastTransferOutcome = nil },
+                                    openResult: model.openTransferResult, retry: model.retryFileTransfer)
+            }
+            if let progress = model.fileTransferProgress {
+                FileTransferBanner(progress: progress, cancel: { model.cancelFileTransfer() })
+            }
+            if let progress = model.transferProgress {
+                AndroidTransferBanner(progress: progress, cancel: androidTransferCancellation)
+            }
+            if let progress = model.archiveProgress {
+                ArchiveProgressBanner(progress: progress, cancel: model.cancelArchiveExtraction)
             }
         }
-        .overlay(alignment: .bottom) {
-            if !model.isCleanupView { StatusBarView(engine: engine, model: model) }
-        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

@@ -42,6 +42,18 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 
 LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
 
+## Project status and maintenance
+
+As of October 25, 2026, no obvious bugs were found in the latest regression checks and local use. LeafFiles will stay focused on file management, with future work centered on interface and interaction improvements, performance and bug fixes. Features unrelated to file management are outside the project’s scope. Please report issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
+
+The following source improvements have been verified and await a future packaged update:
+
+- Smoother large-file grids through row and icon reuse, with fewer layout operations and system queries.
+- Fixed stale hover backgrounds when scrolling under a stationary pointer.
+- Scan notices, task banners and the bottom status bar reserve their own space instead of covering files.
+
+See the [scrolling and hover QA record](docs/qa/2026-10-24-file-list-scrolling.md) and [banner layout QA record (44 UI assertions passed)](docs/qa/2026-10-25-scan-banner-layout.md). The current packaged release remains v2.0.3, described below.
+
 ## What’s new in v2.0.3
 
 - **Create ZIPs without macOS clutter:** exclude `.DS_Store`, `._*` and `__MACOSX` at every level, including combined selections from different directories.
@@ -161,7 +173,7 @@ Use the top-left sidebar button to hide or show the entire left menu; expanding 
 
 ### Browser memory and folder selection
 
-The icon grid creates only visible tiles and nearby rows. Thumbnail generation is limited to four concurrent requests, with an LRU cache budget of 64 MiB, excluding images still displayed and the system Quick Look processes. Memory pressure clears cached thumbnails. Cleanup modules initialize on first use.
+The icon grid uses a native scroll container and creates only visible tiles and nearby rows. A bounded pool reuses row hosts and native text/icon controls instead of repeatedly rebuilding the whole SwiftUI grid while scrolling. System file icons are cached by file, version and size, with at most two concurrent loads and a 12 MiB cache budget. Missing default-app associations are cached too, avoiding repeated system queries while scrolling. Thumbnail generation is limited to four concurrent requests, with an LRU cache budget of 64 MiB, excluding images still displayed and the system Quick Look processes. Memory pressure clears both image caches. Cleanup modules initialize on first use.
 
 Local directory, search and category results outside the three most recent tabs can be released after 60 seconds idle and reread when selected. Memory pressure prioritizes inactive tabs. Operations in progress and cleanup selections are preserved.
 

@@ -1656,6 +1656,17 @@ enum NativeTestSuite {
         check("十万图标只创建可见区附近磁贴", large.visibleRows(offset: 20_000, viewport: 800).count * large.columns < 100)
         check("虚拟网格末行可见且不越界", large.visibleRows(offset: large.height - 800, viewport: 800).upperBound == large.rows && large.indices(row: large.rows - 1).upperBound == large.count)
         check("空网格和窄窗口几何有效", IconGridMetrics(count: 0, width: 0).visibleRows(offset: 0, viewport: 800).isEmpty && IconGridMetrics(count: 16, width: 50).columns == 1)
+        var covered = true
+        for width: CGFloat in [50, 400, 900, 1600] {
+            let grid = IconGridMetrics(count: 100_000, width: width)
+            for y in Array(stride(from: CGFloat(0), through: 3000, by: 3)) + [grid.height - 800] {
+                let rows = grid.visibleRows(offset: y, viewport: 800)
+                let first = min(grid.rows - 1, Int(max(0, y - IconGridMetrics.padding) / IconGridMetrics.pitch))
+                let last = min(grid.rows - 1, Int(max(0, y + 799 - IconGridMetrics.padding) / IconGridMetrics.pitch))
+                covered = covered && rows.contains(first) && rows.contains(last)
+            }
+        }
+        check("原生网格窗口覆盖窄窗、宽窗、行间位置与末尾全部可见条目", covered)
         let engine = FSEngine(); engine.restrictScopeForTesting([root])
         let model = BrowserModel(engine: engine, startDirectory: root)
         waitFor { !model.isBusy }
@@ -1722,6 +1733,18 @@ enum NativeTestSuite {
         check("切回被回收页签自动读取且保留身份", manager.activeTab.id == first.id && first.model.items.count == 18)
         var finished = false
         Task { @MainActor in
+            let iconURL = root.appendingPathComponent("file-0.txt")
+            await FileIconService.shared.removeCachedImages()
+            let icon = await FileIconService.shared.thumbnail(for: iconURL, size: 44, version: "original")
+            let returned = await FileIconService.shared.thumbnail(for: iconURL, size: 44, version: "original")
+            check("滚回已见文件复用同一系统图标", icon.image != nil && icon.image === returned.image)
+            _ = await FileIconService.shared.thumbnail(for: iconURL, size: 44, version: "modified")
+            _ = await FileIconService.shared.thumbnail(for: iconURL, size: 18, version: "modified")
+            let iconStats = await FileIconService.shared.statistics()
+            check("系统图标按文件版本及尺寸区分且缓存有界", iconStats.cached == 3 && iconStats.bytes <= 12 * 1024 * 1024 && iconStats.running == 0)
+            await FileIconService.shared.removeCachedImages()
+            let emptyIcons = await FileIconService.shared.statistics()
+            check("系统图标缓存可完整释放", emptyIcons.bytes == 0 && emptyIcons.cached == 0)
             let probe = ThumbnailTestProbe()
             let service = ThumbnailService(byteLimit: 6144, concurrencyLimit: 2, generator: { url, _ in await probe.generate(url) })
             await withTaskGroup(of: Void.self) { group in
@@ -3398,6 +3421,16 @@ enum NativeTestSuite {
 
         let pdf = dir.appendingPathComponent("文件.pdf")
         try "x".write(to: pdf, atomically: true, encoding: .utf8)
+
+        var missingQueries = 0
+        let missing = DefaultAppService(resolveSystemApplication: { _ in missingQueries += 1; return nil })
+        for index in 0..<100 {
+            _ = missing.defaultApplication(for: dir.appendingPathComponent("Archive-\(index).unassociated-test"))
+        }
+        check("无默认应用的同类文件只查询系统一次", missingQueries == 1)
+        missing.invalidate()
+        _ = missing.defaultApplication(for: dir.appendingPathComponent("Archive.unassociated-test"))
+        check("关联缓存失效后允许重新查询系统", missingQueries == 2)
 
         // 未自定义时应能解析出系统默认应用（通常非空）
         let systemApp = service.defaultApplication(for: pdf)

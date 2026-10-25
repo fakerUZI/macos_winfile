@@ -279,7 +279,7 @@ struct RecentRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            FileIconView(engine: engine, item: entry.item, size: 22)
+            FileIconView(item: entry.item, size: 22)
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.item.name)
                     .lineLimit(1)

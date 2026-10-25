@@ -45,7 +45,7 @@ struct InspectorView: View {
     @ViewBuilder
     private func single(_ item: FileItem) -> some View {
         VStack(spacing: 8) {
-            FileIconView(engine: engine, item: item,
+            FileIconView(item: item,
                          size: item.supportsThumbnail && !AndroidURL.isAndroid(item.url) ? 144 : 64)
                 .padding(.vertical, 8)
             Text(item.name)

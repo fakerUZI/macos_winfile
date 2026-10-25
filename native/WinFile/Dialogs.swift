@@ -126,7 +126,7 @@ struct OpenWithSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                FileIconView(engine: engine, item: item, size: 22)
+                FileIconView(item: item, size: 22)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(String(format: WLocalizedString("dialog.openWith.title", comment: "打开方式"), item.name))
                         .font(.headline)

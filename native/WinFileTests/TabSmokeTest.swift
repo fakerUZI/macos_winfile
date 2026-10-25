@@ -8,6 +8,86 @@ import SwiftUI
 @MainActor
 enum TabSmokeTest {
 
+    /// Measures main-thread scheduling and synchronous layout while continuously
+    /// scrolling the real file grid. This is not a GPU/display FPS measurement.
+    static func runScrollPerformance(to path: String) async -> Bool {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("leaffiles-scroll-perf-\(UUID().uuidString)")
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let zip = Data([0x50, 0x4b, 0x05, 0x06] + Array(repeating: UInt8(0), count: 18))
+        for index in 0..<1200 { try? zip.write(to: root.appendingPathComponent(String(format: "Archive-%04d.zip", index))) }
+        let engine = FSEngine()
+        engine.restrictScopeForTesting([root])
+        let model = BrowserModel(engine: engine, startDirectory: root)
+        model.layout = .icons
+        model.navigate(to: .category(.archive))
+        for _ in 0..<200 {
+            if !model.isLoadingCategory { break }
+            await pump(0.02)
+        }
+        model.expandScan()
+        for _ in 0..<200 {
+            if !model.isLoadingCategory { break }
+            await pump(0.02)
+        }
+        guard model.displayedItems.count == 1200 else { return false }
+        let view = NSHostingView(rootView: FileIconGridView(engine: engine, model: model, dialog: .constant(nil)))
+        let window = NSWindow(contentRect: NSRect(x: 30, y: 40, width: 1500, height: 820),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        defer { window.close() }
+        await pump(1)
+        guard let scroll = EmptyAreaContextMenu.InstallerView.firstScrollView(in: view) else { return false }
+        func summary(_ values: [Double]) -> [String: Any] {
+            let sorted = values.sorted()
+            func percentile(_ fraction: Double) -> Double { sorted[min(sorted.count - 1, Int(Double(sorted.count - 1) * fraction))] }
+            return ["p50_ms": percentile(0.5), "p95_ms": percentile(0.95), "p99_ms": percentile(0.99),
+                    "max_ms": sorted[sorted.count - 1], "over_25_ms": values.filter { $0 > 25 }.count,
+                    "over_50_ms": values.filter { $0 > 50 }.count, "samples": values.count]
+        }
+        var runs: [[String: Any]] = []
+        for run in 0..<3 {
+            scroll.contentView.scroll(to: .zero)
+            scroll.reflectScrolledClipView(scroll.contentView)
+            await pump(0.4)
+            let limit = max(0, (scroll.documentView?.bounds.height ?? 0) - scroll.contentView.bounds.height)
+            let origin = ProcessInfo.processInfo.systemUptime
+            var previous = origin
+            var intervals: [Double] = []
+            var work: [Double] = []
+            for frame in 0..<360 {
+                let started = ProcessInfo.processInfo.systemUptime
+                if frame > 0 { intervals.append((started - previous) * 1000) }
+                previous = started
+                let phase = Double(frame % 180) / 179
+                let y = min(limit, 3600) * (frame < 180 ? phase : 1 - phase)
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+                scroll.reflectScrolledClipView(scroll.contentView)
+                view.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+                work.append((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                let next = origin + Double(frame + 1) / 60
+                let pause = max(0, next - ProcessInfo.processInfo.systemUptime)
+                if pause > 0 { try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000)) }
+                else { await Task.yield() }
+            }
+            runs.append(["run": run, "main_thread_intervals": summary(intervals), "scroll_layout_work": summary(work)])
+            if let data = try? JSONSerialization.data(withJSONObject: runs, options: [.prettyPrinted, .sortedKeys]) {
+                try? data.write(to: URL(fileURLWithPath: path + ".progress"))
+            }
+        }
+        let report: [String: Any] = ["note": "Main-thread scheduling/layout under a paced 60 Hz workload, not display FPS",
+            "items": model.displayedItems.count, "width": 1500, "height": 820, "runs": runs]
+        guard JSONSerialization.isValidJSONObject(report),
+              let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) else { return false }
+        try? data.write(to: URL(fileURLWithPath: path))
+        return true
+    }
+
     /// 在真实窗口里跑：返回 (是否全部通过, 报告文本)
     static func run(to path: String) async -> Bool {
         let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical],
@@ -702,6 +782,187 @@ enum TabSmokeTest {
         manager.closeOthers(keeping: warmTabA); await pump(0.3)
         check("关闭页签释放多余视图缓存", container(in: root)?.retainedHostCount == 1)
         check("被淘汰页签重新打开后内容仍正确", manager.activeModel.currentDirectory == warmA && container(in: root).flatMap { table(in: $0) }?.numberOfRows == 300)
+
+        // Exercise the actual windowed grid, including category expansion and
+        // long jumps. Geometry-only tests cannot catch stale SwiftUI tile windows.
+        let archives = base.appendingPathComponent("压缩包滚动回归")
+        try? fm.createDirectory(at: archives, withIntermediateDirectories: true)
+        let emptyZip = Data([0x50, 0x4b, 0x05, 0x06] + Array(repeating: UInt8(0), count: 18))
+        for index in 0..<1200 {
+            try? emptyZip.write(to: archives.appendingPathComponent(String(format: "Archive-%04d.zip", index)))
+        }
+        let gridTab = manager.newTab(startDirectory: archives, activate: false)
+        gridTab.model.engine.restrictScopeForTesting([archives])
+        gridTab.model.layout = .icons
+        manager.select(gridTab)
+        gridTab.model.navigate(to: .category(.archive))
+        for _ in 0..<100 {
+            if !gridTab.model.isLoadingCategory && gridTab.model.categoryResults.count == 800 { break }
+            await pump(0.05)
+        }
+        gridTab.model.expandScan()
+        for _ in 0..<100 {
+            if !gridTab.model.isLoadingCategory && gridTab.model.categoryResults.count == 1200 { break }
+            await pump(0.05)
+        }
+        check("压缩包分类可继续加载至一千二百项", gridTab.model.displayedItems.count == 1200)
+        await pump(0.3)
+        func tiles(in view: NSView) -> [FileTileMarkerView] {
+            if let tile = view as? FileTileMarkerView { return [tile] }
+            return view.subviews.flatMap { tiles(in: $0) }
+        }
+        if let host = container(in: root), let first = tiles(in: host).first,
+           let gridScroll = first.enclosingScrollView {
+            let initialHosts = (gridScroll as? NativeIconGridScrollView)?.createdRowHosts
+            let lastY = max(0, (gridScroll.documentView?.bounds.height ?? 0) - gridScroll.contentView.bounds.height)
+            let selected = gridTab.model.displayedItems[17].id
+            gridTab.model.selectedIDs = [selected]
+            var bounded = true
+            var endpoints = true
+            for y in [CGFloat(0), 115, 116, 117, lastY / 2, lastY, 0] {
+                gridScroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+                gridScroll.reflectScrolledClipView(gridScroll.contentView)
+                await pump(0.08)
+                root.layoutSubtreeIfNeeded()
+                let materialized = tiles(in: host)
+                bounded = bounded && materialized.count < 200
+                if y == 0 || y == lastY {
+                    let expected = y == 0 ? gridTab.model.displayedItems.first?.id : gridTab.model.displayedItems.last?.id
+                    endpoints = endpoints && materialized.contains {
+                        !$0.isHiddenOrHasHiddenAncestor && $0.item?.id == expected && $0.convert($0.bounds, to: gridScroll.contentView).intersects(gridScroll.contentView.bounds)
+                    }
+                }
+            }
+            check("大量压缩包滚动只保留附近磁贴", bounded)
+            check("跨行、跳至末尾再返回顶部不丢文件", endpoints)
+            check("往返滚动不改变已选择文件", gridTab.model.selectedIDs == [selected])
+            check("跨越一千二百个文件循环复用行宿主", initialHosts != nil && (gridScroll as? NativeIconGridScrollView)?.createdRowHosts ?? Int.max <= (initialHosts ?? 0) + 4)
+            if let document = gridScroll.documentView as? NativeIconGridDocumentView {
+                func nativeTiles(in view: NSView) -> [NativeFileTileView] {
+                    if let tile = view as? NativeFileTileView { return [tile] }
+                    return view.subviews.flatMap { nativeTiles(in: $0) }
+                }
+                let visibleTiles = nativeTiles(in: document).filter {
+                    !$0.isHiddenOrHasHiddenAncestor
+                        && document.visibleRect.contains($0.convert(NSPoint(x: $0.bounds.midX, y: $0.bounds.midY), to: document))
+                }
+                if visibleTiles.count >= 2 {
+                    let first = visibleTiles[0], second = visibleTiles[1]
+                    func center(_ tile: NSView) -> NSPoint {
+                        tile.convert(NSPoint(x: tile.bounds.midX, y: tile.bounds.midY), to: document)
+                    }
+                    document.updateHover(at: nil)
+                    let firstBaseColor = first.layer?.backgroundColor
+                    let secondBaseColor = second.layer?.backgroundColor
+                    document.updateHover(at: center(first))
+                    check("鼠标位置可定位唯一悬停磁贴", document.hoveredTile === first)
+                    document.updateHover(at: center(second))
+                    check("悬停转移清除旧磁贴底色", document.hoveredTile === second
+                        && first.layer?.backgroundColor == firstBaseColor)
+                    document.updateHover(at: nil)
+                    check("鼠标离开网格清除悬停底色", document.hoveredTile == nil
+                        && second.layer?.backgroundColor == secondBaseColor)
+                    document.updateHover(at: center(first))
+                    gridScroll.contentView.scroll(to: NSPoint(x: 0, y: lastY))
+                    gridScroll.reflectScrolledClipView(gridScroll.contentView)
+                    await pump(0.08)
+                    let highlighted = nativeTiles(in: document).filter {
+                        ($0.layer?.borderWidth ?? 0) == 0 && ($0.layer?.backgroundColor?.alpha ?? 0) > 0
+                    }
+                    check("长距离滚动复用后最多保留一个悬停底色", highlighted.count <= 1
+                        && highlighted.allSatisfy { !$0.isHiddenOrHasHiddenAncestor && $0 === document.hoveredTile })
+                    document.updateHover(at: nil)
+                } else {
+                    check("悬停回归所需可见磁贴已挂载", false)
+                }
+            } else {
+                check("网格统一悬停跟踪已挂载", false)
+            }
+            if let target = gridTab.model.displayedItems.last {
+                gridTab.model.pendingSelectionID = target.id
+                await pump(0.2)
+                root.layoutSubtreeIfNeeded()
+                check("原生网格可定位选中末尾文件", gridTab.model.selectedIDs == [target.id] && tiles(in: host).contains {
+                    !$0.isHiddenOrHasHiddenAncestor && $0.item?.id == target.id
+                        && $0.convert($0.bounds, to: gridScroll.contentView).intersects(gridScroll.contentView.bounds)
+                })
+            }
+        } else {
+            check("压缩包虚拟网格已挂载", false)
+        }
+
+        // Reproduce the single-file category from the reported screenshot. The
+        // scan notice must reserve space, rather than cover the first icon/row.
+        let singleRoot = base.appendingPathComponent("扫描提示布局")
+        var deepDirectory = singleRoot
+        for _ in 0..<6 { deepDirectory.appendPathComponent("深层目录") }
+        try? fm.createDirectory(at: deepDirectory, withIntermediateDirectories: true)
+        try? Data().write(to: singleRoot.appendingPathComponent("演示文稿.pptx"))
+        let singleEngine = FSEngine()
+        singleEngine.restrictScopeForTesting([singleRoot])
+        let singleModel = BrowserModel(engine: singleEngine, startDirectory: singleRoot)
+        singleModel.layout = .icons
+        singleModel.navigate(to: .category(.presentation))
+        for _ in 0..<100 {
+            if !singleModel.isLoadingCategory { break }
+            await pump(0.02)
+        }
+        let layoutHost = NSHostingView(rootView: TabContentHost(engine: singleEngine, model: singleModel,
+            dialog: .constant(nil), openFolderPanel: {}))
+        let layoutWindow = NSWindow(contentRect: NSRect(x: 40, y: 40, width: 1180, height: 640),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        layoutWindow.isReleasedWhenClosed = false
+        layoutWindow.contentView = layoutHost
+        layoutWindow.makeKeyAndOrderFront(nil)
+        defer { layoutWindow.close() }
+        await pump(0.3)
+        layoutHost.layoutSubtreeIfNeeded()
+        func screenFrame(_ view: NSView) -> NSRect { layoutWindow.convertToScreen(view.convert(view.bounds, to: nil)) }
+        check("单文件分类仍显示深入扫描提示", singleModel.displayedItems.count == 1 && singleModel.scanCompletenessMessage != nil)
+        let singleScroll = EmptyAreaContextMenu.InstallerView.firstScrollView(in: layoutHost)
+        let heightWithBanner = singleScroll?.frame.height ?? 0
+        let rootFrame = screenFrame(layoutHost)
+        let reservedTopSpace = singleScroll.map { rootFrame.maxY - screenFrame($0).maxY } ?? 0
+        if let scroll = singleScroll, let marker = tiles(in: layoutHost).first {
+            let scrollFrame = screenFrame(scroll)
+            let tileFrame = marker.convert(marker.bounds, to: scroll.contentView)
+            check("图标区为扫描提示栏留出独立空间", reservedTopSpace > 16,
+                "顶部占位=\(reservedTopSpace)")
+            check("首个文件完整可见并保留顶部间距", scroll.contentView.bounds.contains(tileFrame)
+                && tileFrame.minY >= scroll.contentView.bounds.minY + IconGridMetrics.padding - 1)
+            check("底部状态栏不覆盖文件滚动区", scrollFrame.minY - rootFrame.minY > 10)
+        } else {
+            check("扫描提示和文件区域布局可读取", false)
+        }
+        if let bitmap = layoutHost.bitmapImageRepForCachingDisplay(in: layoutHost.bounds) {
+            layoutHost.cacheDisplay(in: layoutHost.bounds, to: bitmap)
+            if let png = bitmap.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: path + ".scan-banner.png"))
+            }
+        }
+        singleModel.layout = .details
+        await pump(0.3)
+        layoutHost.layoutSubtreeIfNeeded()
+        if let scroll = table(in: layoutHost)?.enclosingScrollView {
+            check("详细列表也完整位于扫描提示栏下方", rootFrame.maxY - screenFrame(scroll).maxY > 16)
+        } else {
+            check("带扫描提示的详细列表已挂载", false)
+        }
+        singleModel.layout = .icons
+        singleModel.expandScan()
+        for _ in 0..<100 {
+            if !singleModel.isLoadingCategory { break }
+            await pump(0.02)
+        }
+        await pump(0.3)
+        layoutHost.layoutSubtreeIfNeeded()
+        if let scroll = EmptyAreaContextMenu.InstallerView.firstScrollView(in: layoutHost) {
+            check("扫描完成后文件区自动收回提示栏空间", singleModel.scanCompletenessMessage == nil
+                && reservedTopSpace > 16 && abs(scroll.frame.height - heightWithBanner - reservedTopSpace) <= 1
+                && abs(rootFrame.maxY - screenFrame(scroll).maxY) <= 1)
+        } else {
+            check("扫描完成后网格已挂载", false)
+        }
 
         lines.append("")
         lines.append(failures.isEmpty ? "全部通过 ✔" : "有 \(failures.count) 项异常")

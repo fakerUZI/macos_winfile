@@ -189,6 +189,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         // 页签切换冒烟测试（真实运行环境）
+        if let index = CommandLine.arguments.firstIndex(of: "--selftest-scroll"),
+           index + 1 < CommandLine.arguments.count {
+            let target = CommandLine.arguments[index + 1]
+            Task { @MainActor in
+                let ok = await TabSmokeTest.runScrollPerformance(to: target)
+                exit(ok ? 0 : 1)
+            }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--selftest-tabs"),
            index + 1 < CommandLine.arguments.count {
             let target = CommandLine.arguments[index + 1]
