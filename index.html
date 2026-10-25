@@ -74,19 +74,19 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">ZIP 更干净，<br>整理更顺手。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">滚动更顺畅，<br>文件看得更清楚。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <aside class="maintenance-note" aria-labelledby="maintenance-title">
         <p class="maintenance-label">2026.10.25 · 项目近况</p>
-        <h3 id="maintenance-title">当前未发现明显 Bug，接下来专注打磨。</h3>
-        <p>经过本轮回归与本机使用验证，暂未发现明显 Bug。LeafFiles 将专注文件管理，不再扩展与文件管理无关的内容；后续以界面与交互优化、性能改善和 Bug 修复为主。</p>
-        <p class="maintenance-progress">源码已提交大量文件滚动、悬停残影与扫描提示遮挡修复，待后续安装包更新。当前终端安装仍提供 v{{DOWNLOAD_VERSION}} 正式版。</p>
-        <div class="maintenance-links"><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/commit/7420ae6">查看本轮源码改进 <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/issues">反馈问题 <span aria-hidden="true">↗</span></a></div>
+        <h3 id="maintenance-title">专注文件管理，持续打磨日常体验。</h3>
+        <p>近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会围绕文件浏览、整理和管理持续完善，后续以界面优化、性能提升和问题修复为主，不扩展无关功能。</p>
+        <p class="maintenance-progress">本轮滚动、悬停和提示栏修复已包含在 v{{VERSION}}。可通过终端安装或应用内更新获取。</p>
+        <div class="maintenance-links"><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/releases/tag/v{{VERSION}}">查看 v{{VERSION}} 更新 <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/issues">反馈问题 <span aria-hidden="true">↗</span></a></div>
       </aside>
       <div class="release-grid">
-        <article class="release-card release-card-preview"><span class="release-number">01 / ZIP 自动过滤杂项</span><h3>macOS 杂项，<br>自动过滤。</h3><p>新建 ZIP 时，自动排除根目录和子目录中的 .DS_Store、._* 与 __MACOSX，让分享出去的压缩包少些杂项。</p><div class="format-tags" aria-label="自动排除的 macOS 杂项"><span>.DS_Store</span><span>._*</span><span>__MACOSX</span></div><p class="release-note">只过滤新建压缩包的内容，原文件与已有压缩包保持不动。</p></article>
-        <article class="release-card"><span class="release-number">02 / 其他隐藏文件保留</span><h3>.git 与 .env，<br>照常保留。</h3><p>.git、.env、.gitignore、.config 等项目文件照常打包，其他隐藏项、空目录和符号链接也会保留。</p><p class="release-note">.DS_Store.backup、report._draft.txt、__MACOSX_notes 等相似名称不会被误过滤。</p></article>
-        <article class="release-card"><span class="release-number">03 / 各压缩入口规则一致</span><h3>多个来源，<br>统一打包。</h3><p>普通文件夹、直接多选和微信附件跨目录合并压缩，都使用同一套过滤规则，不需要手动逐项排除。</p><p class="release-note">只选中杂项时会提示没有可压缩的内容，不生成空包。包内默认应用打开与空格快速预览继续保留。</p><a class="text-link" href="#quick-install">使用原安装命令 <svg class="icon"><use href="#arrow"/></svg></a></article>
+        <article class="release-card release-card-preview"><span class="release-number">01 / 滚动更流畅</span><h3>文件再多，<br>浏览也从容。</h3><p>优化大量文件的图标视图，减少滚动时的停顿与重复加载，让压缩包等分类浏览更顺畅。</p><p class="release-note">保留可见区域及附近内容，兼顾滚动体验与内存占用。</p></article>
+        <article class="release-card"><span class="release-number">02 / 清除悬停残影</span><h3>鼠标停留，<br>反馈依然清晰。</h3><p>修复鼠标放在文件区时滚动产生的灰色底色残留，悬停反馈及时跟随当前文件。</p><p class="release-note">保留原有配色，单击选择、双击打开与右键菜单照常使用。</p></article>
+        <article class="release-card"><span class="release-number">03 / 文件完整可见</span><h3>看清提示，<br>也看清文件。</h3><p>「继续加载 / 深入扫描」、任务进度和底部状态栏分别占位，首个图标与最后一行不再被遮挡。提示消失后，空间自动归还文件区。</p><p class="release-note">图标视图与详细列表同步优化。</p><a class="text-link" href="#quick-install">使用原安装命令 <svg class="icon"><use href="#arrow"/></svg></a></article>
       </div>
       <p class="release-credit">感谢 <a href="https://github.com/KaKi87">@KaKi87</a> 的问题反馈与验证。此前 OrbStack 目录无法打开的问题，已在 <a href="https://github.com/fakerUZI/macos_winfile/issues/3">issue #3</a> 收到恢复确认。</p>
     </section>
