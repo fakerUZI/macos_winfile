@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1275%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1281%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles (formerly WinFile) brings a native file management workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
@@ -44,24 +44,16 @@ LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **witho
 
 ## Project status and maintenance
 
-As of October 25, 2026, no obvious bugs were found in the latest regression checks and local use. LeafFiles will stay focused on file management, with future work centered on interface and interaction improvements, performance and bug fixes. Features unrelated to file management are outside the project’s scope. Please report issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
+As of October 25, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-The following source improvements have been verified and await a future packaged update:
+## What’s new in v2.0.4
 
-- Smoother large-file grids through row and icon reuse, with fewer layout operations and system queries.
-- Fixed stale hover backgrounds when scrolling under a stationary pointer.
-- Scan notices, task banners and the bottom status bar reserve their own space instead of covering files.
+- **Smoother large-file grids:** reuse visible rows and tiles, and cache system icons and default-app lookups to reduce layout work while scrolling.
+- **Clear hover feedback:** scrolling under a stationary pointer updates the hovered tile without leaving stale backgrounds behind.
+- **Unobstructed file content:** scan notices, task banners and the bottom status bar reserve their own space. Files remain visible, and space is returned when a notice disappears.
+- Existing file management, archive preview, storage cleanup and MTP Android features remain available. Future work continues to focus on the interface, performance and bug fixes.
 
-See the [scrolling and hover QA record](docs/qa/2026-10-24-file-list-scrolling.md) and [banner layout QA record (44 UI assertions passed)](docs/qa/2026-10-25-scan-banner-layout.md). The current packaged release remains v2.0.3, described below.
-
-## What’s new in v2.0.3
-
-- **Create ZIPs without macOS clutter:** exclude `.DS_Store`, `._*` and `__MACOSX` at every level, including combined selections from different directories.
-- **Keep other hidden files:** `.git`, `.env`, `.config`, empty folders, symlinks and similar names stay in the archive. Source files remain untouched.
-- **Clear feedback for metadata-only selections:** no empty archive is created; filenames beginning with a dash are supported.
-- Default-app opening of archive members, Space for Quick Look, WeChat cleanup and MTP Android features remain available.
-
-See the [v2.0.3 release notes](docs/releases/v2.0.3.md), [release QA record](docs/qa/2026-10-24-release-2.0.3.md) and [v2.0.2 release notes](docs/releases/v2.0.2.md).
+See the [v2.0.4 release notes](docs/releases/v2.0.4.md), [release QA record](docs/qa/2026-10-25-release-2.0.4.md) and [v2.0.3 release notes](docs/releases/v2.0.3.md).
 
 ## Features
 
@@ -298,6 +290,8 @@ Non-video files download a verified, read-only local copy with progress and canc
 Add `--skip-device-tests` to skip real-device file operations and browsing when an Android device is connected.
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
+
+Final v2.0.4 release: **1,281 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-25-release-2.0.4.md).
 
 Final v2.0.3 release: **1,275 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-24-release-2.0.3.md).
 

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#安装)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#技术栈)
-[![Tests](https://img.shields.io/badge/tests-1275%20passing-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/tests-1281%20passing-brightgreen.svg)](#测试)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles（原名 WinFile）将多页签、可编辑路径栏、类型分类和空间统计放在同一个原生界面里。
@@ -45,24 +45,16 @@ LeafFiles 不试图取代访达，而是补上这些空白。它**不开沙盒**
 
 ## 项目状态与维护方向
 
-截至 2026 年 10 月 25 日，经过本轮回归与本机使用验证，当前未发现明显 Bug。LeafFiles 将继续专注文件管理，不再扩展与文件管理无关的功能；后续维护以界面与交互优化、性能改善和 Bug 修复为主。使用中发现问题，欢迎通过 [Issues](https://github.com/fakerUZI/macos_winfile/issues) 反馈。
+截至 2026 年 10 月 25 日，近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会继续围绕文件浏览、整理和管理打磨体验，后续以界面优化、性能提升和问题修复为主，不扩展与文件管理无关的功能。使用中遇到问题，欢迎通过 [Issues](https://github.com/fakerUZI/macos_winfile/issues) 反馈。
 
-本轮源码改进已完成验证，待后续安装包更新：
+## 本次更新：v2.0.4
 
-- 改善大量文件的网格滚动，复用可见行和图标，减少重复布局与系统查询。
-- 修复鼠标停留时滚动产生的悬停底色残留。
-- 扫描提示栏、任务提示和底部状态栏独立占位，避免遮挡文件内容。
+- **大量文件滚动更流畅**：复用可见行和磁贴，缓存系统图标与默认应用查询，减少滚动时的重复布局。
+- **清除悬停残影**：鼠标停留在文件区时，滚动会及时更新悬停目标，避免旧底色残留。
+- **文件内容完整可见**：扫描提示栏、任务提示和底部状态栏独立占位，不再遮挡首尾文件；提示消失后自动归还空间。
+- 保留现有文件管理、压缩预览、空间清理和 MTP 安卓文件功能。后续继续聚焦界面、性能和问题修复。
 
-验证记录：[滚动与悬停](docs/qa/2026-10-24-file-list-scrolling.md)、[提示栏布局（44 项界面断言通过）](docs/qa/2026-10-25-scan-banner-layout.md)。当前正式安装包仍为下述 v2.0.3。
-
-## 本次更新：v2.0.3
-
-- **ZIP 自动过滤 macOS 杂项**：排除各层级的 `.DS_Store`、`._*` 与 `__MACOSX`，普通压缩和跨目录合并压缩均生效。
-- **保留其他隐藏文件**：`.git`、`.env`、`.config` 等照常打包，空目录、符号链接及相似名称同样保留；源文件保持不动。
-- **只有杂项时明确提示**：不生成空包，支持横线开头的文件名。
-- 包内默认应用打开、空格快速预览、微信附件整理和 MTP 安卓文件管理继续保留。
-
-[完整更新记录](docs/releases/v2.0.3.md) · [发行验收记录](docs/qa/2026-10-24-release-2.0.3.md) · [v2.0.2 更新记录](docs/releases/v2.0.2.md) · [一键安装](#一键安装推荐)
+[完整更新记录](docs/releases/v2.0.4.md) · [发行验收记录](docs/qa/2026-10-25-release-2.0.4.md) · [v2.0.3 更新记录](docs/releases/v2.0.3.md) · [一键安装](#一键安装推荐)
 
 ## 功能
 
@@ -298,6 +290,8 @@ v1.1.0 及更早版本需先手动升级到 v1.2.0 一次。维护者的密钥�
 已连接安卓设备但本次无需实机测试时，可加 `--skip-device-tests`，跳过真实设备文件操作和目录浏览。
 
 依次执行三种模式：命令行逻辑测试 → 真实应用包内测试 → 界面冒烟测试。若连接了已就绪的 MTP 安卓设备，还会跑一遍真实的设备文件操作测试。
+
+v2.0.4 最终发行构建：arm64 与 Intel/Rosetta 各 **1,281 项通过，0 失败**（跳过真实设备读写）；签名与篡改拒绝 4 项、安装迁移与回滚 11 个场景通过。详见 [发行验收记录](docs/qa/2026-10-25-release-2.0.4.md)。
 
 v2.0.3 最终发行构建：arm64 与 Intel/Rosetta 各 **1,275 项通过，0 失败**（跳过真实设备读写）；签名与篡改拒绝 4 项、安装迁移与回滚 11 个场景通过。详见 [发行验收记录](docs/qa/2026-10-24-release-2.0.3.md)。
 
