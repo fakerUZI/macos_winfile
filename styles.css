@@ -519,6 +519,40 @@ h2 {
   font-size: 12px;
   line-height: 1.7;
 }
+.maintenance-note {
+  margin: 0 0 24px;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--white);
+}
+.maintenance-note h3 {
+  margin: 8px 0 12px;
+  font-size: clamp(21px, 3vw, 28px);
+  line-height: 1.5;
+}
+.maintenance-note p {
+  max-width: 90ch;
+  font-size: 14px;
+  line-height: 1.9;
+}
+.maintenance-note .maintenance-label {
+  margin: 0;
+  color: var(--green);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.maintenance-note .maintenance-progress {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.maintenance-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-top: 16px;
+}
 .release-credit {
   margin: 20px 0 0;
   color: var(--muted);
