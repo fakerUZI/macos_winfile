@@ -3,6 +3,11 @@ import AppKit
 /// System icons use the same bounded, coalesced image pipeline as thumbnails.
 /// Keep a separate budget so media previews cannot evict every file icon.
 enum FileIconService {
+    /// Available on the first frame without file I/O. Match macOS's folder icon
+    /// while the asynchronous pipeline resolves custom icons and aliases.
+    static let folderPlaceholder = NSImage(named: NSImage.folderName)
+        ?? NSImage(systemSymbolName: "folder.fill", accessibilityDescription: nil)!
+
     static let shared = ThumbnailService(byteLimit: 12 * 1024 * 1024, concurrencyLimit: 2,
                                          generator: { url, pixels in
         await Task.detached(priority: .utility) {

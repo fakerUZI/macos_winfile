@@ -71,9 +71,13 @@ final class NativeFileTileView: NSView {
         hovering = false
         updateColors()
         cancelImage()
-        icon.image = NSImage(systemSymbolName: item.isContainer ? "folder.fill" : item.category.symbol,
-                             accessibilityDescription: nil)
-        icon.contentTintColor = item.isContainer ? item.category.tint : .secondaryLabelColor
+        if item.isContainer {
+            icon.contentTintColor = nil
+            icon.image = FileIconService.folderPlaceholder
+        } else {
+            icon.image = NSImage(systemSymbolName: item.category.symbol, accessibilityDescription: nil)
+            icon.contentTintColor = .secondaryLabelColor
+        }
         guard !AndroidURL.isAndroid(item.url) else { return }
         imageTask = Task { @MainActor [weak self] in
             let version = "\(item.modified?.timeIntervalSince1970 ?? 0)|\(item.size ?? 0)"

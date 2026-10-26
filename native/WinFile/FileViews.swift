@@ -20,10 +20,15 @@ struct FileIconView: View {
                     .resizable()
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
+            } else if item.isContainer {
+                Image(nsImage: FileIconService.folderPlaceholder)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: item.isContainer ? "folder.fill" : item.category.symbol)
+                Image(systemName: item.category.symbol)
                     .font(.system(size: size * 0.82))
-                    .foregroundStyle(item.isContainer ? Color(nsColor: item.category.tint) : Color.secondary)
+                    .foregroundStyle(Color.secondary)
             }
         }
         .frame(width: size, height: size)
