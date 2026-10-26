@@ -1,10 +1,10 @@
 # LeafFiles
 
-**Make file management on Mac easier** with native SwiftUI, Android access, archive previews and storage cleanup.
+**Make file management on Mac easier** with a native macOS app for tabs, Android MTP access, archive previews and storage cleanup.
 
 **English** | [简体中文](README.md)
 
-[Product website (Chinese)](https://fakeruzi.github.io/macos_winfile/) · [Latest release](https://github.com/fakerUZI/macos_winfile/releases/latest)
+[Product website](https://fakeruzi.github.io/macos_winfile/en/) · [Latest release](https://github.com/fakerUZI/macos_winfile/releases/latest)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
@@ -12,7 +12,7 @@
 [![Tests](https://img.shields.io/badge/tests-1320%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
-LeafFiles (formerly WinFile) brings a native file management workflow to macOS: tabs, an editable path bar, category browsing and storage statistics in one native interface.
+LeafFiles brings everyday file browsing and organization into one window. Switch between folders in tabs, find files with the path bar and categories, review storage usage, organize app attachments and manage Android files. Supports Simplified Chinese, English and macOS dark mode.
 
 ![Main window](docs/screenshots/interface-refresh.jpg)
 
@@ -32,7 +32,7 @@ LeafFiles (formerly WinFile) brings a native file management workflow to macOS: 
 
 ## Why
 
-Finder is good, but it deliberately keeps things minimal. Some everyday tasks have no direct answer there:
+LeafFiles brings these everyday tasks together:
 
 - Keep several tabs open in one window, each parked in a different folder
 - Browse by "images / videos / documents / archives" instead of remembering which folder a file lives in
@@ -40,7 +40,7 @@ Finder is good, but it deliberately keeps things minimal. Some everyday tasks ha
 - Find out where apps like WeChat or RedNote store their files
 - Manage files on an Android tablet from your Mac
 
-LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **without the App Sandbox**, so it can browse the entire disk, including other apps' data containers. That's the key difference from App Store apps.
+LeafFiles brings these tasks together in a native macOS interface, with file scanning and organization performed locally. It runs **without the App Sandbox** and can browse directories allowed by macOS permissions, including readable app data folders.
 
 ## Project status and maintenance
 
@@ -122,7 +122,7 @@ The app bundles the official universal macOS console [7-Zip 26.04](https://www.7
 
 ### Interface details
 
-- **Empty-area context menu** — mirrors Windows Explorer: new folder/file, paste, sort by, view mode, show hidden files, reveal in Finder, copy current path
+- **Empty-area context menu** — create folders or files, paste, sort, switch views, show hidden files, reveal in Finder and copy the current path
 - **Manageable sidebar** — categories and favorites can be moved or removed from the context menu, or managed in a checkbox panel with up/down ordering
 - **Add sidebar favorites directly** — right-click folders in Details or Icons view and choose **Add to Sidebar**, including multiple folders. Right-click empty space to add the current folder. Duplicates are skipped and your browsing location stays unchanged, with no system picker required. Only readable local folders are accepted; regular files, `.app` bundles, and Android paths are excluded. Favorites persist across launches; removing a shortcut leaves the folder intact. Home favorites and sidebar favorites are managed separately.
 - **Status bar & inspector** — item count, total size of the selection, free disk space; the inspector shows details for a single file
