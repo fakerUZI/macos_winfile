@@ -1996,7 +1996,7 @@ enum NativeTestSuite {
         let full = PaneLayout.widths(total: 1180, sidebar: 216, inspector: 264, showsInspector: true)
         check("宽窗口保留首选侧栏宽度", full.sidebar == 216 && full.inspector == 264)
         let narrow = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: true)
-        check("窄窗口给内容保留至少四百点", narrow.sidebar >= 160 && narrow.inspector >= 200 && narrow.sidebar + narrow.inspector + 12 <= 460.01)
+        check("窄窗口给内容保留至少四百点", narrow.sidebar >= 160 && narrow.inspector >= 200 && narrow.sidebar + narrow.inspector + 2 * PaneLayout.divider <= 460.01)
         let hidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: false)
         check("隐藏检查器释放空间", hidden.sidebar == 360 && hidden.inspector == 0)
         let sidebarHidden = PaneLayout.widths(total: 860, sidebar: 360, inspector: 420, showsInspector: true, showsSidebar: false)

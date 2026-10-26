@@ -215,6 +215,16 @@ struct FolderTile: View {
 
     @State private var hovering = false
 
+    /// Reuse the sidebar palette; symbol names stay stable across languages.
+    private var iconColor: Color {
+        switch place.symbol {
+        case "photo": return Color(nsColor: FileCategory.image.tint)
+        case "film": return Color(nsColor: FileCategory.video.tint)
+        case "music.note": return Color(nsColor: FileCategory.audio.tint)
+        default: return Color.accentColor
+        }
+    }
+
     var body: some View {
         Button(action: open) {
             // 图标与文字作为一个整体放在同一个方框内。
@@ -223,7 +233,7 @@ struct FolderTile: View {
                 HStack(alignment: .center, spacing: 10) {
                     Image(systemName: place.symbol)
                         .font(.system(size: 24))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(iconColor)
                         .frame(width: 30, height: 30, alignment: .center)
                     Text(place.name)
                         .fontWeight(.medium)

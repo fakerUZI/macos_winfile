@@ -4,7 +4,7 @@ import AppKit
 enum PaneLayout {
     static let sidebarKey = "Layout.SidebarWidth"
     static let inspectorKey = "Layout.InspectorWidth"
-    static let divider: CGFloat = 6
+    static let divider: CGFloat = 12
 
     static func widths(total: CGFloat, sidebar: Double, inspector: Double, showsInspector: Bool,
                        showsSidebar: Bool = true) -> (sidebar: CGFloat, inspector: CGFloat) {

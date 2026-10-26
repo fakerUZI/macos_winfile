@@ -44,16 +44,18 @@ LeafFiles doesn't try to replace Finder — it fills those gaps. It runs **witho
 
 ## Project status and maintenance
 
-As of October 25, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
+As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.1.0
+## What’s new in v2.2.0
 
-- **Finder integration:** open supported archives with LeafFiles, or use Show in LeafFiles to reveal files and browse folders in new tabs. Multiple selections and cold launches are supported.
-- **Localized menus:** Settings, About, Hide, Quit and the top-level menu bar follow the selected language, with the duplicate Settings entry removed.
-- **New extraction folders:** create and enter folders directly in the built-in destination picker. Nested folders, name conflicts, invalid names and permission errors are handled explicitly.
-- Thanks to [@KaKi87](https://github.com/KaKi87) for suggestions, reports and follow-up in [#1](https://github.com/fakerUZI/macos_winfile/issues/1), [#2](https://github.com/fakerUZI/macos_winfile/issues/2) and [#3](https://github.com/fakerUZI/macos_winfile/issues/3). The website adds dedicated community acknowledgments; the release notes distinguish earlier fixes from this release.
+- **Icon colors:** restore sidebar navigation and category colors. Quick Access uses blue for common locations, green for Pictures, orange for Movies and purple for Music.
+- **Collapse and reopen panes in place:** arrow buttons on both dividers collapse the panes; reverse arrows remain at the edges to reopen them at their previous widths. Dragging, double-click reset and toolbar controls remain available.
+- **Fix folder-icon flashes:** lists and grids show the macOS folder icon on the first frame while loading custom icons, removing the brief yellow placeholder during folder changes.
+- Continue refining the interface, performance and stability of file management, while retaining community acknowledgments.
 
-See the [v2.1.0 release notes](docs/releases/v2.1.0.md), [release QA record](docs/qa/2026-10-25-release-2.1.0.md) and [v2.0.4 release notes](docs/releases/v2.0.4.md).
+See the [v2.2.0 release notes](docs/releases/v2.2.0.md), [release QA record](docs/qa/2026-10-26-release-2.2.0.md) and [v2.1.0 release notes](docs/releases/v2.1.0.md).
+
+![Home Quick Access and sidebar colors](docs/screenshots/home-quick-access-220.jpg)
 
 ## Features
 
@@ -292,6 +294,8 @@ Non-video files download a verified, read-only local copy with progress and canc
 Add `--skip-device-tests` to skip real-device file operations and browsing when an Android device is connected.
 
 Runs three modes in sequence: command-line logic tests → tests inside the real app bundle → UI smoke tests. If an MTP-ready Android device is connected, it also runs real device file operations.
+
+Final v2.2.0 release: **1,320 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. Pane collapse/reopening, width restoration and Home colors were verified in the interface. See the [release QA record](docs/qa/2026-10-26-release-2.2.0.md).
 
 Final v2.0.4 release: **1,281 checks each on arm64 and Intel/Rosetta, 0 failures**, excluding physical-device operations. Four signature/tamper checks and eleven installation/migration/rollback scenarios passed. See the [release QA record](docs/qa/2026-10-25-release-2.0.4.md).
 

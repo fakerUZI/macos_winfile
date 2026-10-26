@@ -55,14 +55,14 @@ struct SidebarView: View {
                 Label {
                     Text(L("view.home", "主页"))
                 } icon: {
-                    Image(systemName: "house.fill").foregroundStyle(Color.secondary)
+                    Image(systemName: "house.fill").foregroundStyle(Color(nsColor: .systemBlue))
                 }
                 .tag(SidebarSelection.home)
 
                 Label {
                     Text(L("view.thisPC", "此电脑"))
                 } icon: {
-                    Image(systemName: "pc").foregroundStyle(Color.secondary)
+                    Image(systemName: "pc").foregroundStyle(Color(nsColor: .systemBlue))
                 }
                 .tag(SidebarSelection.thisPC)
 
@@ -104,7 +104,7 @@ struct SidebarView: View {
                             }
                         } icon: {
                             Image(systemName: category.symbol)
-                                .foregroundStyle(Color.secondary)
+                                .foregroundStyle(Color(nsColor: category.tint))
                         }
                         .tag(SidebarSelection.category(category))
                         .contextMenu {
@@ -135,12 +135,16 @@ struct SidebarView: View {
                 Label {
                     Text(L("place.applications", "应用程序"))
                 } icon: {
-                    Image(systemName: "square.grid.2x2.fill").foregroundStyle(.secondary)
+                    Image(systemName: "square.grid.2x2.fill").foregroundStyle(.blue)
                 }
                 .tag(SidebarSelection.applications)
 
-                Label(L("view.appData", "应用数据"), systemImage: "shippingbox")
-                    .tag(SidebarSelection.appData)
+                Label {
+                    Text(L("view.appData", "应用数据"))
+                } icon: {
+                    Image(systemName: "shippingbox").foregroundStyle(Color.accentColor)
+                }
+                .tag(SidebarSelection.appData)
 
             }
             AndroidSidebarSection()
@@ -199,7 +203,7 @@ struct SidebarView: View {
             Text(url.lastPathComponent)
         } icon: {
             Image(systemName: "folder.fill")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.accentColor)
         }
         .tag(SidebarSelection.folder(url))
         .help(url.path)
@@ -242,7 +246,7 @@ struct AndroidSidebarSection: View {
                         }
                     } icon: {
                         Image(systemName: "candybarphone")
-                            .foregroundStyle(device.isReady ? Color.secondary : Color.orange)
+                            .foregroundStyle(device.isReady ? Color.accentColor : Color.orange)
                     }
                     .tag(SidebarSelection.androidDevice(serial: device.serial))
                 }

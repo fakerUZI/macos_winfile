@@ -58,21 +58,32 @@ struct MainView: View {
     /// 三栏布局：侧边栏 / 内容（含页签栏）/ 详细信息
     private var splitLayout: some View {
         GeometryReader { geometry in
-            let inspectorVisible = showInspector && !model.isWeChatCleanupView && !model.isStorageCleanupView
-            let widths = PaneLayout.widths(total: geometry.size.width, sidebar: sidebarWidth,
+            let inspectorAvailable = !model.isWeChatCleanupView && !model.isStorageCleanupView
+            let inspectorVisible = showInspector && inspectorAvailable
+            let collapsedRails = (showSidebar ? 0 : 1) + (inspectorAvailable && !showInspector ? 1 : 0)
+            let paneBudget = max(0, geometry.size.width - CGFloat(collapsedRails) * PaneLayout.divider)
+            let widths = PaneLayout.widths(total: paneBudget, sidebar: sidebarWidth,
                                            inspector: inspectorWidth, showsInspector: inspectorVisible,
                                            showsSidebar: showSidebar)
             HStack(spacing: 0) {
                 if showSidebar {
                     SidebarView(engine: engine, model: model).frame(width: widths.sidebar)
                     PaneResizeHandle(preferredWidth: $sidebarWidth, actualWidth: widths.sidebar, range: 160...360,
-                                     expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216)
+                                     expandsToRight: true, title: L("layout.sidebarWidth", "侧边栏宽度"), defaultWidth: 216,
+                                     collapseTitle: L("action.hideSidebar", "隐藏侧边栏"), collapse: { showSidebar = false })
+                } else {
+                    CollapsedPaneHandle(expandsToRight: true, title: L("action.showSidebar", "显示侧边栏"),
+                                        expand: { showSidebar = true })
                 }
                 contentPane
                 if inspectorVisible {
                     PaneResizeHandle(preferredWidth: $inspectorWidth, actualWidth: widths.inspector, range: 200...420,
-                                     expandsToRight: false, title: L("layout.inspectorWidth", "详细信息宽度"), defaultWidth: 264)
+                                     expandsToRight: false, title: L("layout.inspectorWidth", "详细信息宽度"), defaultWidth: 264,
+                                     collapseTitle: L("action.hideInspector", "隐藏详细信息"), collapse: { showInspector = false })
                     InspectorView(engine: engine, model: model).frame(width: widths.inspector)
+                } else if inspectorAvailable {
+                    CollapsedPaneHandle(expandsToRight: false, title: L("action.toggleInspector", "显示详细信息"),
+                                        expand: { showInspector = true })
                 }
             }
         }

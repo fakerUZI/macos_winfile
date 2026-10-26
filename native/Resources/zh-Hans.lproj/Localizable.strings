@@ -821,6 +821,7 @@
 "wechat.filter.month" = "月份：%@";
 "wechat.filter.size" = "至少 %@";
 "layout.resizeHint" = "拖动调整宽度，双击恢复默认";
+"action.hideInspector" = "隐藏详细信息";
 "layout.width" = "%d 点";
 "layout.sidebarWidth" = "侧边栏宽度";
 "action.hideSidebar" = "隐藏侧边栏";

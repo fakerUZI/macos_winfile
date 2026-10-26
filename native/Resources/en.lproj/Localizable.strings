@@ -803,6 +803,7 @@
 "wechat.filter.month" = "Month: %@";
 "wechat.filter.size" = "At least %@";
 "layout.resizeHint" = "Drag to resize; double-click to reset";
+"action.hideInspector" = "Hide details";
 "layout.width" = "%d points";
 "layout.sidebarWidth" = "Sidebar width";
 "action.hideSidebar" = "Hide Sidebar";
