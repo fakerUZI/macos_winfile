@@ -2190,3 +2190,7 @@ details a {
 @media (max-width: 1080px) { .main-nav { gap: 20px; margin-right: 10px; } }
 @media (max-width: 760px) { .community-grid { grid-template-columns: minmax(0, 1fr); } .contributor-card, .community-invitation { padding: 26px; } }
 @media (max-width: 380px) { .contributor-card, .community-invitation { padding: 20px; } .contributor-profile { gap: 12px; } .contributor-role { font-size: 11px; } .contribution-links a { gap: 10px; } }
+
+/* Release 2.2.0: an illustrative pane rail, using the existing green palette. */
+.pane-toggle-demo{display:grid;grid-template-columns:22px minmax(0,1fr) 22px;align-items:center;gap:12px;margin:24px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--white);text-align:center;font-size:14px;color:var(--muted)}
+.pane-demo-arrow{display:grid;place-items:center;width:22px;height:42px;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--green);font-size:24px;line-height:1}
