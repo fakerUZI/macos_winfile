@@ -405,5 +405,7 @@
   "切换文件夹，": "Change folders.",
   "图标不再闪黄。": "No yellow flash.",
   "列表与网格首帧直接显示 macOS 文件夹图标，消除真实图标加载前的黄色占位闪现，自定义图标仍会继续读取。": "Lists and grids show the macOS folder icon from the first frame, removing the yellow placeholder flash while custom icons continue to load.",
-  "访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。": "Finder integration, localized menus and new extraction folders remain available."
+  "访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。": "Finder integration, localized menus and new extraction folders remain available.",
+  "2026.10.27 · 项目近况": "2026.10.27 · Project update",
+  "开发版已修复拖放时意外产生副本的问题：当前文件夹中的项目拖入子文件夹会移动，其他目录拖入仍为复制。修复尚未进入正式安装包。": "The development build fixes unexpected copies when dragging: items from the current folder move into a subfolder, while items dragged in from other folders are copied. This fix is not yet in the public release."
 }
