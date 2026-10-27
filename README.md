@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#安装)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#技术栈)
-[![Tests](https://img.shields.io/badge/tests-1320%20passing-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen.svg)](#测试)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles 面向日常文件浏览与整理：在多页签间切换目录，通过路径栏和分类查找文件，在同一界面查看空间占用、整理应用附件与管理安卓设备。支持简体中文、English 和 macOS 深色模式。
@@ -47,7 +47,14 @@ LeafFiles 将这些操作集中在一个原生 macOS 界面中，文件扫描与
 
 截至 2026 年 10 月 26 日，近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会继续围绕文件浏览、整理和管理打磨体验，后续以界面优化、性能提升和问题修复为主，不扩展与文件管理无关的功能。使用中遇到问题，欢迎通过 [Issues](https://github.com/fakerUZI/macos_winfile/issues) 反馈。
 
-## 本次更新：v2.2.0
+## 本次更新：v2.2.1
+
+- **修复拖放时意外复制**：当前目录中的文件或文件夹拖入其子文件夹时会移动，拖到当前目录空白处不再生成副本。从其他目录拖入仍会复制。
+- **操作更安全**：读取拖入项目失败或混合当前目录与其他目录来源时，提示重试或分别拖放；已有移动撤销与传输进度继续可用。
+
+[v2.2.1 更新记录](docs/releases/v2.2.1.md) · [发行验收](docs/qa/2026-10-27-release-2.2.1.md) · [v2.2.0 更新记录](docs/releases/v2.2.0.md) · [一键安装](#一键安装推荐)
+
+### v2.2.0 界面更新
 
 - **图标配色**：恢复侧栏导航与分类图标颜色，主页快速访问同步使用蓝色常用目录、绿色图片、橙色影片与紫色音乐图标。
 - **侧栏原位收起与展开**：左右分隔线增加方向箭头；收起后在边缘保留反向箭头，展开恢复之前的宽度，仍支持拖动调宽、双击复位与顶部按钮。

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1320%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles brings everyday file browsing and organization into one window. Switch between folders in tabs, find files with the path bar and categories, review storage usage, organize app attachments and manage Android files. Supports Simplified Chinese, English and macOS dark mode.
@@ -46,7 +46,14 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.2.0
+## What’s new in v2.2.1
+
+- **Fix unintended copies on drop:** dragging an item from the current folder into a subfolder moves it; dropping it on the current folder's empty area no longer creates a copy. Items dragged in from other folders are copied.
+- **Safer handling:** unreadable dragged items and mixed sources prompt you to retry or drag separately. Move undo and transfer progress remain available.
+
+See the [v2.2.1 release notes](docs/releases/v2.2.1.md), [release QA](docs/qa/2026-10-27-release-2.2.1.md), and [v2.2.0 release notes](docs/releases/v2.2.0.md).
+
+### v2.2.0 interface update
 
 - **Icon colors:** restore sidebar navigation and category colors. Quick Access uses blue for common locations, green for Pictures, orange for Movies and purple for Music.
 - **Collapse and reopen panes in place:** arrow buttons on both dividers collapse the panes; reverse arrows remain at the edges to reopen them at their previous widths. Dragging, double-click reset and toolbar controls remain available.
