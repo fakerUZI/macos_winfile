@@ -407,5 +407,18 @@
   "列表与网格首帧直接显示 macOS 文件夹图标，消除真实图标加载前的黄色占位闪现，自定义图标仍会继续读取。": "Lists and grids show the macOS folder icon from the first frame, removing the yellow placeholder flash while custom icons continue to load.",
   "访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。": "Finder integration, localized menus and new extraction folders remain available.",
   "2026.10.27 · 项目近况": "2026.10.27 · Project update",
-  "开发版已修复拖放时意外产生副本的问题：当前文件夹中的项目拖入子文件夹会移动，其他目录拖入仍为复制。修复尚未进入正式安装包。": "The development build fixes unexpected copies when dragging: items from the current folder move into a subfolder, while items dragged in from other folders are copied. This fix is not yet in the public release."
+  "开发版已修复拖放时意外产生副本的问题：当前文件夹中的项目拖入子文件夹会移动，其他目录拖入仍为复制。修复尚未进入正式安装包。": "The development build fixes unexpected copies when dragging: items from the current folder move into a subfolder, while items dragged in from other folders are copied. This fix is not yet in the public release.",
+  "拖放更准确，": "More precise drag and drop.",
+  "整理更安心。": "Organize with confidence.",
+  "v{{VERSION}} 修复拖放时意外创建副本的问题。可通过原终端命令安装，或在应用内检查更新。": "v{{VERSION}} fixes unexpected copies during drag and drop. Use the existing terminal command or Check for Updates in the app.",
+  "当前文件夹中的项目拖入子文件夹会移动，拖到当前文件夹空白处不会产生副本；从其他目录拖入仍会复制。需要副本时可使用复制与粘贴。": "Items dragged from the current folder into a subfolder move, while dropping onto the current folder's empty area creates no copy. Items dragged in from other folders are copied. Use copy and paste when you need a duplicate.",
+  "01 / 拖放修复": "01 / DRAG AND DROP FIX",
+  "整理文件，": "Organize your files.",
+  "移动就是移动。": "Move without duplicates.",
+  "在列表或图标视图中，将当前目录的项目拖入子文件夹会移动原项目；其他目录拖入时会复制并保留源文件。": "In list or icon view, drag an item from the current folder into a subfolder to move it. Dragging an item in from another folder makes a copy and preserves the original.",
+  "移动支持撤销；不同来源的项目请分别拖放。下图为 v2.2.0 界面。": "Moves can be undone. Drag items from different sources separately. The image shows the v2.2.0 interface.",
+  "02 / v2.2.0 侧栏优化": "02 / v2.2.0 PANE CONTROLS",
+  "03 / v2.2.0 图标修复": "03 / v2.2.0 ICON FIX",
+  "v2.0.2 真实应用界面 · 生成样例": "v2.0.2 app interface · generated samples",
+  "移动支持撤销；不同来源的项目请分别拖放。配图为 v2.2.0 界面。": "Moves can be undone. Drag items from different sources separately. The image shows the v2.2.0 interface."
 }

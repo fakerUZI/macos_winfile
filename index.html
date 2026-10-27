@@ -74,20 +74,20 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">图标添点色，<br>侧栏更顺手。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">拖放更准确，<br>整理更安心。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <aside class="maintenance-note" aria-labelledby="maintenance-title">
         <p class="maintenance-label">2026.10.27 · 项目近况</p>
         <h3 id="maintenance-title">专注文件管理，持续打磨日常体验。</h3>
         <p>近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会围绕文件浏览、整理和管理持续完善，后续以界面优化、性能提升和问题修复为主，不扩展无关功能。</p>
-        <p class="maintenance-progress">v{{VERSION}} 优化图标配色与左右侧栏交互，修复切换目录时的黄色图标闪现。可通过原终端命令安装，或在应用内检查更新。</p>
-        <p class="maintenance-progress">开发版已修复拖放时意外产生副本的问题：当前文件夹中的项目拖入子文件夹会移动，其他目录拖入仍为复制。修复尚未进入正式安装包。</p>
+        <p class="maintenance-progress">v{{VERSION}} 修复拖放时意外创建副本的问题。可通过原终端命令安装，或在应用内检查更新。</p>
+        <p class="maintenance-progress">当前文件夹中的项目拖入子文件夹会移动，拖到当前文件夹空白处不会产生副本；从其他目录拖入仍会复制。需要副本时可使用复制与粘贴。</p>
         <div class="maintenance-links"><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/releases/tag/v{{VERSION}}">查看 v{{VERSION}} 更新 <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/issues">反馈问题 <span aria-hidden="true">↗</span></a></div>
       </aside>
       <div class="release-grid">
-        <article class="release-card release-card-preview"><span class="release-number">01 / 图标配色</span><h3>常用入口，<br>一眼认出来。</h3><p>侧栏与主页快速访问同步配色：蓝色常用目录、绿色图片、橙色影片、紫色音乐，找入口更直观。</p><button class="screenshot-button release-preview" data-image="./assets/home-quick-access-220.jpg" data-caption="主页快速访问与分类配色 · 生成的示例文件" aria-label="放大查看彩色快速访问主页"><img src="./assets/home-quick-access-220.jpg" width="2360" height="1496" alt="LeafFiles 主页，快速访问的蓝色常用目录、绿色图片、橙色影片与紫色音乐图标呼应左侧分类配色" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><p class="release-note">图标增加辨识度，文字、背景与卡片层次保持清晰。</p></article>
-        <article class="release-card"><span class="release-number">02 / 双侧收起与展开</span><h3>收起留空间，<br>展开回原位。</h3><p>左右分隔线增加方向箭头，收起后在窗口边缘保留反向箭头。两侧可分别操作，也能同时收起；点击展开即可恢复之前的宽度。</p><div class="pane-toggle-demo" aria-hidden="true"><span class="pane-demo-arrow">›</span><span>文件区</span><span class="pane-demo-arrow">‹</span></div><p class="release-note">拖动调宽、双击复位和顶部按钮继续可用。窄边条单独占位，不盖住文件或滚动条。</p><a class="text-link" href="#quick-install">使用原安装命令 <svg class="icon"><use href="#arrow"/></svg></a></article>
-        <article class="release-card"><span class="release-number">03 / 修复图标闪现</span><h3>切换文件夹，<br>图标不再闪黄。</h3><p>列表与网格首帧直接显示 macOS 文件夹图标，消除真实图标加载前的黄色占位闪现，自定义图标仍会继续读取。</p><p class="release-note">访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。</p><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></article>
+        <article class="release-card release-card-preview"><span class="release-number">01 / 拖放修复</span><h3>整理文件，<br>移动就是移动。</h3><p>在列表或图标视图中，将当前目录的项目拖入子文件夹会移动原项目；其他目录拖入时会复制并保留源文件。</p><button class="screenshot-button release-preview" data-image="./assets/home-quick-access-220.jpg" data-caption="主页快速访问与分类配色 · 生成的示例文件" aria-label="放大查看彩色快速访问主页"><img src="./assets/home-quick-access-220.jpg" width="2360" height="1496" alt="LeafFiles 主页，快速访问的蓝色常用目录、绿色图片、橙色影片与紫色音乐图标呼应左侧分类配色" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><p class="release-note">移动支持撤销；不同来源的项目请分别拖放。配图为 v2.2.0 界面。</p></article>
+        <article class="release-card"><span class="release-number">02 / v2.2.0 侧栏优化</span><h3>收起留空间，<br>展开回原位。</h3><p>左右分隔线增加方向箭头，收起后在窗口边缘保留反向箭头。两侧可分别操作，也能同时收起；点击展开即可恢复之前的宽度。</p><div class="pane-toggle-demo" aria-hidden="true"><span class="pane-demo-arrow">›</span><span>文件区</span><span class="pane-demo-arrow">‹</span></div><p class="release-note">拖动调宽、双击复位和顶部按钮继续可用。窄边条单独占位，不盖住文件或滚动条。</p><a class="text-link" href="#quick-install">使用原安装命令 <svg class="icon"><use href="#arrow"/></svg></a></article>
+        <article class="release-card"><span class="release-number">03 / v2.2.0 图标修复</span><h3>切换文件夹，<br>图标不再闪黄。</h3><p>列表与网格首帧直接显示 macOS 文件夹图标，消除真实图标加载前的黄色占位闪现，自定义图标仍会继续读取。</p><p class="release-note">访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。</p><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></article>
       </div>
       <p class="release-credit">感谢真实使用中的反馈与验证，让每次修复都有依据。<a href="#thanks">认识这些贡献者 ↗</a></p>
     </section>
@@ -114,7 +114,7 @@
       </div>
       <div class="feature-panel" id="panel-archive" role="tabpanel" aria-labelledby="tab-archive">
         <div class="feature-copy"><span class="feature-kicker">ARCHIVE PREVIEW &amp; EXTRACTION</span><h3>先看清内容，<br>再把文件解出来。</h3><p>ZIPX、RAR、7Z、TAR 与更多归档格式，都在一个窗口里处理。先浏览目录或搜索，再双击小文件交给默认应用，或按空格快速预览。</p><div class="format-tags" aria-label="支持的解压格式"><span>ZIP / ZIPX</span><span>RAR / RAR5</span><span>7Z / TAR</span><span>ZSTD / LZMA</span><span>CAB / ARJ / LZH</span></div><ul class="check-list"><li>目录与面包屑导航，全包搜索显示完整路径</li><li>双击用默认应用打开，空格保留快速预览</li><li>密码、分卷、批量解压与取消</li><li>同名冲突自动另存，保留已有文件</li></ul><p class="feature-footnote">创建 ZIP 自动过滤 .DS_Store、._* 和 __MACOSX，保留 .git、.env 等其他隐藏文件。默认应用打开需小于 64 MiB，达到限制或大小未知时请先解压；内置预览上限 64 MiB，压缩 TAR 中间归档上限 512 MiB。外部打开副本延后清理，不写回压缩包；算法变体受引擎限制。</p></div>
-        <figure class="feature-figure archive-preview-figure"><button class="screenshot-button" data-image="./assets/archive-default-open-202.png" data-caption="默认应用打开与快速预览 · 生成样例" aria-label="放大查看压缩包目录预览"><img src="./assets/archive-default-open-202.png" width="1440" height="1080" alt="LeafFiles 压缩包中的示例文本内置预览，并提供用默认应用打开按钮，所有内容均为生成样例" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v{{VERSION}} 真实应用界面 · 生成样例</figcaption></figure>
+        <figure class="feature-figure archive-preview-figure"><button class="screenshot-button" data-image="./assets/archive-default-open-202.png" data-caption="默认应用打开与快速预览 · 生成样例" aria-label="放大查看压缩包目录预览"><img src="./assets/archive-default-open-202.png" width="1440" height="1080" alt="LeafFiles 压缩包中的示例文本内置预览，并提供用默认应用打开按钮，所有内容均为生成样例" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><figcaption><span class="status-dot"></span> v2.0.2 真实应用界面 · 生成样例</figcaption></figure>
       </div>
     </section>
 
