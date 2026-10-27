@@ -125,6 +125,7 @@ The app bundles the official universal macOS console [7-Zip 26.04](https://www.7
 - **Empty-area context menu** — create folders or files, paste, sort, switch views, show hidden files, reveal in Finder and copy the current path
 - **Manageable sidebar** — categories and favorites can be moved or removed from the context menu, or managed in a checkbox panel with up/down ordering
 - **Add sidebar favorites directly** — right-click folders in Details or Icons view and choose **Add to Sidebar**, including multiple folders. Right-click empty space to add the current folder. Duplicates are skipped and your browsing location stays unchanged, with no system picker required. Only readable local folders are accepted; regular files, `.app` bundles, and Android paths are excluded. Favorites persist across launches; removing a shortcut leaves the folder intact. Home favorites and sidebar favorites are managed separately.
+- **Organize by dragging** — dragging an item from the current folder onto a subfolder moves it; dropping it on the current folder's empty area does not create a copy. Items dragged from other folders are copied. Use copy and paste to create a copy explicitly, and drag items from different sources separately.
 - **Status bar & inspector** — item count, total size of the selection, free disk space; the inspector shows details for a single file
 
 ### Software cleanup (new in v1.3.0)

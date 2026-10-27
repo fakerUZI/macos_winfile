@@ -29,6 +29,41 @@ enum SidebarFolderDrop {
     }
 }
 
+/// A drag from the displayed directory moves into its child; other sources copy.
+enum FileDropPolicy {
+    enum Action { case move, copy, ignore, mixed }
+
+    static func action(for urls: [URL], currentDirectory: URL, destination: URL) -> Action {
+        let sources = urls.filter(\.isFileURL)
+        guard !sources.isEmpty, currentDirectory.isFileURL, destination.isFileURL else { return .ignore }
+        func canonical(_ url: URL) -> String { url.standardizedFileURL.resolvingSymlinksInPath().path }
+        let current = canonical(currentDirectory)
+        let localCount = sources.filter { canonical($0.deletingLastPathComponent()) == current }.count
+        if localCount == sources.count {
+            return canonical(destination) == current ? .ignore : .move
+        }
+        return localCount == 0 ? .copy : .mixed
+    }
+}
+
+/// Folder targets accept drops before the enclosing view's background target.
+struct FileFolderDrop: ViewModifier {
+    let item: FileItem
+    let model: BrowserModel
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if item.isDirectory && !item.isBundle && item.url.isFileURL, let current = model.currentDirectory {
+            content.onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                guard !providers.isEmpty else { return false }
+                SidebarFolderDrop.load(providers) { urls, failed in
+                    model.dropFiles(urls, from: current, to: item.url, failed: failed)
+                }
+                return true
+            }
+        } else { content }
+    }
+}
+
 struct SidebarFolderDropDelegate: DropDelegate {
     @Binding var isTargeted: Bool
     let onFolders: ([URL], Int) -> Void

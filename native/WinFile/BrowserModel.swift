@@ -1914,6 +1914,24 @@ final class BrowserModel: ObservableObject {
         startFileTransfer(urls.filter(\.isFileURL), to: directory, mode: .copy)
     }
 
+    func dropFiles(_ urls: [URL], from current: URL, to destination: URL, failed: Int = 0) {
+        guard failed == 0 else {
+            statusMessage = L("operation.dropReadFailed", "无法读取拖入的部分文件，请重试。")
+            return
+        }
+        let files = urls.filter(\.isFileURL)
+        switch FileDropPolicy.action(for: files, currentDirectory: current, destination: destination) {
+        case .move:
+            startFileTransfer(files, to: destination, mode: .move)
+        case .copy:
+            startFileTransfer(files, to: destination, mode: .copy)
+        case .mixed:
+            statusMessage = L("operation.dropMixedSources", "请分别拖放当前目录和其他目录的文件。")
+        case .ignore:
+            break
+        }
+    }
+
     func openTransferResult() {
         guard let directory = lastTransferOutcome?.destination else { return }
         if let manager = tabManager { manager.newTab(startDirectory: directory) }

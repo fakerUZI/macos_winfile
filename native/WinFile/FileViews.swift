@@ -167,6 +167,7 @@ struct FileTableView: View {
                     Spacer(minLength: 0)
                 }
                 .help(item.url.path)
+                .modifier(FileFolderDrop(item: item, model: model))
             }
             .width(min: 200, ideal: 320)
 
@@ -174,6 +175,9 @@ struct FileTableView: View {
                 Text(item.modified.map(Self.dateText) ?? "—")
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .modifier(FileFolderDrop(item: item, model: model))
             }
             .width(min: 120, ideal: 150)
 
@@ -181,6 +185,9 @@ struct FileTableView: View {
                 Text(item.typeDescription)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .modifier(FileFolderDrop(item: item, model: model))
             }
             .width(min: 100, ideal: 140)
 
@@ -189,6 +196,8 @@ struct FileTableView: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .contentShape(Rectangle())
+                    .modifier(FileFolderDrop(item: item, model: model))
             }
             .width(min: 70, ideal: 90)
         } rows: {
@@ -362,21 +371,9 @@ struct FileTableView: View {
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         guard let directory = model.currentDirectory else { return false }
-        let group = DispatchGroup()
-        var urls: [URL] = []
-        let lock = NSLock()
-        for provider in providers {
-            group.enter()
-            _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                if let url {
-                    lock.lock(); urls.append(url); lock.unlock()
-                }
-                group.leave()
-            }
-        }
-        group.notify(queue: .main) {
-            guard !urls.isEmpty else { return }
-            model.copyFiles(urls, to: directory)
+        guard !providers.isEmpty else { return false }
+        SidebarFolderDrop.load(providers) { urls, failed in
+            model.dropFiles(urls, from: directory, to: directory, failed: failed)
         }
         return true
     }
@@ -410,18 +407,9 @@ struct FileIconGridView: View {
             }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let directory = model.currentDirectory else { return false }
-            let group = DispatchGroup()
-            var urls: [URL] = []
-            let lock = NSLock()
-            for provider in providers {
-                group.enter()
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    if let url { lock.lock(); urls.append(url); lock.unlock() }
-                    group.leave()
-                }
-            }
-            group.notify(queue: .main) {
-                model.copyFiles(urls, to: directory)
+            guard !providers.isEmpty else { return false }
+            SidebarFolderDrop.load(providers) { urls, failed in
+                model.dropFiles(urls, from: directory, to: directory, failed: failed)
             }
             return true
         }
@@ -450,6 +438,7 @@ struct FileIconGridView: View {
     private func tile(for item: FileItem) -> some View {
         FileTile(item: item, selected: model.selectedIDs.contains(item.id))
             .modifier(LocalFileDrag(url: item.url))
+            .modifier(FileFolderDrop(item: item, model: model))
             // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
             .background(
                 FileTileMarker(item: item) {

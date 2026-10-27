@@ -1181,3 +1181,5 @@
 "nativeMenu.servicesSettings" = "Services Settings…";
 "nativeMenu.noServices" = "No Services Apply";
 "external.noFiles" = "No local files or folders were received.";
+"operation.dropMixedSources" = "Please drag files from the current folder and other folders separately.";
+"operation.dropReadFailed" = "Some dragged files could not be read. Please try again.";

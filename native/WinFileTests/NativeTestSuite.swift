@@ -1637,6 +1637,22 @@ enum NativeTestSuite {
         let first = source.appendingPathComponent("a.txt")
         try Data("first".utf8).write(to: first)
         func item(_ url: URL) -> FileItem { FileItem(url: url, resourceKeys: FileSystemService.resourceKeys, showHidden: true)! }
+        let dragFolder = source.appendingPathComponent("DragFolder")
+        let dragTarget = source.appendingPathComponent("DropTarget")
+        let externalFile = target.appendingPathComponent("external.txt")
+        try fm.createDirectory(at: dragFolder, withIntermediateDirectories: true)
+        try fm.createDirectory(at: dragTarget, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: dragFolder.appendingPathComponent("inside.txt"))
+        try Data("external".utf8).write(to: externalFile)
+        let movingAction = FileDropPolicy.action(for: [dragFolder], currentDirectory: source, destination: dragTarget)
+        check("拖入当前目录的子文件夹选择移动", movingAction == .move)
+        check("拖到当前目录空白处不创建副本", FileDropPolicy.action(for: [dragFolder], currentDirectory: source, destination: source) == .ignore)
+        check("从其他目录拖入选择复制", FileDropPolicy.action(for: [externalFile], currentDirectory: source, destination: dragTarget) == .copy)
+        check("混合来源拖放不会误用同一种操作", FileDropPolicy.action(for: [dragFolder, externalFile], currentDirectory: source, destination: dragTarget) == .mixed)
+        let dragMove = FileTransferService.transfer([item(dragFolder)], to: dragTarget, mode: .move, token: ScanCancellation()) { _ in }
+        check("拖放移动目录保留内容且不保留源目录", dragMove.moves.count == 1 && !fm.fileExists(atPath: dragFolder.path) && (try? Data(contentsOf: dragTarget.appendingPathComponent("DragFolder/inside.txt"))) == Data("nested".utf8))
+        let dragCopy = FileTransferService.transfer([item(externalFile)], to: dragTarget, mode: .copy, token: ScanCancellation()) { _ in }
+        check("其他目录拖入复制后源文件仍存在", dragCopy.failures.isEmpty && fm.fileExists(atPath: externalFile.path) && (try? Data(contentsOf: dragTarget.appendingPathComponent("external.txt"))) == Data("external".utf8))
         func spinUntil(_ finished: () -> Bool) {
             let deadline = Date().addingTimeInterval(10)
             repeat { RunLoop.current.run(until: Date().addingTimeInterval(0.025)) }
