@@ -55,6 +55,8 @@ final class TabManager: ObservableObject {
 
     @Published private(set) var tabs: [WinFileTab] = []
     @Published private(set) var activeID: UUID?
+    /// Prevents a drag from one window from reordering another window's tabs.
+    let reorderIdentifier = UUID()
 
     private let engine: FSEngine
     private var cancellables = Set<AnyCancellable>()
@@ -65,6 +67,7 @@ final class TabManager: ObservableObject {
 
     private let sessionStore: BrowserSessionStore
     private let persistsSession: Bool
+    private var includedInSession = true
     private var saveTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
     private var inactiveSince: [UUID: Date] = [:]
@@ -72,9 +75,9 @@ final class TabManager: ObservableObject {
     private var memoryPressure: DispatchSourceMemoryPressure?
     @Published private(set) var closedTabs: [SavedBrowserTab] = []
 
-    init(engine: FSEngine, startDirectory: URL?, restoreSession: Bool = false, sessionStore: BrowserSessionStore? = nil) {
+    init(engine: FSEngine, startDirectory: URL?, restoreSession: Bool = false, sessionStore: BrowserSessionStore? = nil, persistSession: Bool = false) {
         self.sessionStore = sessionStore ?? .shared
-        self.persistsSession = restoreSession
+        self.persistsSession = restoreSession || persistSession
         self.engine = engine
         // 始终至少有一个页签，符合资源管理器行为
         let first = WinFileTab(engine: engine, startDirectory: startDirectory, tabManager: self)
@@ -158,7 +161,13 @@ final class TabManager: ObservableObject {
     }
     func persistNow() {
         guard persistsSession else { return }
-        sessionStore.save(tabs: tabs, activeID: activeID)
+        if sessionStore === BrowserSessionStore.shared {
+            let managers = Self.liveManagers.allObjects.filter { $0.persistsSession && $0.includedInSession }
+            let allTabs = managers.flatMap(\.tabs)
+            sessionStore.save(tabs: allTabs, activeID: activeID)
+        } else {
+            sessionStore.save(tabs: tabs, activeID: activeID)
+        }
     }
 
     var activeTab: WinFileTab { tabs.first { $0.id == activeID } ?? tabs[0] }
@@ -246,6 +255,65 @@ final class TabManager: ObservableObject {
         tab.isPinned.toggle()
         tabs = tabs.filter(\.isPinned) + tabs.filter { !$0.isPinned }
         scheduleSave()
+    }
+
+    /// Reordering stays within the pinned or unpinned group and keeps selection intact.
+    @discardableResult
+    func moveTab(_ id: UUID, over targetID: UUID) -> Bool {
+        guard let source = tabs.firstIndex(where: { $0.id == id }),
+              let target = tabs.firstIndex(where: { $0.id == targetID }),
+              source != target, tabs[source].isPinned == tabs[target].isPinned else { return false }
+        var reordered = tabs
+        let tab = reordered.remove(at: source)
+        reordered.insert(tab, at: target)
+        tabs = reordered
+        scheduleSave()
+        return true
+    }
+
+    func canMoveTab(_ tab: WinFileTab, direction: Int) -> Bool {
+        guard direction == -1 || direction == 1,
+              let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return false }
+        let neighbor = index + direction
+        return tabs.indices.contains(neighbor) && tabs[neighbor].isPinned == tab.isPinned
+    }
+
+    func moveTab(_ tab: WinFileTab, direction: Int) {
+        guard canMoveTab(tab, direction: direction),
+              let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        moveTab(tab.id, over: tabs[index + direction].id)
+    }
+
+    /// Transfer the same model so navigation history and ongoing operations survive.
+    @discardableResult
+    func transfer(_ tab: WinFileTab, to destination: TabManager, replacePlaceholder: Bool = false) -> Bool {
+        guard destination !== self, tabs.count > 1 || !includedInSession,
+              let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return false }
+        var remaining = tabs
+        remaining.remove(at: index)
+        if !remaining.isEmpty {
+            tabs = remaining
+            if activeID == tab.id { activeID = remaining[min(index, remaining.count - 1)].id }
+        }
+        tab.model.tabManager = destination
+        var targetTabs = replacePlaceholder ? [] : destination.tabs
+        let insertion = tab.isPinned ? targetTabs.prefix(while: \.isPinned).count : targetTabs.count
+        targetTabs.insert(tab, at: insertion)
+        destination.tabs = targetTabs
+        destination.activeID = tab.id
+        destination.forwardActiveModelChanges()
+        if !remaining.isEmpty { forwardActiveModelChanges() }
+        destination.scheduleSave()
+        scheduleSave()
+        return true
+    }
+
+    func mergeAll(into destination: TabManager) {
+        guard destination !== self else { return }
+        includedInSession = false
+        let original = tabs
+        for tab in original { _ = transfer(tab, to: destination) }
+        destination.scheduleSave()
     }
 
     private func rememberClosed(_ tab: WinFileTab) {

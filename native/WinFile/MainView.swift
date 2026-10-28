@@ -23,13 +23,17 @@ struct MainView: View {
     @State private var editingPath = false
     @State private var searchText = ""
     @FocusState private var pathFieldFocused: Bool
+    @Environment(\.openWindow) private var openWindow
+    @State private var tabFrames: [UUID: CGRect] = [:]
+    @State private var draggingTabID: UUID?
+    @State private var dragTargetID: UUID?
 
     /// 兼容旧测试入口
     static var currentTabManager: TabManager? { WindowBridge.shared.tabManager }
     /// 外层视图（承载标题/命令栏/地址栏）的求值次数，供验证刷新是否发生
     static var outerBodyEvaluations = 0
 
-    init(engine: FSEngine, skipAutoNavigation: Bool = false) {
+    init(engine: FSEngine, skipAutoNavigation: Bool = false, existingManager: TabManager? = nil) {
         self.engine = engine
         self.skipAutoNavigation = skipAutoNavigation
         let start: URL? = UserDefaults.standard.string(forKey: "StartFolderPath").flatMap { path in
@@ -38,7 +42,7 @@ struct MainView: View {
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else { return nil }
             return URL(fileURLWithPath: path)
         }
-        let manager = TabManager(engine: engine, startDirectory: start, restoreSession: !skipAutoNavigation && !CommandLine.arguments.contains("--selftest-tabs") && !CommandLine.arguments.contains("--run-tests"))
+        let manager = existingManager ?? TabManager(engine: engine, startDirectory: start, restoreSession: !skipAutoNavigation && !CommandLine.arguments.contains("--selftest-tabs") && !CommandLine.arguments.contains("--run-tests"))
         _tabManager = StateObject(wrappedValue: manager)
         _reader = StateObject(wrappedValue: ActiveTabReader(manager: manager))
     }
@@ -162,28 +166,34 @@ struct MainView: View {
         .onReceive(operationHistory.$errorMessage.compactMap { $0 }) { error in
             model.errorMessage = error
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileBeginRename)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileBeginRename)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             if model.selectedCount > 1, !model.isAndroidPath { dialog = .batchRename(model.selectedItems) }
             else if let item = model.selectedItems.first { dialog = .rename(item) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileOpenFolder)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileOpenFolder)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             openFolderPanel()
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileSearch)) { notification in
             guard let manager = notification.object as? TabManager, manager === tabManager else { return }
             dialog = .advancedSearch
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileGetInfo)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileGetInfo)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             if model.isWeChatCleanupView { dialog = .getInfo } else { showInspector = true }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileShowHelp)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileShowHelp)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             dialog = .help
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileNewTab)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileNewTab)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             TabDiagnostics.shared.record("MainView 收到新建页签通知")
             newTab()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .winFileCloseTab)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .winFileCloseTab)) { notification in
+            guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             TabDiagnostics.shared.record("MainView 收到关闭页签通知")
             closeCurrentTab()
         }
@@ -314,7 +324,31 @@ struct MainView: View {
                     TabChipView(tab: tab, manager: tabManager,
                                 onSelect: { selectTab(tab) }, onClose: { closeTab(tab) },
                                 onCloseOthers: { closeOtherTabs(keeping: tab) }, onNew: { newTab() },
-                                onDuplicate: { tabManager.duplicate(tab) })
+                                onDuplicate: { tabManager.duplicate(tab) },
+                                onDetach: {
+                                    if let id = BrowserWindowCommands.shared.prepareDetachedWindow(from: tabManager, tab: tab, engine: engine) {
+                                        openWindow(value: id)
+                                    }
+                                },
+                                onMerge: { BrowserWindowCommands.shared.mergeOtherWindows(into: tabManager) },
+                                isDropTargeted: dragTargetID == tab.id)
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: TabFramePreferenceKey.self,
+                                value: [tab.id: proxy.frame(in: .named("tabStrip"))])
+                        })
+                        .simultaneousGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named("tabStrip"))
+                            .onChanged { value in
+                                draggingTabID = tab.id
+                                dragTargetID = tabFrames.first { $0.value.contains(value.location) && $0.key != tab.id }?.key
+                            }
+                            .onEnded { value in
+                                if draggingTabID == tab.id,
+                                   let target = tabFrames.first(where: { $0.value.contains(value.location) && $0.key != tab.id })?.key {
+                                    tabManager.moveTab(tab.id, over: target)
+                                }
+                                draggingTabID = nil
+                                dragTargetID = nil
+                            })
                         .frame(maxWidth: 200)
                 }
                 Button { newTab() } label: { Image(systemName: "plus").frame(width: 22, height: 22) }
@@ -335,6 +369,8 @@ struct MainView: View {
                 .accessibilityLabel(L("tab.all", "所有标签页（%d）", tabs.count))
                 Spacer(minLength: 0)
             }.padding(.horizontal, 8).padding(.vertical, 5)
+                .coordinateSpace(name: "tabStrip")
+                .onPreferenceChange(TabFramePreferenceKey.self) { tabFrames = $0 }
         }.frame(height: 36).background(InterfaceStyle.chrome).background(BrowserInteractionBoundary())
     }
 
@@ -825,6 +861,9 @@ struct TabChipView: View {
     let onCloseOthers: () -> Void
     let onNew: () -> Void
     let onDuplicate: () -> Void
+    let onDetach: () -> Void
+    let onMerge: () -> Void
+    let isDropTargeted: Bool
 
     private var isActive: Bool { manager.activeTab.id == tab.id }
 
@@ -883,8 +922,22 @@ struct TabChipView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay {
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+                .allowsHitTesting(false)
+        }
         .contextMenu {
             Button(tab.isPinned ? L("tab.unpin", "取消固定标签页") : L("tab.pin", "固定标签页")) { manager.togglePin(tab) }
+            Button(L("tab.moveLeft", "向左移动标签页")) { manager.moveTab(tab, direction: -1) }
+                .disabled(!manager.canMoveTab(tab, direction: -1))
+            Button(L("tab.moveRight", "向右移动标签页")) { manager.moveTab(tab, direction: 1) }
+                .disabled(!manager.canMoveTab(tab, direction: 1))
+            Divider()
+            Button(L("tab.detach", "移到新窗口")) { onDetach() }.disabled(manager.count <= 1)
+            Button(L("tab.mergeWindows", "合并所有窗口")) { onMerge() }
+                .disabled(!BrowserWindowCommands.shared.hasOtherWindows)
+            Divider()
             Button(L("tab.close", "关闭标签页")) { onClose() }.disabled(tab.isPinned)
             Button(L("tab.restore", "恢复关闭的标签页")) { manager.restoreClosedTab() }.disabled(manager.closedTabs.isEmpty)
             Button(L("tab.closeOthers", "关闭其它标签页")) { onCloseOthers() }
@@ -898,6 +951,13 @@ struct TabChipView: View {
             TabChipFrameReporter(id: tab.id)
                 .allowsHitTesting(false)
         )
+    }
+}
+
+private struct TabFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGRect] = [:]
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }
 

@@ -82,6 +82,7 @@ enum NativeTestSuite {
             try testUpdatePolicy(sandbox)
             testEmptyAreaClassification()
             try testTabManager(sandbox)
+            try testTabReordering(sandbox)
             try testExternalFileRequests(sandbox)
             try testSorting(sandbox)
             testAppData()
@@ -1575,6 +1576,15 @@ enum NativeTestSuite {
         for i in 0..<3001 { fm.createFile(atPath: many.appendingPathComponent("entry-\(i).pdf").path, contents: Data()) }
         let limited = FileSystemService.categoryReport(.pdf, under: [many], budget: 40)
         check("大目录不再整体跳过", limited.items.count == 40 && limited.limitReached)
+        let external = root.appendingPathComponent("ExternalVolume")
+        try fm.createDirectory(at: external, withIntermediateDirectories: true)
+        let externalPDF = external.appendingPathComponent("external.pdf")
+        try Data("external".utf8).write(to: externalPDF)
+        let balanced = FileSystemService.categoryReport(.pdf, under: [many, external], budget: 40, entryLimit: 100)
+        check("分类扫描为第二个磁盘保留结果配额", balanced.items.contains { $0.id == FileItem.canonicalID(for: externalPDF) } && balanced.items.count <= 40)
+        check("分类计数包含后续扫描范围", (FileSystemService.categoryCounts(under: [many, external])[.pdf] ?? 0) > 0)
+        let overlapping = FileSystemService.categoryReport(.pdf, under: [external, external], budget: 40)
+        check("重复磁盘范围不会产生重复结果", overlapping.items.count == 1 && overlapping.items.first?.id == FileItem.canonicalID(for: externalPDF))
         let complete = FileSystemService.categoryReport(.pdf, under: [many], budget: 4000)
         check("扩展结果上限可完整扫描大目录", complete.items.count == 3001 && !complete.isPartial)
         check("大目录分类徽标也计数", FileSystemService.categoryCounts(under: [many])[.pdf] == 800)
@@ -5418,6 +5428,53 @@ enum NativeTestSuite {
         // 关键：排序后 UI 依赖的 displayedItems 必须同步变化
         check("displayedItems 跟随排序", model.displayedItems.map(\.name) == model.items.map(\.name),
               "\(model.displayedItems.count) 项")
+
+    }
+
+    @MainActor
+    private static func testTabReordering(_ sandbox: URL) throws {
+        print("\n[页签位置调整]")
+        let root = sandbox.appendingPathComponent("TabReorder")
+        let folders = ["Alpha", "Beta", "Gamma", "Delta"].map { root.appendingPathComponent($0) }
+        for folder in folders { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        let suite = "LeafFilesTabReorder-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let engine = FSEngine(); engine.restrictScopeForTesting([root])
+        let store = BrowserSessionStore(defaults: defaults)
+        let manager = TabManager(engine: engine, startDirectory: folders[0], restoreSession: true, sessionStore: store)
+        let a = manager.activeTab
+        let b = manager.newTab(startDirectory: folders[1])
+        let c = manager.newTab(startDirectory: folders[2])
+        let d = manager.newTab(startDirectory: folders[3])
+        check("拖到后方按目标位置排列并保留当前页签", manager.moveTab(a.id, over: c.id) && manager.tabs.map(\.id) == [b.id, c.id, a.id, d.id] && manager.activeID == d.id)
+        check("拖到前方按目标位置排列", manager.moveTab(d.id, over: b.id) && manager.tabs.map(\.id) == [d.id, b.id, c.id, a.id])
+        check("无效页签与自身目标不会更改顺序", !manager.moveTab(UUID(), over: b.id) && !manager.moveTab(b.id, over: b.id) && manager.tabs.map(\.id) == [d.id, b.id, c.id, a.id])
+        manager.moveTab(b, direction: 1)
+        check("右键移动与拖动使用一致顺序", manager.tabs.map(\.id) == [d.id, c.id, b.id, a.id])
+        check("边界方向不能移动", !manager.canMoveTab(d, direction: -1) && !manager.canMoveTab(a, direction: 1) && !manager.canMoveTab(a, direction: 0))
+        manager.togglePin(d); manager.togglePin(c)
+        check("固定页签可在固定分组内调整", manager.moveTab(c.id, over: d.id) && manager.tabs.map(\.id) == [c.id, d.id, b.id, a.id])
+        check("固定页签不能跨越非固定分组", !manager.moveTab(c.id, over: b.id) && !manager.canMoveTab(d, direction: 1) && !manager.canMoveTab(b, direction: -1))
+        manager.select(a)
+        manager.moveTab(a, direction: -1)
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            if store.load()?.tabs.map(\.path) == [folders[2].path, folders[3].path, folders[0].path, folders[1].path] { break }
+        }
+        let saved = store.load()
+        check("移动后自动保存顺序与活动页签", saved?.tabs.map(\.path) == [folders[2].path, folders[3].path, folders[0].path, folders[1].path] && saved?.activeIndex == 2)
+        let restored = TabManager(engine: engine, startDirectory: nil, restoreSession: true, sessionStore: store)
+        check("重启恢复排序、固定状态和活动目录", restored.tabs.map { $0.model.currentDirectory?.path } == [folders[2].path, folders[3].path, folders[0].path, folders[1].path] && restored.tabs.map(\.isPinned) == [true, true, false, false] && restored.activeModel.currentDirectory?.path == folders[0].path)
+        check("不同窗口使用不同的拖放标识", restored.reorderIdentifier != manager.reorderIdentifier)
+        let destination = TabManager(engine: engine, startDirectory: nil)
+        let originalModel = b.model
+        check("页签拆分保留原始模型与固定分组", manager.transfer(b, to: destination, replacePlaceholder: true) && destination.activeTab === b && destination.activeModel === originalModel && originalModel.tabManager === destination && !manager.tabs.contains { $0.id == b.id })
+        check("页签拆分不会移走窗口最后一个页签", !destination.transfer(b, to: manager))
+        destination.mergeAll(into: manager)
+        check("合并保留页签对象及其归属", manager.tabs.contains { $0 === b } && b.model.tabManager === manager && manager.activeID == b.id)
+        check("合并后固定页签仍排在普通页签之前", manager.tabs.map(\.isPinned) == [true, true, false, false])
 
     }
 

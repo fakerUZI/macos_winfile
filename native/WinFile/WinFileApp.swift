@@ -10,8 +10,8 @@ struct WinFileApp: App {
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
 
     var body: some Scene {
-        WindowGroup {
-            MainView(engine: engine)
+        WindowGroup(for: UUID.self) { $windowID in
+            MainView(engine: engine, existingManager: BrowserWindowCommands.shared.detachedManager(for: windowID))
                 .environment(\.locale, localization.locale)
                 .frame(minWidth: 860, minHeight: 520)
         }
@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
     func applicationWillTerminate(_ notification: Notification) {
         MainActor.assumeIsolated {
-            WindowBridge.shared.tabManager?.persistNow()
+            (BrowserWindowCommands.shared.manager ?? WindowBridge.shared.tabManager)?.persistNow()
             AndroidDeviceRegistry.shared.stopMonitoring()
             AndroidVideoPlayer.shared.close()
             MTPRunner.stopAll()
@@ -321,13 +321,13 @@ struct WinFileCommands: Commands {
         CommandGroup(replacing: .newItem) {
             // 页签：与 Windows 资源管理器一致
             Button(L("tab.new", "新标签页")) {
-                NotificationCenter.default.post(name: .winFileNewTab, object: nil)
+                NotificationCenter.default.post(name: .winFileNewTab, object: windowCommands.manager)
             }
             .keyboardShortcut("t", modifiers: .command)
 
             Button(L("tab.close", "关闭标签页")) {
                 if model == nil { NSApp.keyWindow?.performClose(nil) }
-                else { NotificationCenter.default.post(name: .winFileCloseTab, object: nil) }
+                else { NotificationCenter.default.post(name: .winFileCloseTab, object: windowCommands.manager) }
             }
             .keyboardShortcut("w", modifiers: .command)
 
@@ -371,7 +371,7 @@ struct WinFileCommands: Commands {
             .disabled(model?.selectedIDs.isEmpty ?? true)
 
             Button(WLocalizedString("menu.rename", comment: "重命名")) {
-                NotificationCenter.default.post(name: .winFileBeginRename, object: nil)
+                NotificationCenter.default.post(name: .winFileBeginRename, object: windowCommands.manager)
             }
             .keyboardShortcut(.return, modifiers: [])
             .disabled((model?.selectedCount ?? 0) != 1)
@@ -428,7 +428,7 @@ struct WinFileCommands: Commands {
             .keyboardShortcut("a", modifiers: [.command, .shift])
             Divider()
             Button(WLocalizedString("menu.chooseFolder", comment: "打开文件夹…")) {
-                NotificationCenter.default.post(name: .winFileOpenFolder, object: nil)
+                NotificationCenter.default.post(name: .winFileOpenFolder, object: windowCommands.manager)
             }
             .keyboardShortcut("o", modifiers: .command)
         }
@@ -436,7 +436,7 @@ struct WinFileCommands: Commands {
         // 帮助
         CommandGroup(replacing: .help) {
             Button(WLocalizedString("menu.help", comment: "LeafFiles 帮助")) {
-                NotificationCenter.default.post(name: .winFileShowHelp, object: nil)
+                NotificationCenter.default.post(name: .winFileShowHelp, object: windowCommands.manager)
             }
             Divider()
             Button(L("menu.openDiagnostics", "打开诊断日志")) {

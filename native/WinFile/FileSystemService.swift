@@ -191,9 +191,50 @@ enum FileSystemService {
 
     static func categoryReport(_ category: FileCategory, under roots: [URL], depth: Int = 4,
                                budget: Int = 800, entryLimit: Int = 100_000,
-                               cancelled: () -> Bool = { false }) -> FileScanReport {
-        scanFiles(under: roots, depth: depth, limit: budget, entryLimit: entryLimit,
-                  showHidden: false, cancelled: cancelled) { !$0.isDirectory && $0.category == category }
+                               cancelled: () -> Bool = { false },
+                               partial: ([FileItem]) -> Void = { _ in }) -> FileScanReport {
+        guard !roots.isEmpty, budget > 0, entryLimit > 0 else { return FileScanReport() }
+        // Give each root its own bounded traversal so a busy home folder cannot
+        // prevent an external volume from being visited at all.
+        let perRootEntries = max(1, entryLimit / roots.count)
+        var reports: [FileScanReport] = []
+        for root in roots {
+            if cancelled() { break }
+            reports.append(scanFiles(under: [root], depth: depth, limit: budget,
+                                     entryLimit: perRootEntries, showHidden: false,
+                                     cancelled: cancelled) { !$0.isDirectory && $0.category == category })
+            var seen = Set<String>()
+            let available = reports.flatMap(\.items).filter { seen.insert($0.id).inserted }
+            partial(Array(available.prefix(budget)))
+        }
+        var combined = FileScanReport()
+        combined.cancelled = cancelled() || reports.contains { $0.cancelled }
+        combined.depthLimited = reports.contains { $0.depthLimited }
+        combined.visitLimitReached = reports.contains { $0.visitLimitReached }
+        combined.limitReached = reports.contains { $0.limitReached }
+        combined.inaccessibleCount = reports.reduce(0) { $0 + $1.inaccessibleCount }
+        combined.visited = reports.reduce(0) { $0 + $1.visited }
+        var seen = Set<String>()
+        var indices = Array(repeating: 0, count: reports.count)
+        var more = true
+        while more {
+            more = false
+            for index in reports.indices {
+                while indices[index] < reports[index].items.count {
+                    let item = reports[index].items[indices[index]]
+                    indices[index] += 1
+                    guard seen.insert(item.id).inserted else { continue }
+                    if combined.items.count == budget { combined.limitReached = true; break }
+                    combined.items.append(item)
+                    more = true
+                    break
+                }
+                if combined.limitReached && combined.items.count == budget { break }
+            }
+            if combined.limitReached && combined.items.count == budget { break }
+        }
+        combined.items = sort(combined.items, field: .modified, ascending: false)
+        return combined
     }
 
     private static func scanFiles(under roots: [URL], depth: Int, limit: Int, entryLimit: Int,
@@ -343,10 +384,17 @@ enum FileSystemService {
     /// 与 categoryFiles 一样处理大目录；当所有可能出现的
     /// 分类都达到上限后提前结束遍历（结果不会再变化，没必要走完整个磁盘）。
     static func categoryCounts(under roots: [URL], depth: Int = 4, budget: Int = 800) -> [FileCategory: Int] {
-        let report = scanFiles(under: roots, depth: depth, limit: Int.max, entryLimit: 100_000,
-                               showHidden: false, cancelled: { false }) { !$0.isDirectory }
+        guard !roots.isEmpty else { return [:] }
         var counts: [FileCategory: Int] = [:]
-        for item in report.items { counts[item.category] = min(budget, (counts[item.category] ?? 0) + 1) }
+        var seen = Set<String>()
+        for root in roots {
+            let report = scanFiles(under: [root], depth: depth, limit: Int.max,
+                                   entryLimit: max(1, 100_000 / roots.count),
+                                   showHidden: false, cancelled: { false }) { !$0.isDirectory }
+            for item in report.items where seen.insert(item.id).inserted {
+                counts[item.category] = min(budget, (counts[item.category] ?? 0) + 1)
+            }
+        }
         return counts
     }
 

@@ -200,7 +200,7 @@ struct SidebarView: View {
     /// 收藏行：支持右键上移/下移/移除
     private func favoriteRow(_ url: URL, index: Int) -> some View {
         Label {
-            Text(url.lastPathComponent)
+            Text(engine.favoriteDisplayName(url))
         } icon: {
             Image(systemName: "folder.fill")
                 .foregroundStyle(Color.accentColor)

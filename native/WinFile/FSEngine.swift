@@ -60,15 +60,24 @@ final class FSEngine: ObservableObject {
     private var addedFolderPaths: [String] = []
     private var countTask: Task<Void, Never>?
     private var languageSubscription: AnyCancellable?
+    private var volumeSubscriptions = Set<AnyCancellable>()
 
     private let foldersKey = "AddedFolderPaths"
 
     init() {
         loadAddedFolders()
-        seedFavoritesIfNeeded()
         buildPlaces()
         buildVolumes()
         refreshAuthorizedRoots()
+        for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+            NSWorkspace.shared.notificationCenter.publisher(for: name)
+                .receive(on: RunLoop.main).sink { [weak self] _ in
+                    guard let self else { return }
+                    self.buildVolumes()
+                    self.scheduleCategoryCount(force: true)
+                    NotificationCenter.default.post(name: .winFileVolumesChanged, object: self)
+                }.store(in: &volumeSubscriptions)
+        }
         languageSubscription = Localization.shared.objectWillChange.receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.buildPlaces()
@@ -186,35 +195,12 @@ final class FSEngine: ObservableObject {
         return result
     }
 
-    /// 首次启动时为收藏列表填入标准文件夹。
-    ///
-    /// 说明：此前侧边栏「个人收藏」固定显示桌面/下载/文稿等标准位置，
-    /// 与可增删的「常用文件夹」重复。现统一为一套可管理的收藏列表，
-    /// 首次运行用标准位置作为初始值，用户随后可自由增删排序。
-    private func seedFavoritesIfNeeded() {
-        let seededKey = "FavoritesSeeded"
-        guard !UserDefaults.standard.bool(forKey: seededKey) else { return }
-        UserDefaults.standard.set(true, forKey: seededKey)
-        guard addedFolderPaths.isEmpty else { return }
-        let home = FileSystemService.realHomeDirectory()
-        let standard = ["Desktop", "Downloads", "Documents", "Pictures", "Movies", "Music"]
-            .map { home.appendingPathComponent($0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-        addedFolderPaths = standard.map { $0.standardizedFileURL.path }
-        saveAddedFolders()
-    }
-
-    /// 重新填入标准收藏文件夹（管理面板的「恢复默认」使用）
-    func seedStandardFavorites() {
-        let home = FileSystemService.realHomeDirectory()
-        let standard = ["Desktop", "Downloads", "Documents", "Pictures", "Movies", "Music"]
-            .map { home.appendingPathComponent($0) }
-            .filter { FileManager.default.fileExists(atPath: $0.path) }
-            .map { $0.standardizedFileURL.path }
-        addedFolderPaths = standard
-        saveAddedFolders()
-        refreshAuthorizedRoots()
-        scheduleCategoryCount()
+    /// Existing favorites remain untouched, including paths seeded by older versions.
+    func favoriteDisplayName(_ url: URL) -> String {
+        if let standard = places.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {
+            return standard.name
+        }
+        return FileManager.default.displayName(atPath: url.path)
     }
 
     /// 移动收藏项（右键「上移/下移」与拖拽排序）
@@ -262,6 +248,23 @@ final class FSEngine: ObservableObject {
     var browsableRoots: [URL] {
         if let override = scopeOverrideForTesting { return override }
         return [FileSystemService.realHomeDirectory(), URL(fileURLWithPath: "/")]
+    }
+
+    /// Each mounted volume is an explicit scan root, independent of the system-root traversal.
+    var categoryRoots: [URL] {
+        if let override = scopeOverrideForTesting { return override }
+        let fm = FileManager.default
+        let mounted = fm.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeIsBrowsableKey],
+                                           options: [.skipHiddenVolumes]) ?? []
+        let localRoots = browsableRoots
+        var roots: [URL] = []
+        var seen = Set(localRoots.map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
+        for url in mounted {
+            let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+            guard normalized.path != "/", seen.insert(normalized.path).inserted else { continue }
+            roots.append(normalized)
+        }
+        return roots + localRoots
     }
 
     /// 仅供测试/快照：显式覆盖可浏览范围，使分类检索范围可控
@@ -343,7 +346,7 @@ final class FSEngine: ObservableObject {
         guard force || categoryCounts.isEmpty else { return }
         countTask?.cancel()
         countingCategories = true
-        let roots = browsableRoots
+        let roots = categoryRoots
         countTask = Task { [weak self] in
             let counts = await Task.detached(priority: .utility) {
                 FileSystemService.categoryCounts(under: roots)
@@ -484,3 +487,5 @@ enum FSError: LocalizedError {
         }
     }
 }
+
+extension Notification.Name { static let winFileVolumesChanged = Notification.Name("WinFileVolumesChanged") }

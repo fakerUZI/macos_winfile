@@ -56,7 +56,6 @@ struct SidebarManagerSheet: View {
             Button(L("sidebarManager.reset", "恢复默认")) {
                 preferences.resetToDefault()
                 engine.removeAllAddedFolders()
-                engine.seedStandardFavorites()
             }
             Spacer()
             Button(L("button.done", "完成")) { dismiss() }
@@ -119,7 +118,7 @@ struct SidebarManagerSheet: View {
                             Image(systemName: "folder.fill")
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 18)
-                            Text(url.lastPathComponent)
+                            Text(engine.favoriteDisplayName(url))
                             Text((url.path as NSString).abbreviatingWithTildeInPath)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)

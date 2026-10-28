@@ -1201,3 +1201,8 @@
 "external.noFiles" = "未收到可定位的本地文件或文件夹。";
 "operation.dropMixedSources" = "请分别拖放当前目录和其他目录的文件。";
 "operation.dropReadFailed" = "无法读取拖入的部分文件，请重试。";
+"tab.moveLeft" = "向左移动标签页";
+"tab.moveRight" = "向右移动标签页";
+
+"tab.detach" = "将标签页移到新窗口";
+"tab.mergeWindows" = "合并所有窗口";

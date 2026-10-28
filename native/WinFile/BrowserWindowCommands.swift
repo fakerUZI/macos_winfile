@@ -8,6 +8,7 @@ import Combine
 final class BrowserWindowCommands: ObservableObject {
     static let shared = BrowserWindowCommands()
     private let managers = NSMapTable<NSWindow, TabManager>.weakToWeakObjects()
+    private var detachedManagers: [UUID: TabManager] = [:]
     private weak var observedManager: TabManager?
     private var modelSubscription: AnyCancellable?
     private var notifications = Set<AnyCancellable>()
@@ -18,6 +19,9 @@ final class BrowserWindowCommands: ObservableObject {
             NotificationCenter.default.publisher(for: name)
                 .sink { [weak self] note in
                     if name == NSWindow.willCloseNotification, let window = note.object as? NSWindow {
+                        if let manager = self?.managers.object(forKey: window) {
+                            self?.detachedManagers = self?.detachedManagers.filter { $0.value !== manager } ?? [:]
+                        }
                         self?.managers.removeObject(forKey: window)
                     }
                     DispatchQueue.main.async { self?.refresh() }
@@ -38,6 +42,40 @@ final class BrowserWindowCommands: ObservableObject {
         managers.setObject(manager, forKey: window)
         ExternalFileRequests.shared.register(manager, window: window)
         DispatchQueue.main.async { [weak self] in self?.refresh() }
+    }
+
+    func prepareDetachedWindow(from source: TabManager, tab: WinFileTab, engine: FSEngine) -> UUID? {
+        guard source.count > 1 else { return nil }
+        let destination = TabManager(engine: engine, startDirectory: nil, persistSession: true)
+        guard source.transfer(tab, to: destination, replacePlaceholder: true) else { return nil }
+        let id = UUID()
+        detachedManagers[id] = destination
+        return id
+    }
+
+    func detachedManager(for id: UUID?) -> TabManager? {
+        guard let id else { return nil }
+        return detachedManagers[id]
+    }
+
+    func mergeOtherWindows(into destination: TabManager) {
+        let windows = NSApp.windows.filter { window in
+            guard let manager = managers.object(forKey: window) else { return false }
+            return manager !== destination
+        }
+        for window in windows {
+            guard let manager = managers.object(forKey: window) else { continue }
+            manager.mergeAll(into: destination)
+            window.close()
+        }
+    }
+
+    var hasOtherWindows: Bool {
+        guard let current = manager else { return false }
+        return NSApp.windows.contains { window in
+            guard let other = managers.object(forKey: window) else { return false }
+            return other !== current
+        }
     }
 
     private func refresh() {

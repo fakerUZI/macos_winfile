@@ -46,7 +46,16 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.2.1
+## What’s new in v2.2.2
+
+- **External volumes:** categories include visible mounted volumes, show results progressively, and refresh when volumes connect or disconnect.
+- **Favorites:** new installations start with an empty list; existing favorites remain, with localized standard folder names.
+- **Tabs:** drag to reorder, move a tab to a new window, or merge windows.
+- **Double-click reliability:** restore the table action if it is reset and improve diagnostics. Thanks to [@xuchen521](https://github.com/xuchen521) for the report; confirmation on their device is still needed.
+
+See the [v2.2.2 release notes](docs/releases/v2.2.2.md).
+
+### v2.2.1 fixes
 
 - **Fix unintended copies on drop:** dragging an item from the current folder into a subfolder moves it; dropping it on the current folder's empty area no longer creates a copy. Items dragged in from other folders are copied.
 - **Safer handling:** unreadable dragged items and mixed sources prompt you to retry or drag separately. Move undo and transfer progress remain available.
@@ -168,6 +177,7 @@ Use the top-left sidebar button to hide or show the entire left menu; expanding 
 ### Tabs, search and file organization
 
 - The tab dropdown handles overflow while keeping the active tab visible. Pin tabs through their context menu or the dropdown. Reopen up to 20 recently closed tabs during the current run with the menu or `⌘⇧T`.
+- Drag a tab onto another to reorder it, or use Move Tab Left / Right in its context menu. Pinned tabs remain before unpinned tabs and can be reordered within their own group. The order is saved with the session. The tab context menu can also move a tab to a new window or merge other windows into the current window while preserving browsing state.
 - Sort order, view mode and hidden-file visibility are independent per tab. Session restore reapplies searches, size/date conditions, WeChat filters and pinned tabs. Up to 30 tabs are saved, including the active tab.
 - `⌘F`, the top toolbar search button, the filter button beside folder search, or **File Organization Tools → Advanced Search** opens a dedicated LeafFiles search sheet. Choose the scope in-app and combine names, entry kinds, categories, extensions, sizes and modification dates. Names are optional when filters are active; date ranges include the whole selected day. Search can be limited to the current level or include subfolders and hidden files. Results support sorting, double-click opening, path copying and location in a new tab without changing the original tab’s filters.
 - Select multiple local items and choose **Batch Rename** to preview replacements, prefixes, suffixes and numbering while preserving file extensions. Conflicts, invalid names and selections containing both folders and their contents are rejected. Existing files are never replaced; external conflicts trigger rollback attempts. Completed batches support `⌘Z` undo.
@@ -188,6 +198,7 @@ WeChat scans initially retain up to 20,000 candidates and visit up to 200,000 en
 ### Scan and operation feedback
 
 - Initial searches show up to 400 results; categories show up to 800 with an initial depth of 4. Each scan checks up to 100,000 entries. Result, depth, traversal, and unreadable-location limits are reported; **Load More / Scan Deeper** expands the scan. Large folders are processed instead of skipped. Sidebar counts describe the initial scope and show `800+` when capped.
+- Categories include visible mounted volumes, with a separate scan allowance per root. External volume results appear as they are found, and mounting or ejecting a volume refreshes the scan. Favorites start empty for new users; existing favorites are kept.
 - Searches can be cancelled. Refresh preserves the query, category, and ordering. Folder entry changes trigger automatic refresh.
 - A shared file clipboard works across tabs and accepts files copied in Finder. A system clipboard change invalidates an old cut.
 - Local copy/move tasks show progress, cancellation, and per-item outcomes. Cancellation takes effect after the current native file operation completes. Uncommitted copy staging is removed; completed items are retained. Name conflicts keep both items.

@@ -122,6 +122,7 @@ final class BrowserModel: ObservableObject {
     private var androidOpenSerial: String?
     private var androidConnectionIdentity: String?
     private var androidDevicesSubscription: AnyCancellable?
+    private var volumesSubscription: AnyCancellable?
     private let androidRegistry: AndroidDeviceRegistry
     private let androidOpenService: AndroidOpenService
     private let androidOpenHandler: (([URL], Bool) -> Void)?
@@ -213,6 +214,12 @@ final class BrowserModel: ObservableObject {
         androidDevicesSubscription = self.androidRegistry.$devices.dropFirst().sink { [weak self] devices in
             self?.androidConnectionsChanged(devices)
         }
+        volumesSubscription = NotificationCenter.default.publisher(for: .winFileVolumesChanged)
+            .receive(on: RunLoop.main).sink { [weak self, weak engine] note in
+                guard let self, let engine, (note.object as? FSEngine) === engine,
+                      !self.isSuspended, let category = self.categoryFilter else { return }
+                self.loadCategory(category)
+            }
         filesChangedSubscription = NotificationCenter.default.publisher(for: .winFileFilesChanged)
             .receive(on: RunLoop.main).sink { [weak self] _ in
                 guard let self, !self.isSuspended, !self.isBusy, self.showsFileList || self.isCleanupView else { return }
@@ -570,6 +577,7 @@ final class BrowserModel: ObservableObject {
             categoryCancellation?.cancel()
             categoryTask?.cancel()
             categoryID = UUID()
+            scanReport.cancelled = true
             isLoadingCategory = false
             isBusy = false
         }
@@ -1624,11 +1632,17 @@ final class BrowserModel: ObservableObject {
         isLoadingCategory = true
         isBusy = true
         statusMessage = L("status.categoryLoading", "正在归类「%@」…", category.localizedName)
-        let roots = engine.browsableRoots
+        let roots = engine.categoryRoots
         categoryTask = Task { [weak self] in
             let report = await Task.detached(priority: .userInitiated) {
                 FileSystemService.categoryReport(category, under: roots, depth: depth, budget: budget,
-                    entryLimit: entryLimit, cancelled: { token.isCancelled })
+                    entryLimit: entryLimit, cancelled: { token.isCancelled }, partial: { items in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.categoryID == id, self.categoryFilter == category,
+                                  self.isLoadingCategory, !token.isCancelled else { return }
+                            self.categoryResults = FileSystemService.sort(items, field: self.sortField, ascending: self.sortAscending)
+                        }
+                    })
             }.value
             let found = report.items
             guard !Task.isCancelled else { return }

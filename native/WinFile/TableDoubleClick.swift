@@ -74,7 +74,10 @@ struct TableDoubleClickInstaller: NSViewRepresentable {
                 }
                 return
             }
-            guard target !== installed else { return }
+            // SwiftUI can replace a table's target/action after installation.
+            // Reattach on the next layout instead of trusting the old table identity.
+            if target === installed, target.target is DoubleClickProxy,
+               target.doubleAction == #selector(DoubleClickProxy.handleDoubleClick(_:)) { return }
             installed = target
             install?(target)
         }
@@ -95,7 +98,7 @@ enum TableDiagnostics {
         // 让 proxy 随表格存活
         objc_setAssociatedObject(table, &DoubleClickProxy.key, proxy, .OBJC_ASSOCIATION_RETAIN)
         TabDiagnostics.shared.record("doubleClick.installed",
-                                     detail: "表格宽度 \\(Int(table.bounds.width)) 行数 \\(table.numberOfRows)")
+                                     detail: "表格宽度 \(Int(table.bounds.width)) 行数 \(table.numberOfRows)")
     }
 }
 
@@ -118,7 +121,7 @@ final class DoubleClickProxy: NSObject {
         var row = table.clickedRow
         if row < 0 { row = table.selectedRow }
         TabDiagnostics.shared.record("doubleClick.fired",
-                                     detail: "行=\\(row) 行数=\\(table.numberOfRows)")
+                                     detail: "行=\(row) 行数=\(table.numberOfRows)")
         handler(row)
     }
 }
