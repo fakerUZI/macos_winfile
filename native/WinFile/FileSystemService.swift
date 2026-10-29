@@ -191,17 +191,50 @@ enum FileSystemService {
 
     static func categoryReport(_ category: FileCategory, under roots: [URL], depth: Int = 4,
                                budget: Int = 800, entryLimit: Int = 100_000,
+                               priorityRoot: URL? = nil, includeAdditionalRoots: Bool = true,
+                               excluding: Set<String> = [],
                                cancelled: () -> Bool = { false },
                                partial: ([FileItem]) -> Void = { _ in }) -> FileScanReport {
-        guard !roots.isEmpty, budget > 0, entryLimit > 0 else { return FileScanReport() }
+        guard budget > 0, entryLimit > 0 else { return FileScanReport() }
+        if let priorityRoot {
+            let first = scanFiles(under: [priorityRoot], depth: depth, limit: budget, entryLimit: entryLimit,
+                                  showHidden: false, cancelled: cancelled) { !$0.isDirectory && $0.category == category }
+            partial(first.items)
+            var combined = first
+            if cancelled() { combined.cancelled = true }
+            guard includeAdditionalRoots, !roots.isEmpty, !combined.cancelled else { return combined }
+            let priorityID = FileItem.canonicalID(for: priorityRoot)
+            let remainingRoots = roots.filter { root in
+                let path = FileItem.canonicalID(for: root)
+                return path != priorityID && !path.hasPrefix(priorityID == "/" ? "/" : priorityID + "/")
+            }
+            guard !remainingRoots.isEmpty else { return combined }
+            guard first.items.count < budget, !first.limitReached else { combined.limitReached = true; return combined }
+            guard first.visited < entryLimit, !first.visitLimitReached else { combined.visitLimitReached = true; return combined }
+            let more = categoryReport(category, under: remainingRoots, depth: depth,
+                                      budget: budget - first.items.count, entryLimit: entryLimit - first.visited,
+                                      excluding: [priorityID], cancelled: cancelled, partial: { extra in
+                partial(first.items + extra)
+            })
+            combined.items = sort(first.items + more.items, field: .modified, ascending: false)
+            combined.limitReached = combined.limitReached || more.limitReached
+            combined.depthLimited = combined.depthLimited || more.depthLimited
+            combined.visitLimitReached = combined.visitLimitReached || more.visitLimitReached
+            combined.inaccessibleCount += more.inaccessibleCount
+            combined.visited += more.visited
+            combined.cancelled = combined.cancelled || more.cancelled
+            return combined
+        }
+        guard !roots.isEmpty else { return FileScanReport() }
         // Give each root its own bounded traversal so a busy home folder cannot
         // prevent an external volume from being visited at all.
-        let perRootEntries = max(1, entryLimit / roots.count)
+        let selectedRoots = Array(roots.prefix(entryLimit))
+        let perRootEntries = max(1, entryLimit / selectedRoots.count)
         var reports: [FileScanReport] = []
-        for root in roots {
+        for root in selectedRoots {
             if cancelled() { break }
             reports.append(scanFiles(under: [root], depth: depth, limit: budget,
-                                     entryLimit: perRootEntries, showHidden: false,
+                                     entryLimit: perRootEntries, showHidden: false, excluding: excluding,
                                      cancelled: cancelled) { !$0.isDirectory && $0.category == category })
             var seen = Set<String>()
             let available = reports.flatMap(\.items).filter { seen.insert($0.id).inserted }
@@ -210,7 +243,7 @@ enum FileSystemService {
         var combined = FileScanReport()
         combined.cancelled = cancelled() || reports.contains { $0.cancelled }
         combined.depthLimited = reports.contains { $0.depthLimited }
-        combined.visitLimitReached = reports.contains { $0.visitLimitReached }
+        combined.visitLimitReached = roots.count > selectedRoots.count || reports.contains { $0.visitLimitReached }
         combined.limitReached = reports.contains { $0.limitReached }
         combined.inaccessibleCount = reports.reduce(0) { $0 + $1.inaccessibleCount }
         combined.visited = reports.reduce(0) { $0 + $1.visited }
@@ -238,7 +271,7 @@ enum FileSystemService {
     }
 
     private static func scanFiles(under roots: [URL], depth: Int, limit: Int, entryLimit: Int,
-                                  showHidden: Bool, cancelled: () -> Bool, progress: (Int) -> Void = { _ in },
+                                  showHidden: Bool, excluding: Set<String> = [], cancelled: () -> Bool, progress: (Int) -> Void = { _ in },
                                   matching: (FileItem) -> Bool) -> FileScanReport {
         var result = FileScanReport()
         var seenDirectories = Set<String>()
@@ -251,7 +284,8 @@ enum FileSystemService {
             return result.cancelled || result.limitReached || result.visitLimitReached
         }
         func walk(_ directory: URL, level: Int) {
-            guard !stopped(), seenDirectories.insert(FileItem.canonicalID(for: directory)).inserted else { return }
+            let identity = FileItem.canonicalID(for: directory)
+            guard !stopped(), !excluding.contains(identity), seenDirectories.insert(identity).inserted else { return }
             let children: [URL]
             do {
                 children = try fm.contentsOfDirectory(at: directory,

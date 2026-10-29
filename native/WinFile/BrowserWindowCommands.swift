@@ -9,6 +9,7 @@ final class BrowserWindowCommands: ObservableObject {
     static let shared = BrowserWindowCommands()
     private let managers = NSMapTable<NSWindow, TabManager>.weakToWeakObjects()
     private var detachedManagers: [UUID: TabManager] = [:]
+    var openNewWindow: (() -> Void)?
     private weak var observedManager: TabManager?
     private var modelSubscription: AnyCancellable?
     private var notifications = Set<AnyCancellable>()
@@ -37,6 +38,25 @@ final class BrowserWindowCommands: ObservableObject {
 
     func manager(for window: NSWindow) -> TabManager? { managers.object(forKey: window) }
 
+    /// Only real windows and a pending detached window participate in session saving.
+    /// SwiftUI may construct temporary MainView values that never become a window.
+    func sessionManagers(including candidate: TabManager) -> [TabManager] {
+        var result: [TabManager] = []
+        var seen = Set<ObjectIdentifier>()
+        for window in NSApp.windows {
+            if let manager = managers.object(forKey: window), seen.insert(ObjectIdentifier(manager)).inserted {
+                result.append(manager)
+            }
+        }
+        for manager in detachedManagers.values where seen.insert(ObjectIdentifier(manager)).inserted {
+            result.append(manager)
+        }
+        if WindowBridge.shared.tabManager === candidate, seen.insert(ObjectIdentifier(candidate)).inserted {
+            result.append(candidate)
+        }
+        return result
+    }
+
     func register(_ manager: TabManager, for window: NSWindow) {
         guard managers.object(forKey: window) !== manager else { return }
         managers.setObject(manager, forKey: window)
@@ -50,6 +70,13 @@ final class BrowserWindowCommands: ObservableObject {
         guard source.transfer(tab, to: destination, replacePlaceholder: true) else { return nil }
         let id = UUID()
         detachedManagers[id] = destination
+        return id
+    }
+
+    /// A new window starts with its own tab instead of restoring the existing session again.
+    func prepareNewWindow(engine: FSEngine, startDirectory: URL?) -> UUID {
+        let id = UUID()
+        detachedManagers[id] = TabManager(engine: engine, startDirectory: startDirectory, persistSession: true)
         return id
     }
 

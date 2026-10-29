@@ -88,7 +88,7 @@ enum FileTransferService {
                 let sourcePath = item.url.standardizedFileURL.resolvingSymlinksInPath().path
                 if item.isDirectory && !item.isSymlink && (destinationPath == sourcePath || destinationPath.hasPrefix(sourcePath + "/")) { throw FSError.recursiveTransfer(item.name) }
                 var target = FSEngine.uniqueURL(in: directory, name: item.name, isDirectory: item.isDirectory)
-                if mode == .move, item.url.deletingLastPathComponent().path == directory.path {
+                if mode == .move, item.url.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path == destinationPath {
                     target = item.url
                 } else if mode == .copy {
                     let staging = directory.appendingPathComponent(".WinFile-transfer-\(UUID().uuidString)")

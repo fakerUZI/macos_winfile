@@ -2,6 +2,7 @@
 // - 主页：快速访问、收藏夹（可固定）、最近修改 + 最近打开
 // - 此电脑：设备与驱动器（容量、可用空间、可弹出）
 import AppKit
+import Darwin
 import Foundation
 
 // MARK: - 驱动器
@@ -16,6 +17,7 @@ struct DriveInfo: Identifiable, Hashable {
     let isInternal: Bool
     let totalBytes: Int64
     let freeBytes: Int64
+    let capacityAvailable: Bool
     let fileSystem: String?
     let isReadOnly: Bool
     let isLocal: Bool
@@ -27,9 +29,9 @@ struct DriveInfo: Identifiable, Hashable {
         return min(1, max(0, Double(usedBytes) / Double(totalBytes)))
     }
 
-    var usedText: String { FileItem.formatSize(usedBytes) }
-    var freeText: String { FileItem.formatSize(freeBytes) }
-    var totalText: String { FileItem.formatSize(totalBytes) }
+    var usedText: String { capacityAvailable ? FileItem.formatSize(usedBytes) : "—" }
+    var freeText: String { capacityAvailable ? FileItem.formatSize(freeBytes) : "—" }
+    var totalText: String { capacityAvailable ? FileItem.formatSize(totalBytes) : "—" }
 
     /// 进度条颜色：与 Windows 类似，空间紧张时变红
     var barColor: NSColor {
@@ -57,10 +59,50 @@ struct DriveInfo: Identifiable, Hashable {
     }
 
     /// 容量条是否可信（只读映像的可用空间没有参考价值）
-    var showsCapacityBar: Bool { totalBytes > 0 && !isDiskImage }
+    var showsCapacityBar: Bool { capacityAvailable && totalBytes > 0 && !isDiskImage }
 
     static func == (lhs: DriveInfo, rhs: DriveInfo) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+
+struct VolumeCapacity: Equatable {
+    let total: Int64
+    let free: Int64
+
+    /// The APFS important-usage estimate may be unsupported or reported as zero on other file systems.
+    static func resolve(total: Int64?, important: Int64?, available: Int64?, fallback: VolumeCapacity?, fileSystem: String?) -> VolumeCapacity? {
+        guard let total = [total, fallback?.total].compactMap({ $0 }).first(where: { $0 > 0 }) else { return nil }
+        func valid(_ value: Int64?) -> Int64? {
+            guard let value, value >= 0, value <= total else { return nil }
+            return value
+        }
+        let ordinary = valid(available)
+        let estimate = valid(important)
+        let physical = valid(fallback?.free)
+        let preferEstimate = fileSystem?.lowercased() == "apfs"
+        let ordered = preferEstimate ? [estimate, ordinary, physical] : [ordinary, physical, estimate]
+        // A zero estimate on a non-full volume is often an unsupported resource value.
+        let free = ordered.compactMap { $0 }.first(where: { $0 > 0 }) ?? ordered.compactMap { $0 }.first
+        guard let free else { return nil }
+        return VolumeCapacity(total: total, free: free)
+    }
+
+    static func read(_ url: URL, fileSystem: String? = nil) -> VolumeCapacity? {
+        let total = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey]).volumeTotalCapacity
+        let available = try? url.resourceValues(forKeys: [.volumeAvailableCapacityKey]).volumeAvailableCapacity
+        let important = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage
+        var info = statfs()
+        var fallback: VolumeCapacity?
+        if statfs(url.path, &info) == 0, info.f_bsize > 0 {
+            let (totalBytes, totalOverflow) = Int64(clamping: info.f_blocks).multipliedReportingOverflow(by: Int64(info.f_bsize))
+            let (freeBytes, freeOverflow) = Int64(clamping: info.f_bavail).multipliedReportingOverflow(by: Int64(info.f_bsize))
+            if !totalOverflow, !freeOverflow, totalBytes > 0, freeBytes >= 0 {
+                fallback = VolumeCapacity(total: totalBytes, free: freeBytes)
+            }
+        }
+        return resolve(total: total.map { Int64($0) }, important: important, available: available.map { Int64($0) },
+                       fallback: fallback, fileSystem: fileSystem ?? PlacesService.fileSystemType(of: url))
+    }
 }
 
 // MARK: - 最近使用条目
@@ -253,7 +295,6 @@ enum PlacesService {
             at: volumes,
             includingPropertiesForKeys: [.volumeNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey,
                                          .volumeIsInternalKey, .volumeIsReadOnlyKey, .volumeIsLocalKey,
-                                         .volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey,
                                          .volumeURLForRemountingKey],
             options: [.skipsHiddenFiles]
         ) {
@@ -265,8 +306,7 @@ enum PlacesService {
         for url in candidates {
             let keys: Set<URLResourceKey> = [
                 .volumeNameKey, .volumeIsRemovableKey, .volumeIsEjectableKey, .volumeIsInternalKey,
-                .volumeIsReadOnlyKey, .volumeIsLocalKey, .volumeTotalCapacityKey,
-                .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey,
+                .volumeIsReadOnlyKey, .volumeIsLocalKey,
             ]
             guard let values = try? url.resourceValues(forKeys: keys) else { continue }
 
@@ -277,9 +317,8 @@ enum PlacesService {
                 if seenDevices.contains(device) { continue }
                 seenDevices.insert(device)
             }
-            let total = Int64(values.volumeTotalCapacity ?? 0)
-            let free = values.volumeAvailableCapacityForImportantUsage
-                ?? Int64(values.volumeAvailableCapacity ?? 0)
+            let fileSystem = fileSystemType(of: url)
+            let capacity = VolumeCapacity.read(url, fileSystem: fileSystem)
             let isRoot = url.path == "/"
             let name = isRoot
                 ? L("place.macintoshHD", "Macintosh HD")
@@ -292,9 +331,10 @@ enum PlacesService {
                 isRemovable: values.volumeIsRemovable ?? false,
                 isEjectable: values.volumeIsEjectable ?? false,
                 isInternal: values.volumeIsInternal ?? false,
-                totalBytes: total,
-                freeBytes: max(0, free),
-                fileSystem: fileSystemType(of: url),
+                totalBytes: capacity?.total ?? 0,
+                freeBytes: capacity?.free ?? 0,
+                capacityAvailable: capacity != nil,
+                fileSystem: fileSystem,
                 isReadOnly: (values.volumeIsReadOnly ?? false) || isReadOnlyMount(url),
                 isLocal: values.volumeIsLocal ?? true
             ))
@@ -313,7 +353,7 @@ enum PlacesService {
         return (info.f_flags & UInt32(MNT_RDONLY)) != 0
     }
 
-    private static func fileSystemType(of url: URL) -> String? {
+    static func fileSystemType(of url: URL) -> String? {
         // 不调用外部命令（沙盒禁止）；用 statfs 读取文件系统类型
         var info = statfs()
         guard statfs(url.path, &info) == 0 else { return nil }

@@ -46,7 +46,16 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.2.2
+## What’s new in v2.3.0
+
+- Choose a priority folder for category scans and optionally scan other locations with the remaining budget.
+- Open an independent window from the Dock or with ⌘N; use additional file shortcuts, arrange icons, and restore pane visibility.
+- Improve capacity reporting for exFAT and other volumes. Thanks to @skinnyshy for [Issue #5](https://github.com/fakerUZI/macos_winfile/issues/5).
+- Thanks to @xuchen521 for reporting [Issue #4](https://github.com/fakerUZI/macos_winfile/issues/4) and suggesting custom scan paths and remembered inspector visibility.
+
+See the [v2.3.0 release notes](docs/releases/v2.3.0.md).
+
+### v2.2.2 update
 
 - **External volumes:** categories include visible mounted volumes, show results progressively, and refresh when volumes connect or disconnect.
 - **Favorites:** new installations start with an empty list; existing favorites remain, with localized standard folder names.
@@ -176,6 +185,9 @@ Use the top-left sidebar button to hide or show the entire left menu; expanding 
 
 ### Tabs, search and file organization
 
+- In the active LeafFiles window, use ⌘A to select files, ⌘Delete to move them to Trash after confirmation, ⌘O or ⌘↓ to open, Space to preview, and ⌘C / ⌘V to copy and paste. To move local files or folders, copy them, open the destination and press ⌥⌘V. Text fields retain their editing shortcuts; Android deletion still requires permanent-deletion confirmation.
+- In icon view, drag a local item to empty space to arrange it freely. Positions are saved per folder in LeafFiles; use the background menu to reset them. Dropping onto a subfolder still moves files, and list view keeps its normal sort order.
+- Sidebar and inspector visibility are remembered. Cut files and folders show a scissors badge until the clipboard changes or the move completes.
 - The tab dropdown handles overflow while keeping the active tab visible. Pin tabs through their context menu or the dropdown. Reopen up to 20 recently closed tabs during the current run with the menu or `⌘⇧T`.
 - Drag a tab onto another to reorder it, or use Move Tab Left / Right in its context menu. Pinned tabs remain before unpinned tabs and can be reordered within their own group. The order is saved with the session. The tab context menu can also move a tab to a new window or merge other windows into the current window while preserving browsing state.
 - Sort order, view mode and hidden-file visibility are independent per tab. Session restore reapplies searches, size/date conditions, WeChat filters and pinned tabs. Up to 30 tabs are saved, including the active tab.

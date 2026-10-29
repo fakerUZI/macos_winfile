@@ -283,6 +283,7 @@
 "drive.free" = "%@ 可用";
 "drive.total" = "共 %@";
 "drive.capacity" = "容量";
+"drive.capacityUnavailable" = "容量信息不可用";
 "drive.used" = "已用";
 "drive.available" = "可用";
 "drive.fileSystem" = "文件系统";
@@ -1206,3 +1207,15 @@
 
 "tab.detach" = "将标签页移到新窗口";
 "tab.mergeWindows" = "合并所有窗口";
+"window.new" = "新建窗口";
+"category.chooseScope" = "选择分类扫描的优先目录";
+"category.chooseScopeButton" = "选择优先目录…";
+"category.defaultScope" = "扫描范围：默认位置";
+"category.includeAdditional" = "扫描其他位置";
+"category.resetScope" = "恢复默认";
+"category.scopedCount" = "%@：%d 个文件（来自所选扫描范围）";
+
+"action.moveHere" = "将项目移到此处";
+"menu.openSelection" = "打开所选项目 / 选择文件夹…";
+
+"icon.resetPositions" = "重置图标位置";

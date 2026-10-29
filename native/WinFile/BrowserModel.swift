@@ -87,6 +87,8 @@ final class BrowserModel: ObservableObject {
     /// 分类视图结果（在整个可浏览范围内按类型收集）
     @Published private(set) var categoryResults: [FileItem] = []
     @Published private(set) var isLoadingCategory = false
+    @Published private(set) var categoryPriorityDirectory: URL?
+    @Published private(set) var categoryIncludeAdditionalRoots = true
 
     // 主页（Home）
     @Published private(set) var quickAccess: [SidebarPlace] = []
@@ -146,6 +148,14 @@ final class BrowserModel: ObservableObject {
     // 剪贴板
     let clipboardStore: FileClipboard
     var clipboard: ClipboardPayload? { clipboardStore.localPayload }
+    var cutItemIDs: Set<String> {
+        if let payload = clipboardStore.localPayload, payload.mode == .cut {
+            return Set(payload.urls.map { FileItem.canonicalID(for: $0) })
+        }
+        if let payload = clipboardStore.androidPayload, payload.isCut { return [FileItem.canonicalID(for: payload.entry.url)] }
+        return []
+    }
+
     var canPaste: Bool { !isCategoryView && !isBusy && archiveProgress == nil && fileTransferProgress == nil && transferProgress == nil && currentDirectory != nil && (clipboard != nil || (isAndroidPath && androidClipboard != nil)) }
     var canMutateFiles: Bool {
         !isBusy && !FileOperationHistory.shared.isBusy && fileTransferProgress == nil && archiveProgress == nil && transferProgress == nil
@@ -1610,6 +1620,24 @@ final class BrowserModel: ObservableObject {
     }
 
     /// 在整个可浏览范围内按类型收集文件（Windows 式「按类型分类」视图）
+    func chooseCategoryPriorityDirectory() {
+        folderPickerRequest = FolderPickerRequest(
+            title: L("category.chooseScope", "选择分类扫描的优先目录"),
+            initialDirectory: categoryPriorityDirectory ?? (currentDirectory?.isFileURL == true ? currentDirectory : nil)
+        ) { [weak self] url in self?.setCategoryPriorityDirectory(url) }
+    }
+
+    func setCategoryPriorityDirectory(_ url: URL?) {
+        categoryPriorityDirectory = url?.standardizedFileURL.resolvingSymlinksInPath()
+        if let category = categoryFilter { loadCategory(category) }
+    }
+
+    func setCategoryIncludeAdditionalRoots(_ include: Bool) {
+        guard categoryIncludeAdditionalRoots != include else { return }
+        categoryIncludeAdditionalRoots = include
+        if let category = categoryFilter { loadCategory(category) }
+    }
+
     func loadCategory(_ category: FileCategory, expanding: Bool = false) {
         categoryTask?.cancel()
         categoryCancellation?.cancel()
@@ -1629,14 +1657,18 @@ final class BrowserModel: ObservableObject {
         isSearching = false
         searchResults = []
         categoryResults = []
+        scanReport = FileScanReport()
         isLoadingCategory = true
         isBusy = true
         statusMessage = L("status.categoryLoading", "正在归类「%@」…", category.localizedName)
         let roots = engine.categoryRoots
+        let priority = categoryPriorityDirectory
+        let includeAdditional = categoryIncludeAdditionalRoots
         categoryTask = Task { [weak self] in
             let report = await Task.detached(priority: .userInitiated) {
                 FileSystemService.categoryReport(category, under: roots, depth: depth, budget: budget,
-                    entryLimit: entryLimit, cancelled: { token.isCancelled }, partial: { items in
+                    entryLimit: entryLimit, priorityRoot: priority, includeAdditionalRoots: includeAdditional,
+                    cancelled: { token.isCancelled }, partial: { items in
                         DispatchQueue.main.async { [weak self] in
                             guard let self, self.categoryID == id, self.categoryFilter == category,
                                   self.isLoadingCategory, !token.isCancelled else { return }
@@ -1662,6 +1694,9 @@ final class BrowserModel: ObservableObject {
                         ? "%@：显示前 %d 个（已达上限，可在文件夹中查看更精确的结果）"
                         : "%@：%d 个文件（来自整个浏览范围）"
                     self.statusMessage = L(key, fallback, category.localizedName, found.count)
+                    if priority != nil && !truncated {
+                        self.statusMessage = L("category.scopedCount", "%@：%d 个文件（来自所选扫描范围）", category.localizedName, found.count)
+                    }
                 }
             }
         }
@@ -1915,6 +1950,18 @@ final class BrowserModel: ObservableObject {
         }
         guard let clipboard, let directory = currentDirectory else { return }
         startFileTransfer(clipboard.urls, to: directory, mode: clipboard.mode == .copy ? .copy : .move,
+                          clipboardGeneration: clipboardStore.changeCount)
+    }
+
+    /// Finder's Option-Command-V moves items previously copied in Finder or LeafFiles.
+    var canMoveClipboardHere: Bool {
+        canMutateFiles && !isCategoryView && !isAndroidPath && currentDirectory?.isFileURL == true
+            && !(clipboard?.urls.isEmpty ?? true)
+    }
+
+    func pasteMoving() {
+        guard canMoveClipboardHere, let clipboard, let directory = currentDirectory else { return }
+        startFileTransfer(clipboard.urls, to: directory, mode: .move,
                           clipboardGeneration: clipboardStore.changeCount)
     }
 
@@ -2232,10 +2279,7 @@ final class BrowserModel: ObservableObject {
 
     /// 当前文件夹的磁盘信息
     func volumeInfo(for url: URL) -> (free: String, total: String)? {
-        guard let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]),
-              let free = values.volumeAvailableCapacityForImportantUsage,
-              let total = values.volumeTotalCapacity else { return nil }
-        return (FileItem.formatSize(free),
-                FileItem.formatSize(Int64(total)))
+        guard let capacity = VolumeCapacity.read(url) else { return nil }
+        return (FileItem.formatSize(capacity.free), FileItem.formatSize(capacity.total))
     }
 }

@@ -4,10 +4,28 @@ import UniformTypeIdentifiers
 
 /// Shared URL representation for drags from WinFile and other macOS file managers.
 enum SidebarFolderDrop {
+    private static let localDragType = "local.leaffiles.internal-file-drag"
+    private static var draggedURL: URL?
+
     static func provider(for url: URL) -> NSItemProvider? {
         guard url.isFileURL else { return nil }
         DispatchQueue.main.async { TabDiagnostics.shared.record("sidebar.drag.source") }
-        return NSItemProvider(object: url as NSURL)
+        draggedURL = url
+        let provider = NSItemProvider(object: url as NSURL)
+        provider.registerDataRepresentation(forTypeIdentifier: localDragType, visibility: .ownProcess) { completion in
+            completion(Data(), nil)
+            return nil
+        }
+        return provider
+    }
+
+    static func operation(for info: DropInfo, currentDirectory: URL?) -> DropOperation {
+        guard let directory = currentDirectory, let url = draggedURL,
+              info.itemProviders(for: [.fileURL]).contains(where: { $0.registeredTypeIdentifiers.contains(localDragType) }),
+              FileItem.canonicalID(for: url.deletingLastPathComponent()) == FileItem.canonicalID(for: directory) else {
+            return .copy
+        }
+        return .move
     }
 
     static func load(_ providers: [NSItemProvider], completion: @escaping ([URL], Int) -> Void) {
@@ -53,14 +71,43 @@ struct FileFolderDrop: ViewModifier {
 
     @ViewBuilder func body(content: Content) -> some View {
         if item.isDirectory && !item.isBundle && item.url.isFileURL, let current = model.currentDirectory {
-            content.onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                guard !providers.isEmpty else { return false }
-                SidebarFolderDrop.load(providers) { urls, failed in
-                    model.dropFiles(urls, from: current, to: item.url, failed: failed)
-                }
-                return true
-            }
+            content.onDrop(of: [.fileURL], delegate: FolderTargetDropDelegate(model: model, current: current, destination: item.url))
         } else { content }
+    }
+}
+
+struct FolderTargetDropDelegate: DropDelegate {
+    let model: BrowserModel
+    let current: URL
+    let destination: URL
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: SidebarFolderDrop.operation(for: info, currentDirectory: current))
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        let providers = info.itemProviders(for: [.fileURL])
+        guard !providers.isEmpty else { return false }
+        SidebarFolderDrop.load(providers) { urls, failed in
+            model.dropFiles(urls, from: current, to: destination, failed: failed)
+        }
+        return true
+    }
+}
+
+struct FileListDropDelegate: DropDelegate {
+    let model: BrowserModel
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: SidebarFolderDrop.operation(for: info, currentDirectory: model.currentDirectory))
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        guard let directory = model.currentDirectory else { return false }
+        let providers = info.itemProviders(for: [.fileURL])
+        guard !providers.isEmpty else { return false }
+        SidebarFolderDrop.load(providers) { urls, failed in
+            model.dropFiles(urls, from: directory, to: directory, failed: failed)
+        }
+        return true
     }
 }
 

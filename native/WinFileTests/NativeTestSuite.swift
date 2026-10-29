@@ -72,6 +72,7 @@ enum NativeTestSuite {
         print("沙盒目录：\(sandbox.path)")
 
         testCategorization()
+        testVolumeCapacity()
         do {
             try testListing(sandbox)
             try testOperations(sandbox)
@@ -141,6 +142,23 @@ enum NativeTestSuite {
         } else {
             print("全部通过 ✔")
         }
+    }
+
+    @MainActor
+    private static func testVolumeCapacity() {
+        print("\n== 磁盘容量读取 ==")
+        let fallback = VolumeCapacity(total: 200, free: 35)
+        let exfat = VolumeCapacity.resolve(total: 200, important: 0, available: 35, fallback: fallback, fileSystem: "exfat")
+        check("exFAT 的零可清理空间不覆盖真实可用空间", exfat == fallback)
+        let statFallback = VolumeCapacity.resolve(total: nil, important: nil, available: nil, fallback: fallback, fileSystem: "exfat")
+        check("资源值不可用时使用文件系统容量", statFallback == fallback)
+        let apfs = VolumeCapacity.resolve(total: 200, important: 60, available: 35, fallback: fallback, fileSystem: "apfs")
+        check("APFS 保留重要用途容量估算", apfs?.free == 60)
+        let full = VolumeCapacity.resolve(total: 200, important: 0, available: 0, fallback: VolumeCapacity(total: 200, free: 0), fileSystem: "exfat")
+        check("真实满盘仍显示零可用", full?.free == 0)
+        check("不可读取容量不会伪装成满盘", VolumeCapacity.resolve(total: nil, important: nil, available: nil, fallback: nil, fileSystem: nil) == nil)
+        check("超出容量的异常值不会用于展示", VolumeCapacity.resolve(total: 200, important: 300, available: 35, fallback: nil, fileSystem: "apfs")?.free == 35)
+        check("本机卷可读取有效容量", VolumeCapacity.read(URL(fileURLWithPath: "/")).map { $0.total > 0 && $0.free <= $0.total } == true)
     }
 
     @MainActor
@@ -1539,10 +1557,23 @@ enum NativeTestSuite {
         check("跨页签共享复制内容", b.clipboard?.urls.map { FileItem.canonicalID(for: $0) } == [FileItem.canonicalID(for: small)] && b.canPaste)
         b.paste(); wait(b)
         check("跨页签粘贴复制到目标目录", fm.fileExists(atPath: target.appendingPathComponent("alpha.pdf").path))
+        let moveFolder = source.appendingPathComponent("Move by shortcut")
+        try fm.createDirectory(at: moveFolder, withIntermediateDirectories: true)
+        try Data("nested".utf8).write(to: moveFolder.appendingPathComponent("child.txt"))
+        pb.clearContents(); pb.writeObjects([moveFolder as NSURL])
+        check("可通过复制后移动使用访达文件剪贴板", b.canMoveClipboardHere)
+        b.pasteMoving(); wait(b)
+        check("复制后移动保留内容并移除原目录", !fm.fileExists(atPath: moveFolder.path) && fm.fileExists(atPath: target.appendingPathComponent("Move by shortcut/child.txt").path))
+        check("移动完成后清除相同代次的剪贴板", b.clipboard == nil)
+
         a.cutSelectionToClipboard()
         check("跨页签共享剪切模式", b.clipboard?.mode == .cut)
+        check("剪切标记只覆盖剪切文件", a.cutItemIDs == [FileItem.canonicalID(for: small)])
+
         pb.clearContents(); pb.setString("new text", forType: .string)
         check("系统文本剪贴板使旧剪切立即失效", a.clipboard == nil && !b.canPaste)
+        check("剪贴板变化后剪切标记立即失效", a.cutItemIDs.isEmpty)
+
         clipboard.refresh()
         pb.clearContents(); pb.writeObjects([large as NSURL])
         check("识别外部文件剪贴板且不误认为剪切", b.clipboard?.mode == .copy && b.clipboard?.urls.first?.path == large.path)
@@ -1582,6 +1613,14 @@ enum NativeTestSuite {
         try Data("external".utf8).write(to: externalPDF)
         let balanced = FileSystemService.categoryReport(.pdf, under: [many, external], budget: 40, entryLimit: 100)
         check("分类扫描为第二个磁盘保留结果配额", balanced.items.contains { $0.id == FileItem.canonicalID(for: externalPDF) } && balanced.items.count <= 40)
+        let priorityFull = FileSystemService.categoryReport(.pdf, under: [many, external], budget: 40, priorityRoot: many)
+        check("优先目录达到上限时不混入其他路径", priorityFull.items.count == 40 && priorityFull.limitReached && !priorityFull.items.contains { $0.id == FileItem.canonicalID(for: externalPDF) })
+        let priorityAndMore = FileSystemService.categoryReport(.pdf, under: [root], budget: 40, priorityRoot: external)
+        check("优先目录不足上限时继续扫描其他目录且不重复", priorityAndMore.items.count == 40 && priorityAndMore.items.filter { $0.id == FileItem.canonicalID(for: externalPDF) }.count == 1)
+        let priorityOnly = FileSystemService.categoryReport(.pdf, under: [many], budget: 40, priorityRoot: external, includeAdditionalRoots: false)
+        check("关闭额外路径时只扫描优先目录", priorityOnly.items.map(\.id) == [FileItem.canonicalID(for: externalPDF)] && !priorityOnly.isPartial)
+        let priorityBounded = FileSystemService.categoryReport(.pdf, under: [many], budget: 40, entryLimit: 1, priorityRoot: external)
+        check("优先扫描与额外路径共用遍历上限", priorityBounded.visited <= 1 && priorityBounded.visitLimitReached)
         check("分类计数包含后续扫描范围", (FileSystemService.categoryCounts(under: [many, external])[.pdf] ?? 0) > 0)
         let overlapping = FileSystemService.categoryReport(.pdf, under: [external, external], budget: 40)
         check("重复磁盘范围不会产生重复结果", overlapping.items.count == 1 && overlapping.items.first?.id == FileItem.canonicalID(for: externalPDF))

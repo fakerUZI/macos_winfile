@@ -11,8 +11,8 @@ struct MainView: View {
     var skipAutoNavigation: Bool = false
     /// 页签管理（一个窗口内可开多个页签）
     @StateObject private var tabManager: TabManager
-    @State private var showSidebar = true
-    @State private var showInspector = true
+    @AppStorage("Layout.ShowSidebar") private var showSidebar = true
+    @AppStorage("Layout.ShowInspector") private var showInspector = true
     @AppStorage(PaneLayout.sidebarKey) private var sidebarWidth = 216.0
     @AppStorage(PaneLayout.inspectorKey) private var inspectorWidth = 264.0
     @State private var dialog: DialogKind?
@@ -141,6 +141,12 @@ struct MainView: View {
     private var lifecycleContent: some View {
         decoratedContent
         .onAppear {
+            let open = openWindow
+            BrowserWindowCommands.shared.openNewWindow = {
+                let id = BrowserWindowCommands.shared.prepareNewWindow(engine: engine, startDirectory: defaultStartDirectory)
+                open(value: id)
+                NSApp.activate(ignoringOtherApps: true)
+            }
             engine.scheduleCategoryCount()
             adopt(tabManager.activeTab)
             WindowBridge.shared.tabManager = tabManager
@@ -191,6 +197,10 @@ struct MainView: View {
             guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             TabDiagnostics.shared.record("MainView 收到新建页签通知")
             newTab()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .winFileDeleteSelection)) { notification in
+            guard (notification.object as? TabManager) === tabManager else { return }
+            confirmDelete()
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileCloseTab)) { notification in
             guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }

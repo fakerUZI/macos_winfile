@@ -6,6 +6,9 @@ import SwiftUI
 struct NativeIconGrid: NSViewRepresentable {
     let items: [FileItem]
     let selectedIDs: Set<String>
+    var cutIDs: Set<String> = []
+    var positions: [String: CGPoint] = [:]
+    var onScrollOffset: (CGPoint) -> Void = { _ in }
     let locateIndex: Int?
     let locateRequest: UUID?
     let makeTile: (FileItem) -> AnyView
@@ -17,8 +20,8 @@ struct NativeIconGrid: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NativeIconGridScrollView, context: Context) {
-        context.coordinator.configure(items: items, selectedIDs: selectedIDs,
-            environment: context.environment, makeTile: makeTile,
+        context.coordinator.configure(items: items, selectedIDs: selectedIDs, cutIDs: cutIDs, positions: positions,
+            onScrollOffset: onScrollOffset, environment: context.environment, makeTile: makeTile,
             locateIndex: locateIndex, locateRequest: locateRequest)
     }
     static func dismantleNSView(_ scroll: NativeIconGridScrollView, coordinator: Coordinator) {
@@ -31,6 +34,14 @@ struct NativeIconGrid: NSViewRepresentable {
         private var observer: NSObjectProtocol?
         private var items: [FileItem] = []
         private var selectedIDs: Set<String> = []
+        private var cutIDs: Set<String> = []
+        private var positions: [String: CGPoint] = [:]
+        private var onScrollOffset: (CGPoint) -> Void = { _ in }
+        private var freeFrames: [NSRect] = []
+        private var freeBuckets: [Int: [Int]] = [:]
+        private var freeLayoutWidth: CGFloat = -1
+        private var freeContentHeight: CGFloat = 0
+        private var previousWasFree = false
         private var environment = EnvironmentValues()
         private var makeTile: ((FileItem) -> AnyView)?
         private var hosts: [Int: NSHostingView<AnyView>] = [:]
@@ -62,15 +73,24 @@ struct NativeIconGrid: NSViewRepresentable {
             scroll = nil
         }
 
-        func configure(items: [FileItem], selectedIDs: Set<String>, environment: EnvironmentValues,
+        func configure(items: [FileItem], selectedIDs: Set<String>, cutIDs: Set<String> = [], positions: [String: CGPoint] = [:], onScrollOffset: @escaping (CGPoint) -> Void = { _ in }, environment: EnvironmentValues,
                        makeTile: @escaping (FileItem) -> AnyView, locateIndex: Int?, locateRequest: UUID?) {
             let contentChanged = self.items != items
+            let positionsChanged = self.positions != positions
+            let modeChanged = previousWasFree != !positions.isEmpty
+            previousWasFree = !positions.isEmpty
+            self.positions = positions
+            self.onScrollOffset = onScrollOffset
+            if contentChanged || positionsChanged || modeChanged { freeLayoutWidth = -1 }
+            if modeChanged { removeRows() }
             let styleChanged = self.environment.locale != environment.locale
                 || self.environment.colorScheme != environment.colorScheme
                 || self.environment.colorSchemeContrast != environment.colorSchemeContrast
             let oldSelection = self.selectedIDs
+            let oldCutIDs = self.cutIDs
             self.items = items
             self.selectedIDs = selectedIDs
+            self.cutIDs = cutIDs
             self.environment = environment
             self.makeTile = makeTile
             if contentChanged { removeRows() }
@@ -79,9 +99,17 @@ struct NativeIconGrid: NSViewRepresentable {
                 pendingLocation = (locateIndex, locateRequest)
             }
             layoutRows()
+            if !positions.isEmpty {
+                for (index, host) in hosts where items.indices.contains(index) {
+                    if contentChanged || positionsChanged || styleChanged || oldSelection.contains(items[index].id) != selectedIDs.contains(items[index].id) || oldCutIDs.contains(items[index].id) != cutIDs.contains(items[index].id) {
+                        host.rootView = freeItemView(index)
+                    }
+                }
+                return
+            }
             for (row, host) in hosts {
                 let indices = metrics.indices(row: row)
-                if styleChanged || indices.contains(where: { oldSelection.contains(items[$0].id) != selectedIDs.contains(items[$0].id) }) {
+                if styleChanged || indices.contains(where: { oldSelection.contains(items[$0].id) != selectedIDs.contains(items[$0].id) || oldCutIDs.contains(items[$0].id) != cutIDs.contains(items[$0].id) }) {
                     host.rootView = rowView(row)
                 }
             }
@@ -111,10 +139,70 @@ struct NativeIconGrid: NSViewRepresentable {
             .environment(\.self, environment))
         }
 
+        private func freeItemView(_ index: Int) -> AnyView {
+            guard let makeTile, items.indices.contains(index) else { return AnyView(EmptyView()) }
+            return AnyView(makeTile(items[index]).frame(maxWidth: .infinity, maxHeight: .infinity).environment(\.self, environment))
+        }
+
+        private func layoutFreeItems(in scroll: NativeIconGridScrollView, document: NSView) {
+            let width = max(1, scroll.contentSize.width)
+            let nextMetrics = IconGridMetrics(count: items.count, width: width)
+            let cellWidth = max(1, (width - IconGridMetrics.padding * 2 - CGFloat(nextMetrics.columns - 1) * 10) / CGFloat(nextMetrics.columns))
+            let height = IconGridMetrics.pitch - 10
+            if freeLayoutWidth != width || freeFrames.count != items.count {
+                freeLayoutWidth = width
+                freeBuckets.removeAll()
+                freeFrames = items.enumerated().map { index, item in
+                    let standard = CGPoint(x: IconGridMetrics.padding + CGFloat(index % nextMetrics.columns) * (cellWidth + 10),
+                                           y: IconGridMetrics.padding + CGFloat(index / nextMetrics.columns) * IconGridMetrics.pitch)
+                    let position = positions[item.id] ?? standard
+                    let frame = NSRect(x: min(max(0, position.x), max(0, width - cellWidth)), y: max(0, position.y), width: cellWidth, height: height)
+                    let first = Int(frame.minY / IconGridMetrics.pitch)
+                    let last = Int(frame.maxY / IconGridMetrics.pitch)
+                    for row in first...last { freeBuckets[row, default: []].append(index) }
+                    return frame
+                }
+                freeContentHeight = (freeFrames.map(\.maxY).max() ?? 0) + IconGridMetrics.padding
+            }
+            let totalHeight = max(scroll.contentSize.height, freeContentHeight)
+            let size = NSSize(width: width, height: totalHeight)
+            if document.frame.size != size { document.setFrameSize(size) }
+            if let target = pendingLocation, items.indices.contains(target.index) {
+                let frame = freeFrames[target.index]
+                let y = min(max(0, size.height - scroll.contentSize.height), max(0, frame.midY - scroll.contentSize.height / 2))
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: y)); scroll.reflectScrolledClipView(scroll.contentView)
+                lastLocateRequest = target.request; pendingLocation = nil
+            }
+            let visibleRect = scroll.contentView.bounds.insetBy(dx: 0, dy: -IconGridMetrics.pitch * 2)
+            let first = max(0, Int(visibleRect.minY / IconGridMetrics.pitch))
+            let last = max(first, Int(visibleRect.maxY / IconGridMetrics.pitch))
+            let visible = Set((first...last).flatMap { freeBuckets[$0] ?? [] }.filter { freeFrames[$0].intersects(visibleRect) })
+            for index in Array(hosts.keys) where !visible.contains(index) {
+                if let host = hosts.removeValue(forKey: index) { host.isHidden = true; spareHosts.append(host) }
+            }
+            for index in visible {
+                let host: NSHostingView<AnyView>
+                if let existing = hosts[index] { host = existing }
+                else {
+                    host = spareHosts.popLast() ?? NSHostingView(rootView: freeItemView(index))
+                    host.rootView = freeItemView(index)
+                    host.sizingOptions = []
+                    if host.superview == nil { document.addSubview(host); scroll.createdRowHosts += 1 }
+                    host.isHidden = false; hosts[index] = host
+                }
+                if host.frame != freeFrames[index] { host.frame = freeFrames[index] }
+            }
+            while spareHosts.count > 4 { spareHosts.removeLast().removeFromSuperview() }
+            (document as? NativeIconGridDocumentView)?.refreshHover()
+        }
+
         private func layoutRows() {
             guard !layingOut, let scroll, let document = scroll.documentView else { return }
             layingOut = true
             defer { layingOut = false }
+            let offset = scroll.contentView.bounds.origin
+            DispatchQueue.main.async { [weak self] in self?.onScrollOffset(offset) }
+            if !positions.isEmpty { layoutFreeItems(in: scroll, document: document); return }
             let width = max(0, scroll.contentSize.width)
             let next = IconGridMetrics(count: items.count, width: width)
             let nextRowWidth = max(1, width - IconGridMetrics.padding * 2)

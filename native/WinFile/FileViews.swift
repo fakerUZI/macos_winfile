@@ -8,6 +8,7 @@ struct FileIconView: View {
     @ObservedObject private var localization = Localization.shared
     let item: FileItem
     var size: CGFloat = 18
+    var isCut: Bool = false
     /// 观察关联设置：改动后徽标需立即更新（此前依赖 .task(id:)，
     /// 而 id 不含设置内容，导致改了打开方式要切换目录才生效）
     @ObservedObject private var defaultApps = DefaultAppService.shared
@@ -34,7 +35,12 @@ struct FileIconView: View {
         .frame(width: size, height: size)
         // 右下角的关联应用徽标（表示双击时用哪个应用打开）
         .overlay(alignment: .bottomTrailing) {
-            if let badge {
+            if isCut {
+                Image(systemName: "scissors")
+                    .font(.system(size: max(8, badgeSize * 0.8), weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(-90))
+            } else if let badge {
                 Image(nsImage: badge)
                     .resizable()
                     .interpolation(.high)
@@ -152,10 +158,11 @@ struct FileTableView: View {
     }
 
     private var table: some View {
-        Table(of: FileItem.self, selection: selection, sortOrder: sortOrder) {
+        let cutIDs = model.cutItemIDs
+        return Table(of: FileItem.self, selection: selection, sortOrder: sortOrder) {
             TableColumn(WLocalizedString("column.name", comment: "名称"), value: \FileItem.name, comparator: .localizedStandard) { item in
                 HStack(spacing: 6) {
-                    FileIconView(item: item, size: 18)
+                    FileIconView(item: item, size: 18, isCut: cutIDs.contains(item.id))
                     Text(item.name)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -235,9 +242,7 @@ struct FileTableView: View {
             }
             .frame(width: 0, height: 0)
         )
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            handleDrop(providers)
-        }
+        .onDrop(of: [.fileURL], delegate: FileListDropDelegate(model: model))
     }
 
     @ViewBuilder
@@ -369,15 +374,6 @@ struct FileTableView: View {
         return menu
     }
 
-    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let directory = model.currentDirectory else { return false }
-        guard !providers.isEmpty else { return false }
-        SidebarFolderDrop.load(providers) { urls, failed in
-            model.dropFiles(urls, from: directory, to: directory, failed: failed)
-        }
-        return true
-    }
-
     static func dateText(_ date: Date) -> String {
         FileItem.formatDate(date)   // 统一实现在模型层，避免多处重复
     }
@@ -393,35 +389,78 @@ struct FileIconGridView: View {
 
     private struct LocateTarget: Equatable { let index: Int; let request = UUID() }
     @State private var locateTarget: LocateTarget?
+    @State private var iconPositions: [String: CGPoint] = [:]
+    @State private var scrollOffset: CGPoint = .zero
+
+    private var canArrange: Bool { !model.isCategoryView && !model.isSearching && model.currentDirectory?.isFileURL == true }
+    private var positionKey: String { model.currentDirectory.map { FileItem.canonicalID(for: $0) } ?? "" }
+    private static let positionsKey = "IconPositions.v1"
+
+    private func loadPositions() {
+        guard canArrange else { iconPositions = [:]; return }
+        let all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
+        iconPositions = (all[positionKey] ?? [:]).reduce(into: [:]) { result, pair in
+            if pair.value.count == 2, pair.value[0].isFinite, pair.value[1].isFinite {
+                result[pair.key] = CGPoint(x: min(100_000, max(0, pair.value[0])), y: min(100_000, max(0, pair.value[1])))
+            }
+        }
+    }
+
+    private func savePosition(_ url: URL, at point: CGPoint) {
+        guard canArrange, let current = model.currentDirectory,
+              FileItem.canonicalID(for: url.deletingLastPathComponent()) == FileItem.canonicalID(for: current),
+              model.displayedItems.contains(where: { $0.id == FileItem.canonicalID(for: url) }) else { return }
+        let x = min(100_000, max(0, point.x + scrollOffset.x - 52))
+        let y = min(100_000, max(0, point.y + scrollOffset.y - 53))
+        iconPositions[FileItem.canonicalID(for: url)] = CGPoint(x: x, y: y)
+        var all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
+        all[positionKey] = iconPositions.mapValues { [Double($0.x), Double($0.y)] }
+        UserDefaults.standard.set(all, forKey: Self.positionsKey)
+    }
+
+    private func resetPositions() {
+        iconPositions = [:]
+        var all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
+        all.removeValue(forKey: positionKey)
+        UserDefaults.standard.set(all, forKey: Self.positionsKey)
+    }
 
     var body: some View {
-        NativeIconGrid(items: model.displayedItems, selectedIDs: model.selectedIDs,
-            locateIndex: locateTarget?.index, locateRequest: locateTarget?.request,
+        NativeIconGrid(items: model.displayedItems, selectedIDs: model.selectedIDs, cutIDs: model.cutItemIDs,
+            positions: canArrange ? iconPositions : [:], onScrollOffset: { offset in
+                if scrollOffset != offset { scrollOffset = offset }
+            }, locateIndex: locateTarget?.index, locateRequest: locateTarget?.request,
             makeTile: { AnyView(tile(for: $0)) })
-            .onAppear { selectPendingItem() }
+            .onAppear { loadPositions(); selectPendingItem() }
+            .onChange(of: positionKey) { _ in loadPositions() }
+            .onChange(of: canArrange) { _ in loadPositions() }
             .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
             .onReceive(model.$items.combineLatest(model.$categoryResults, model.$searchResults).receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-            guard let directory = model.currentDirectory else { return false }
-            guard !providers.isEmpty else { return false }
-            SidebarFolderDrop.load(providers) { urls, failed in
-                model.dropFiles(urls, from: directory, to: directory, failed: failed)
-            }
-            return true
-        }
+        .onDrop(of: [.fileURL], delegate: IconPlacementDropDelegate(model: model, canArrange: canArrange, place: savePosition))
         // 空白处右键菜单（与详细信息视图一致）
         // 未命中原生滚动容器的空白区域仍使用同一份菜单兜底。
         // 磁贴自己的菜单优先，仍由 FileItemContextMenu 处理。
         .contextMenu {
             FileBackgroundContextMenu(engine: engine, model: model, dialog: $dialog)
+            if canArrange && !iconPositions.isEmpty {
+                Divider()
+                Button(L("icon.resetPositions", "重置图标位置")) { resetPositions() }
+            }
         }
         .background(
             EmptyAreaContextMenu(
-                buildMenu: { FileTableView.makeBackgroundMenu(model: model, dialog: $dialog) }
+                buildMenu: {
+                    let menu = FileTableView.makeBackgroundMenu(model: model, dialog: $dialog)
+                    if canArrange && !iconPositions.isEmpty {
+                        menu.addItem(.separator())
+                        menu.addItem(ClosureMenuItem(title: L("icon.resetPositions", "重置图标位置"), closure: resetPositions))
+                    }
+                    return menu
+                }
             )
             .frame(width: 0, height: 0)
         )
@@ -436,7 +475,7 @@ struct FileIconGridView: View {
     }
 
     private func tile(for item: FileItem) -> some View {
-        FileTile(item: item, selected: model.selectedIDs.contains(item.id))
+        FileTile(item: item, selected: model.selectedIDs.contains(item.id), isCut: model.cutItemIDs.contains(item.id))
             .modifier(LocalFileDrag(url: item.url))
             .modifier(FileFolderDrop(item: item, model: model))
             // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
@@ -455,6 +494,33 @@ struct FileIconGridView: View {
             .contextMenu {
                 FileItemContextMenu(engine: engine, model: model, dialog: $dialog, item: item)
             }
+    }
+}
+
+/// Dropping a single local item onto empty space changes only its visual position.
+struct IconPlacementDropDelegate: DropDelegate {
+    let model: BrowserModel
+    let canArrange: Bool
+    let place: (URL, CGPoint) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.fileURL]) }
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: SidebarFolderDrop.operation(for: info, currentDirectory: model.currentDirectory))
+    }
+    func performDrop(info: DropInfo) -> Bool {
+        guard let directory = model.currentDirectory else { return false }
+        let providers = info.itemProviders(for: [.fileURL])
+        guard !providers.isEmpty else { return false }
+        let point = info.location
+        SidebarFolderDrop.load(providers) { urls, failed in
+            if canArrange, failed == 0, urls.count == 1,
+               FileItem.canonicalID(for: urls[0].deletingLastPathComponent()) == FileItem.canonicalID(for: directory) {
+                place(urls[0], point)
+            } else {
+                model.dropFiles(urls, from: directory, to: directory, failed: failed)
+            }
+        }
+        return true
     }
 }
 
@@ -633,10 +699,11 @@ struct FileTile: View {
     @ObservedObject private var localization = Localization.shared
     let item: FileItem
     let selected: Bool
+    var isCut: Bool = false
     @ObservedObject private var defaultApps = DefaultAppService.shared
 
     var body: some View {
-        NativeFileTile(item: item, selected: selected, badge: badge)
+        NativeFileTile(item: item, selected: selected, badge: badge, isCut: isCut)
         .frame(maxWidth: .infinity, minHeight: IconGridMetrics.pitch - 10, maxHeight: IconGridMetrics.pitch - 10)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)

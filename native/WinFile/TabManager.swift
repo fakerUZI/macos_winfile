@@ -162,7 +162,9 @@ final class TabManager: ObservableObject {
     func persistNow() {
         guard persistsSession else { return }
         if sessionStore === BrowserSessionStore.shared {
-            let managers = Self.liveManagers.allObjects.filter { $0.persistsSession && $0.includedInSession }
+            let managers = BrowserWindowCommands.shared.sessionManagers(including: self)
+                .filter { $0.persistsSession && $0.includedInSession }
+            guard managers.contains(where: { $0 === self }), !managers.isEmpty else { return }
             let allTabs = managers.flatMap(\.tabs)
             sessionStore.save(tabs: allTabs, activeID: activeID)
         } else {

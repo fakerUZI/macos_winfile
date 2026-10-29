@@ -266,6 +266,7 @@
 "drive.free" = "%@ free";
 "drive.total" = "%@ total";
 "drive.capacity" = "Capacity";
+"drive.capacityUnavailable" = "Capacity information unavailable";
 "drive.used" = "Used";
 "drive.available" = "Available";
 "drive.fileSystem" = "File system";
@@ -1188,3 +1189,15 @@
 
 "tab.detach" = "Move Tab to New Window";
 "tab.mergeWindows" = "Merge All Windows";
+"window.new" = "New Window";
+"category.chooseScope" = "Choose a Priority Folder for Category Scanning";
+"category.chooseScopeButton" = "Choose Priority Folder…";
+"category.defaultScope" = "Scan scope: default locations";
+"category.includeAdditional" = "Scan other locations";
+"category.resetScope" = "Use Defaults";
+"category.scopedCount" = "%@: %d files (from selected scan locations)";
+
+"action.moveHere" = "Move Items Here";
+"menu.openSelection" = "Open Selected Items / Choose Folder…";
+
+"icon.resetPositions" = "Reset Icon Positions";

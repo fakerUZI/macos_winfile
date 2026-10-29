@@ -110,6 +110,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 标签页保护定时器（补齐后来创建的窗口）
     private var tabbingGuardTimer: Timer?
 
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let item = NSMenuItem(title: L("window.new", "新建窗口"), action: #selector(openDockWindow(_:)), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+        return menu
+    }
+
+    @objc private func openDockWindow(_ sender: Any?) {
+        MainActor.assumeIsolated { BrowserWindowCommands.shared.openNewWindow?() }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         ExternalFileRequests.shared.receive(urls, intent: .open)
     }
@@ -305,6 +317,9 @@ struct WinFileCommands: Commands {
                 .keyboardShortcut("c", modifiers: .command)
             Button(L("action.paste", "粘贴")) { clipboardAction("paste:") { model?.paste() } }
                 .keyboardShortcut("v", modifiers: .command)
+            Button(L("action.moveHere", "将项目移到此处")) { model?.pasteMoving() }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+                .disabled(editingText || !(model?.canMoveClipboardHere ?? false))
         }
         CommandGroup(replacing: .undoRedo) {
             Button(operationHistory.undoTitle) {
@@ -319,6 +334,11 @@ struct WinFileCommands: Commands {
         }
         // 文件
         CommandGroup(replacing: .newItem) {
+            Button(L("window.new", "新建窗口")) {
+                windowCommands.openNewWindow?()
+            }
+            .keyboardShortcut("n", modifiers: .command)
+
             // 页签：与 Windows 资源管理器一致
             Button(L("tab.new", "新标签页")) {
                 NotificationCenter.default.post(name: .winFileNewTab, object: windowCommands.manager)
@@ -427,8 +447,12 @@ struct WinFileCommands: Commands {
             }
             .keyboardShortcut("a", modifiers: [.command, .shift])
             Divider()
-            Button(WLocalizedString("menu.chooseFolder", comment: "打开文件夹…")) {
-                NotificationCenter.default.post(name: .winFileOpenFolder, object: windowCommands.manager)
+            Button(L("menu.openSelection", "打开所选项目 / 打开文件夹…")) {
+                if !editingText, let selected = model?.selectedItems, !selected.isEmpty {
+                    for item in selected { model?.activate(item) }
+                } else {
+                    NotificationCenter.default.post(name: .winFileOpenFolder, object: windowCommands.manager)
+                }
             }
             .keyboardShortcut("o", modifiers: .command)
         }
@@ -450,6 +474,7 @@ struct WinFileCommands: Commands {
 }
 
 extension Notification.Name {
+    static let winFileDeleteSelection = Notification.Name("WinFileDeleteSelection")
     static let winFileBeginRename = Notification.Name("WinFileBeginRename")
     static let winFileSearch = Notification.Name("WinFileSearch")
     static let winFileOpenFolder = Notification.Name("WinFileOpenFolder")

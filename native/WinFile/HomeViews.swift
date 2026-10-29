@@ -500,8 +500,12 @@ struct DriveCard: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                } else {
+                } else if drive.isDiskImage && drive.capacityAvailable {
                     Text(L("drive.imageHint", "只读映像 · 大小 %@", drive.totalText))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(L("drive.capacityUnavailable", "容量信息不可用"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -542,7 +546,7 @@ struct DriveCard: View {
             \(L("drive.kind", "类型"))：\(drive.kindDescription)
             \(L("drive.fileSystem", "文件系统"))：\(drive.fileSystem ?? "—")
             \(L("drive.capacity", "容量"))：\(drive.totalText)
-            \(L("drive.used", "已用"))：\(drive.usedText)（\(Int(drive.usedFraction * 100))%）
+            \(L("drive.used", "已用"))：\(drive.capacityAvailable ? "\(drive.usedText)（\(Int(drive.usedFraction * 100))%）" : "—")
             \(L("drive.available", "可用"))：\(drive.freeText)
             """)
         }

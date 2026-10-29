@@ -7,9 +7,10 @@ struct NativeFileTile: NSViewRepresentable {
     let item: FileItem
     let selected: Bool
     let badge: NSImage?
+    var isCut: Bool = false
     func makeNSView(context: Context) -> NativeFileTileView { NativeFileTileView(frame: .zero) }
     func updateNSView(_ view: NativeFileTileView, context: Context) {
-        view.configure(item: item, selected: selected, badge: badge)
+        view.configure(item: item, selected: selected, badge: badge, isCut: isCut)
     }
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: NativeFileTileView, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 104, height: IconGridMetrics.pitch - 10)
@@ -18,6 +19,21 @@ struct NativeFileTile: NSViewRepresentable {
 }
 
 final class NativeFileTileView: NSView {
+    private static let cutSymbol: NSImage? = {
+        guard let symbol = NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .medium)) else { return nil }
+        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState()
+            context.translateBy(x: rect.midX, y: rect.midY)
+            context.rotate(by: .pi / 2)
+            symbol.draw(in: NSRect(x: -rect.width / 2, y: -rect.height / 2, width: rect.width, height: rect.height))
+            context.restoreGState()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
     private let icon = NSImageView()
     private let badge = NSImageView()
     private let name = NSTextField(labelWithString: "")
@@ -25,6 +41,7 @@ final class NativeFileTileView: NSView {
     private var item: FileItem?
     private var selected = false
     private var hovering = false
+    private var isCut = false
     private var imageTask: Task<Void, Never>?
 
     override var isFlipped: Bool { true }
@@ -58,14 +75,17 @@ final class NativeFileTileView: NSView {
     deinit { imageTask?.cancel() }
     func cancelImage() { imageTask?.cancel(); imageTask = nil }
 
-    func configure(item: FileItem, selected: Bool, badge: NSImage?) {
+    func configure(item: FileItem, selected: Bool, badge: NSImage?, isCut: Bool = false) {
         let changed = self.item != item
+        if self.isCut != isCut { needsLayout = true }
         self.item = item
         self.selected = selected
+        self.isCut = isCut
         name.stringValue = item.name
         detail.stringValue = item.isContainer ? item.typeDescription : item.sizeText
-        self.badge.image = badge
-        self.badge.isHidden = badge == nil
+        self.badge.image = isCut ? Self.cutSymbol : badge
+        self.badge.contentTintColor = isCut ? .secondaryLabelColor : nil
+        self.badge.isHidden = !isCut && badge == nil
         updateColors()
         guard changed else { return }
         hovering = false
@@ -97,7 +117,9 @@ final class NativeFileTileView: NSView {
     override func layout() {
         super.layout()
         icon.frame = NSRect(x: (bounds.width - 44) / 2, y: 6, width: 44, height: 44)
-        badge.frame = NSRect(x: icon.frame.maxX - 18 + 3.24, y: 6 + 44 - 18 + 3.24, width: 18, height: 18)
+        let badgeSize: CGFloat = isCut ? 14 : 18
+        badge.frame = NSRect(x: icon.frame.maxX - badgeSize + 3, y: icon.frame.maxY - badgeSize + 3,
+                             width: badgeSize, height: badgeSize)
         name.frame = NSRect(x: 8, y: 54, width: max(0, bounds.width - 16), height: FileItem.tileNameAreaHeight)
         detail.frame = NSRect(x: 8, y: 88, width: max(0, bounds.width - 16), height: 12)
     }
@@ -118,8 +140,8 @@ final class NativeFileTileView: NSView {
                 : hovering ? NSColor.separatorColor.withAlphaComponent(0.12) : .clear).cgColor
             layer?.borderWidth = selected ? 1 : 0
             layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.5).cgColor
-            badge.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-            badge.layer?.borderColor = NSColor.controlBackgroundColor.cgColor
+            badge.layer?.backgroundColor = isCut ? NSColor.clear.cgColor : NSColor.controlBackgroundColor.cgColor
+            badge.layer?.borderColor = isCut ? NSColor.clear.cgColor : NSColor.controlBackgroundColor.cgColor
         }
     }
 }
