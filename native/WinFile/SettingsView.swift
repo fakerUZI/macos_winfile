@@ -10,17 +10,22 @@ struct SettingsView: View {
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
     @AppStorage("ShowHiddenFiles") private var showHidden: Bool = false
     @AppStorage("ViewLayout") private var layoutRaw: String = ViewLayout.details.rawValue
+    @AppStorage("Settings.SelectedPane") private var selectedPane = "general"
 
     var body: some View {
-        TabView {
+        TabView(selection: $selectedPane) {
             general
                 .tabItem { Label(WLocalizedString("settings.general", comment: "通用"), systemImage: "gearshape") }
+                .tag("general")
             privacy
                 .tabItem { Label(WLocalizedString("settings.privacy", comment: "隐私与授权"), systemImage: "lock.shield") }
+                .tag("privacy")
             about
                 .tabItem { Label(WLocalizedString("settings.about", comment: "关于"), systemImage: "info.circle") }
+                .tag("about")
         }
         .frame(width: 480, height: 320)
+        .onAppear { if selectedPane == "categoryScan" { selectedPane = "general" } }
         .sheet(isPresented: $chooseStartFolder) {
             FolderPickerSheet(initialDirectory: startFolderPath.isEmpty ? nil : URL(fileURLWithPath: startFolderPath),
                               title: WLocalizedString("settings.startFolder", comment: "启动时打开")) { url in
@@ -180,6 +185,124 @@ struct SettingsView: View {
         AssociationsSection()
     }
 
+}
+
+struct CategoryScanSettingsView: View {
+    @ObservedObject private var localization = Localization.shared
+    @ObservedObject var preferences: CategoryScanPreferences
+    @State private var choosingFolder = false
+    @State private var limitText = "800"
+    @State private var selectedCategoryRaw: String
+
+    init(preferences: CategoryScanPreferences, category: FileCategory) {
+        self.preferences = preferences
+        _selectedCategoryRaw = State(initialValue: category.rawValue)
+    }
+
+    private var selectedCategory: FileCategory? { FileCategory(rawValue: selectedCategoryRaw) }
+    private var rule: CategoryScanRule { preferences.configuration.rule(for: selectedCategory) }
+    private var isInherited: Bool {
+        guard let category = selectedCategory else { return false }
+        return preferences.configuration.overrides?[category.rawValue] == nil
+    }
+    private func updateRule(_ change: (inout CategoryScanRule) -> Void) {
+        var value = rule
+        change(&value)
+        preferences.setRule(value, for: selectedCategory)
+    }
+    private func syncLimit() { limitText = String(rule.resultLimit == 0 ? 800 : rule.resultLimit) }
+
+    private var customScope: Binding<Bool> {
+        Binding(get: { rule.usesCustomRoots }, set: { value in updateRule { $0.usesCustomRoots = value } })
+    }
+    private var unlimited: Binding<Bool> {
+        Binding(get: { rule.resultLimit == 0 }, set: { value in
+            updateRule { $0.resultLimit = value ? 0 : (Int(limitText).flatMap { (1...1_000_000).contains($0) ? $0 : nil } ?? 800) }
+        })
+    }
+    private var parsedLimit: Int? {
+        guard let number = Int(limitText), (1...1_000_000).contains(number) else { return nil }
+        return number
+    }
+    var body: some View {
+        Form {
+            Section(L("category.settings.target", "配置类别")) {
+                Picker(L("category.settings.target", "配置类别"), selection: $selectedCategoryRaw) {
+                    Text(L("category.settings.all", "所有类别的默认设置")).tag("")
+                    ForEach(FileCategory.sidebarOrder) { category in
+                        Text(category.localizedName).tag(category.rawValue)
+                    }
+                }
+                if let category = selectedCategory {
+                    Toggle(L("category.settings.override", "为此类别单独设置"), isOn: Binding(
+                        get: { !isInherited },
+                        set: { enabled in
+                            if enabled { preferences.setRule(preferences.configuration.defaultRule, for: category) }
+                            else { preferences.useDefault(for: category) }
+                        }))
+                    if isInherited {
+                        Text(L("category.settings.inherited", "当前使用所有类别的默认设置。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            Section(L("category.settings.scope", "默认扫描范围")) {
+                Picker(L("category.settings.scope", "默认扫描范围"), selection: customScope) {
+                    Text(L("category.settings.default", "默认位置（含可见外置磁盘）")).tag(false)
+                    Text(L("category.settings.custom", "仅扫描指定目录")).tag(true)
+                }
+                if rule.usesCustomRoots {
+                    if rule.paths.isEmpty {
+                        Text(L("category.settings.empty", "尚未添加目录，分类扫描不会搜索其他位置。"))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(rule.paths, id: \.self) { path in
+                        HStack {
+                            Image(systemName: "folder")
+                            Text((path as NSString).abbreviatingWithTildeInPath).lineLimit(1).truncationMode(.middle).help(path)
+                            Spacer()
+                            Button { preferences.remove(path, for: selectedCategory) } label: { Image(systemName: "minus.circle") }
+                                .buttonStyle(.borderless).help(L("category.settings.remove", "移除扫描目录"))
+                        }
+                    }
+                    Button(L("category.settings.add", "添加扫描目录…")) { choosingFolder = true }
+                    Text(L("category.settings.multiHint", "可以一次选择多个文件夹，也可以多次添加不同位置。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(L("category.settings.offline", "目录暂时不可用时会保留设置；重新连接后可继续扫描。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.disabled(isInherited)
+            Section(L("category.settings.limit", "分类结果数量")) {
+                Toggle(L("category.settings.unlimited", "不限制结果数量"), isOn: unlimited)
+                if rule.resultLimit != 0 {
+                    HStack {
+                        Text(L("category.settings.limitLabel", "每类上限")).fixedSize()
+                        Spacer()
+                        TextField(L("category.settings.limitField", "每个分类的结果上限"), text: $limitText)
+                            .labelsHidden().frame(width: 100).textFieldStyle(.roundedBorder)
+                        Button(L("category.settings.apply", "应用")) {
+                            guard let limit = parsedLimit else { return }
+                            updateRule { $0.resultLimit = limit }
+                        }.disabled(parsedLimit == nil || parsedLimit == rule.resultLimit)
+                    }
+                    Text(L("category.settings.limitHint", "输入 1 至 1,000,000；仍可在分类页继续加载和深入扫描。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Text(L("category.settings.unlimitedHint", "不限数量时也会深入遍历所选范围，扫描可能较慢并占用较多内存，可随时取消。"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.disabled(isInherited)
+        }
+        .formStyle(.grouped)
+        .onAppear { syncLimit() }
+        .onChange(of: selectedCategoryRaw) { _ in syncLimit() }
+        .onChange(of: preferences.configuration) { _ in syncLimit() }
+        .sheet(isPresented: $choosingFolder) {
+            FolderPickerSheet(title: L("category.settings.add", "添加扫描目录…"), onSelectMany: { urls in
+                preferences.add(urls, for: selectedCategory).message
+            })
+        }
+    }
 }
 
 /// 侧边栏管理：按类型分类与个人收藏的增删

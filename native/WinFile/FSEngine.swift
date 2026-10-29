@@ -13,6 +13,7 @@ struct SidebarPlace: Identifiable, Hashable {
     let url: URL
     let kind: Kind
     let symbol: String
+    var isEjectable = false
 
     static func == (lhs: SidebarPlace, rhs: SidebarPlace) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -37,8 +38,117 @@ struct SidebarFolderAddition {
     }
 }
 
+struct CategoryScanRule: Codable, Hashable {
+    var usesCustomRoots = false
+    var paths: [String] = []
+    var resultLimit = 800
+}
+
+struct CategoryScanConfiguration: Codable, Equatable {
+    var usesCustomRoots = false
+    var paths: [String] = []
+    /// Zero means no result limit. Older saved configurations have no overrides.
+    var resultLimit = 800
+    var overrides: [String: CategoryScanRule]?
+
+    var defaultRule: CategoryScanRule { CategoryScanRule(usesCustomRoots: usesCustomRoots, paths: paths, resultLimit: resultLimit) }
+    func rule(for category: FileCategory?) -> CategoryScanRule {
+        guard let category else { return defaultRule }
+        return overrides?[category.rawValue] ?? defaultRule
+    }
+}
+
+struct CategoryScanFolderAddition {
+    var added = 0
+    var duplicates = 0
+    var rejected = 0
+
+    var message: String? {
+        if rejected > 0 {
+            return L("category.settings.addResult", "已添加 %d 个目录，%d 个已存在，%d 个无法添加。", added, duplicates, rejected)
+        }
+        if added == 0 && duplicates > 0 { return L("category.settings.duplicates", "所选目录已在扫描范围中。") }
+        return nil
+    }
+}
+
+@MainActor
+final class CategoryScanPreferences: ObservableObject {
+    static let key = "CategoryScan.Configuration.v1"
+    private let defaults: UserDefaults
+    @Published private(set) var configuration: CategoryScanConfiguration
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.key),
+           let saved = try? JSONDecoder().decode(CategoryScanConfiguration.self, from: data),
+           (0...1_000_000).contains(saved.resultLimit),
+           (saved.overrides ?? [:]).values.allSatisfy({ (0...1_000_000).contains($0.resultLimit) }) {
+            configuration = saved
+        } else { configuration = CategoryScanConfiguration() }
+    }
+
+    func update(_ value: CategoryScanConfiguration) {
+        guard (0...1_000_000).contains(value.resultLimit),
+              (value.overrides ?? [:]).values.allSatisfy({ (0...1_000_000).contains($0.resultLimit) }), value != configuration else { return }
+        configuration = value
+        if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: Self.key) }
+    }
+
+    func setRule(_ rule: CategoryScanRule, for category: FileCategory?) {
+        var value = configuration
+        if let category {
+            var overrides = value.overrides ?? [:]
+            overrides[category.rawValue] = rule
+            value.overrides = overrides
+        } else {
+            value.usesCustomRoots = rule.usesCustomRoots
+            value.paths = rule.paths
+            value.resultLimit = rule.resultLimit
+        }
+        update(value)
+    }
+
+    func useDefault(for category: FileCategory) {
+        var value = configuration
+        value.overrides?.removeValue(forKey: category.rawValue)
+        update(value)
+    }
+
+    func add(_ url: URL, for category: FileCategory? = nil) {
+        _ = add([url], for: category)
+    }
+
+    @discardableResult
+    func add(_ urls: [URL], for category: FileCategory? = nil) -> CategoryScanFolderAddition {
+        var result = CategoryScanFolderAddition()
+        var value = configuration.rule(for: category)
+        var seen = Set(value.paths.map { FileItem.canonicalID(for: URL(fileURLWithPath: $0)) })
+        for url in urls {
+            var isDirectory: ObjCBool = false
+            guard url.isFileURL, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                result.rejected += 1
+                continue
+            }
+            let path = FileItem.canonicalID(for: url)
+            guard seen.insert(path).inserted else { result.duplicates += 1; continue }
+            value.paths.append(path)
+            result.added += 1
+        }
+        if result.added > 0 { setRule(value, for: category) }
+        return result
+    }
+
+    func remove(_ path: String, for category: FileCategory? = nil) {
+        var value = configuration.rule(for: category)
+        value.paths.removeAll { $0 == path }
+        setRule(value, for: category)
+    }
+}
+
 @MainActor
 final class FSEngine: ObservableObject {
+    let categoryScan: CategoryScanPreferences
 
     // 资源键一次取齐，避免逐项系统调用
     static let resourceKeys: [URLResourceKey] = [
@@ -59,16 +169,21 @@ final class FSEngine: ObservableObject {
     /// 用户添加的常用文件夹（本地版直接记录路径，无需沙盒书签）
     private var addedFolderPaths: [String] = []
     private var countTask: Task<Void, Never>?
+    private var countCancellation: ScanCancellation?
     private var languageSubscription: AnyCancellable?
     private var volumeSubscriptions = Set<AnyCancellable>()
 
     private let foldersKey = "AddedFolderPaths"
 
-    init() {
+    init(categoryScan: CategoryScanPreferences? = nil) {
+        self.categoryScan = categoryScan ?? CategoryScanPreferences()
         loadAddedFolders()
         buildPlaces()
         buildVolumes()
         refreshAuthorizedRoots()
+        self.categoryScan.$configuration.dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.scheduleCategoryCount(force: true) }
+            .store(in: &volumeSubscriptions)
         for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
             NSWorkspace.shared.notificationCenter.publisher(for: name)
                 .receive(on: RunLoop.main).sink { [weak self] _ in
@@ -111,20 +226,18 @@ final class FSEngine: ObservableObject {
     }
 
     private func buildVolumes() {
-        var list: [SidebarPlace] = []
-        let root = URL(fileURLWithPath: "/")
-        list.append(SidebarPlace(id: "/", name: WLocalizedString("place.macintoshHD", comment: "启动磁盘"),
-                                 url: root, kind: .volume, symbol: "internaldrive"))
-        let volumesRoot = URL(fileURLWithPath: "/Volumes")
-        if let children = try? FileManager.default.contentsOfDirectory(
-            at: volumesRoot, includingPropertiesForKeys: [.isVolumeKey], options: [.skipsHiddenFiles]
-        ) {
-            for child in children {
-                list.append(SidebarPlace(id: child.path, name: child.lastPathComponent,
-                                         url: child, kind: .volume, symbol: "externaldrive"))
-            }
-        }
-        volumes = list
+        let keys: [URLResourceKey] = [.volumeNameKey, .volumeIsEjectableKey, .volumeIsRemovableKey]
+        let mounted = FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: keys,
+                                                              options: [.skipHiddenVolumes]) ?? []
+        var seen = Set<String>()
+        volumes = mounted.compactMap { url in
+            let normalized = url.standardizedFileURL.resolvingSymlinksInPath()
+            guard normalized.path != "/", seen.insert(normalized.path).inserted else { return nil }
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            return SidebarPlace(id: normalized.path, name: values?.volumeName ?? url.lastPathComponent,
+                                url: normalized, kind: .volume, symbol: "externaldrive.fill",
+                                isEjectable: values?.volumeIsEjectable ?? false)
+        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     // MARK: - 常用文件夹
@@ -252,7 +365,13 @@ final class FSEngine: ObservableObject {
 
     /// Each mounted volume is an explicit scan root, independent of the system-root traversal.
     var categoryRoots: [URL] {
+        categoryRoots(for: nil)
+    }
+
+    func categoryRoots(for category: FileCategory?) -> [URL] {
         if let override = scopeOverrideForTesting { return override }
+        let rule = categoryScan.configuration.rule(for: category)
+        if rule.usesCustomRoots { return rule.paths.map { URL(fileURLWithPath: $0) } }
         let fm = FileManager.default
         let mounted = fm.mountedVolumeURLs(includingResourceValuesForKeys: [.volumeIsBrowsableKey],
                                            options: [.skipHiddenVolumes]) ?? []
@@ -345,11 +464,30 @@ final class FSEngine: ObservableObject {
     func scheduleCategoryCount(force: Bool = false) {
         guard force || categoryCounts.isEmpty else { return }
         countTask?.cancel()
+        countCancellation?.cancel()
+        let token = ScanCancellation()
+        countCancellation = token
         countingCategories = true
-        let roots = categoryRoots
+        var groups: [[String]: [FileCategory]] = [:]
+        var cachedRoots: [CategoryScanRule: [URL]] = [:]
+        for category in FileCategory.sidebarOrder {
+            let rule = categoryScan.configuration.rule(for: category)
+            let roots: [URL]
+            if let cached = cachedRoots[rule] { roots = cached }
+            else { roots = categoryRoots(for: category); cachedRoots[rule] = roots }
+            let paths = roots.map(\.path)
+            groups[paths, default: []].append(category)
+        }
+        let scanGroups = groups
         countTask = Task { [weak self] in
             let counts = await Task.detached(priority: .utility) {
-                FileSystemService.categoryCounts(under: roots)
+                var combined: [FileCategory: Int] = [:]
+                for (paths, categories) in scanGroups {
+                    if token.isCancelled { break }
+                    let counts = FileSystemService.categoryCounts(under: paths.map { URL(fileURLWithPath: $0) }, cancelled: { token.isCancelled })
+                    for category in categories { combined[category] = counts[category] }
+                }
+                return combined
             }.value
             guard !Task.isCancelled else { return }
             self?.categoryCounts = counts

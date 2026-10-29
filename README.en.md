@@ -46,14 +46,14 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.3.0
+## What’s new in v2.3.1
 
-- Choose a priority folder for category scans and optionally scan other locations with the remaining budget.
-- Open an independent window from the Dock or with ⌘N; use additional file shortcuts, arrange icons, and restore pane visibility.
-- Improve capacity reporting for exFAT and other volumes. Thanks to @skinnyshy for [Issue #5](https://github.com/fakerUZI/macos_winfile/issues/5).
-- Thanks to @xuchen521 for reporting [Issue #4](https://github.com/fakerUZI/macos_winfile/issues/4) and suggesting custom scan paths and remembered inspector visibility.
+- Save multiple scan folders independently for each category and configure a result limit or remove it.
+- Right-click a sidebar category to open a dedicated scan settings dialog, with per-category and shared defaults.
+- Access mounted visible volumes, including DMG images, from the sidebar and eject supported volumes using their context menu.
+- Thanks to @xuchen521 for suggesting multiple scan paths, adjustable limits and easier access to disk images in [Issue #4](https://github.com/fakerUZI/macos_winfile/issues/4).
 
-See the [v2.3.0 release notes](docs/releases/v2.3.0.md).
+See the [v2.3.1 release notes](docs/releases/v2.3.1.md) and [v2.3.0 release notes](docs/releases/v2.3.0.md).
 
 ### v2.2.2 update
 
@@ -206,6 +206,10 @@ Local directory, search and category results outside the three most recent tabs 
 **Open Folder** uses LeafFiles's built-in picker. Browse, enter paths, show hidden folders or ⌘-select multiple folders; each opens in a new tab. Extraction destinations, Android downloads, WeChat folders, duplicate scan scopes and the startup folder also use this picker. Address resolution and suggestions run off the main thread. Invalid paths retain the current location; unreadable folders have a persistent retry state.
 
 WeChat scans initially retain up to 20,000 candidates and visit up to 200,000 entries. The page labels partial results and storage totals. Increase the limit to rescan, up to 200,000 candidates and 2,000,000 entries.
+
+### Category scan settings
+
+Right-click a sidebar category and choose Scan Settings to configure locations and limits in a dedicated dialog; categories without an override inherit the shared defaults. Choose default locations or only the folders you add, selecting multiple folders at once or adding them in several steps. Unavailable external-drive paths remain saved. Set a per-category result limit from 1 to 1,000,000, or choose no limit. Unlimited scans traverse the selected locations deeply, may take longer and use more memory, and can be cancelled. Sidebar badges are bounded estimates and may be smaller than the category results.
 
 ### Scan and operation feedback
 

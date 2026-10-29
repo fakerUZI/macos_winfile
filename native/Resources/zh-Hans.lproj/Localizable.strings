@@ -244,7 +244,7 @@
 /* 分类视图与空状态说明 */
 "empty.category" = "该分类下没有文件";
 "empty.categoryLoading" = "正在扫描并归类，请稍候…";
-"empty.category.hint" = "「%@」分类会扫描你当前可浏览的全部范围。若这里为空，说明这些位置里还没有这类文件——可先通过左侧「授权文件夹」添加更多位置。";
+"empty.category.hint" = "当前扫描范围内未找到「%@」文件。可右键侧边栏中的分类，检查扫描路径与结果上限。";
 "empty.folder.hint" = "这个文件夹里没有可见项目。如果确实有文件，可能是隐藏文件，可点击下方按钮显示。";
 
 /* 主页（Home） */
@@ -1208,14 +1208,36 @@
 "tab.detach" = "将标签页移到新窗口";
 "tab.mergeWindows" = "合并所有窗口";
 "window.new" = "新建窗口";
-"category.chooseScope" = "选择分类扫描的优先目录";
-"category.chooseScopeButton" = "选择优先目录…";
 "category.defaultScope" = "扫描范围：默认位置";
-"category.includeAdditional" = "扫描其他位置";
-"category.resetScope" = "恢复默认";
 "category.scopedCount" = "%@：%d 个文件（来自所选扫描范围）";
 
 "action.moveHere" = "将项目移到此处";
 "menu.openSelection" = "打开所选项目 / 选择文件夹…";
 
 "icon.resetPositions" = "重置图标位置";
+"category.settings.title" = "分类扫描";
+"category.settings.scope" = "扫描范围";
+"category.settings.default" = "默认位置（含可见外置磁盘）";
+"category.settings.custom" = "仅扫描指定目录";
+"category.settings.empty" = "尚未添加目录，分类扫描不会搜索其他位置。";
+"category.settings.remove" = "移除扫描目录";
+"category.settings.add" = "添加扫描目录…";
+"category.settings.offline" = "目录暂时不可用时会保留设置；重新连接后可继续扫描。";
+"category.settings.limit" = "分类结果数量";
+"category.settings.unlimited" = "不限制结果数量";
+"category.settings.limitField" = "每个分类的结果上限";
+"category.settings.apply" = "应用";
+"category.settings.limitHint" = "输入 1 至 1,000,000；仍可在分类页继续加载和深入扫描。";
+"category.settings.unlimitedHint" = "不限数量时也会深入遍历所选范围，扫描可能较慢并占用较多内存，可随时取消。";
+"category.settings.open" = "扫描设置…";
+"category.configuredScope" = "扫描范围：%d 个指定目录";
+
+"category.settings.limitLabel" = "每类上限";
+
+"category.settings.target" = "配置类别";
+"category.settings.all" = "所有类别的默认设置";
+"category.settings.override" = "为此类别单独设置";
+"category.settings.inherited" = "当前使用所有类别的默认设置。";
+"category.settings.multiHint" = "可以一次选择多个文件夹，也可以多次添加不同位置。";
+"category.settings.addResult" = "已添加 %d 个目录，%d 个已存在，%d 个无法添加。";
+"category.settings.duplicates" = "所选目录已在扫描范围中。";

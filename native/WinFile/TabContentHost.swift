@@ -112,19 +112,15 @@ struct TabContentHost: View {
         VStack(spacing: 0) {
             if model.isCategoryView {
                 HStack(spacing: 8) {
+                    let rule = engine.categoryScan.configuration.rule(for: model.categoryFilter)
+                    let defaultLabel = rule.usesCustomRoots
+                        ? L("category.configuredScope", "扫描范围：%d 个指定目录", rule.paths.count)
+                        : L("category.defaultScope", "扫描范围：默认位置")
                     Image(systemName: "folder.badge.gearshape").foregroundStyle(.secondary)
-                    Text(model.categoryPriorityDirectory?.path ?? L("category.defaultScope", "扫描范围：默认位置"))
+                    Text(defaultLabel)
                         .font(.caption).lineLimit(1).truncationMode(.middle)
-                        .help(model.categoryPriorityDirectory?.path ?? L("category.defaultScope", "扫描范围：默认位置"))
+                        .help(defaultLabel)
                     Spacer(minLength: 4)
-                    if model.categoryPriorityDirectory != nil {
-                        Toggle(L("category.includeAdditional", "扫描其他位置"), isOn: Binding(
-                            get: { model.categoryIncludeAdditionalRoots },
-                            set: { model.setCategoryIncludeAdditionalRoots($0) }))
-                            .toggleStyle(.checkbox).controlSize(.small)
-                        Button(L("category.resetScope", "恢复默认")) { model.setCategoryPriorityDirectory(nil) }
-                    }
-                    Button(L("category.chooseScopeButton", "选择优先目录…")) { model.chooseCategoryPriorityDirectory() }
                 }.padding(8).background(.regularMaterial)
             }
             if let message = model.scanCompletenessMessage {

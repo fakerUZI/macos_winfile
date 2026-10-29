@@ -40,6 +40,14 @@ struct FolderPickerSheet: View {
         }
     }
 
+    /// A generic multi-folder picker, independent of the sidebar favorites workflow.
+    init(initialDirectory: URL? = nil, title: String, onSelectMany: @escaping ([URL]) -> String?) {
+        _browser = StateObject(wrappedValue: FolderPickerModel(initialDirectory: initialDirectory))
+        pickerTitle = title
+        singleFolder = false
+        onChoose = onSelectMany
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(pickerTitle).font(.headline)

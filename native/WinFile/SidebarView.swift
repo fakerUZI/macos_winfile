@@ -5,6 +5,7 @@ struct SidebarView: View {
     @ObservedObject private var localization = Localization.shared
     @State private var showSidebarManager = false
     @State private var showAddFolder = false
+    @State private var categoryForScanSettings: FileCategory?
     @State private var isDropTargeted = false
     @AppStorage("Sidebar.FavoritesExpanded") private var favoritesExpanded = true
     @AppStorage("Sidebar.CategoriesExpanded") private var categoriesExpanded = true
@@ -32,6 +33,9 @@ struct SidebarView: View {
         .sheet(isPresented: $showSidebarManager) { SidebarManagerSheet(engine: engine) }
         .sheet(isPresented: $showAddFolder) {
             FolderPickerSheet(initialDirectory: model.currentSidebarFolder) { model.addFoldersToSidebar($0) }
+        }
+        .sheet(item: $categoryForScanSettings) { category in
+            CategoryScanSettingsSheet(preferences: engine.categoryScan, category: category)
         }
         .onDrop(of: [.fileURL], delegate: folderDropDelegate)
         .overlay {
@@ -108,6 +112,10 @@ struct SidebarView: View {
                         }
                         .tag(SidebarSelection.category(category))
                         .contextMenu {
+                            Button(L("category.settings.open", "扫描设置…")) {
+                                categoryForScanSettings = category
+                            }
+                            Divider()
                             Button(L("sidebar.moveUp", "上移")) { preferences.move(category, by: -1) }
                                 .disabled(!preferences.canMove(category, by: -1))
                             Button(L("sidebar.moveDown", "下移")) { preferences.move(category, by: 1) }
@@ -146,6 +154,19 @@ struct SidebarView: View {
                 }
                 .tag(SidebarSelection.appData)
 
+                ForEach(engine.volumes) { volume in
+                    Label {
+                        Text(volume.name).lineLimit(1).help(volume.url.path)
+                    } icon: {
+                        Image(systemName: volume.symbol).foregroundStyle(Color(nsColor: .systemBlue))
+                    }
+                    .tag(SidebarSelection.folder(volume.url))
+                    .contextMenu {
+                        if volume.isEjectable {
+                            Button(L("drive.eject", "弹出")) { model.ejectVolume(at: volume.url, name: volume.name) }
+                        }
+                    }
+                }
             }
             AndroidSidebarSection()
         }
@@ -259,5 +280,27 @@ struct AndroidSidebarSection: View {
             return L("android.mtp.waiting", "等待文件传输就绪")
         }
         return "MTP"
+    }
+}
+
+
+private struct CategoryScanSettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var localization = Localization.shared
+    @ObservedObject var preferences: CategoryScanPreferences
+    let category: FileCategory
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(L("category.settings.title", "分类扫描")).font(.headline)
+                Spacer()
+                Button(L("button.done", "完成")) { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+            .padding()
+            Divider()
+            CategoryScanSettingsView(preferences: preferences, category: category)
+        }
+        .frame(width: 520, height: 560)
     }
 }

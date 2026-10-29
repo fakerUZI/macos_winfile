@@ -87,8 +87,6 @@ final class BrowserModel: ObservableObject {
     /// 分类视图结果（在整个可浏览范围内按类型收集）
     @Published private(set) var categoryResults: [FileItem] = []
     @Published private(set) var isLoadingCategory = false
-    @Published private(set) var categoryPriorityDirectory: URL?
-    @Published private(set) var categoryIncludeAdditionalRoots = true
 
     // 主页（Home）
     @Published private(set) var quickAccess: [SidebarPlace] = []
@@ -210,6 +208,8 @@ final class BrowserModel: ObservableObject {
     private var languageSubscription: AnyCancellable?
     private var cleanupSubscription: AnyCancellable?
     private var clipboardSubscription: AnyCancellable?
+    private var categorySettingsSubscription: AnyCancellable?
+    private var activeCategoryRule: CategoryScanRule?
 
     init(engine: FSEngine, startDirectory: URL?, cleanupModel: WeChatCleanupModel? = nil, storageCleanupModel: StorageCleanupModel? = nil, softwareCleanupModel: StorageCleanupModel? = nil, clipboardStore: FileClipboard? = nil, androidRegistry: AndroidDeviceRegistry? = nil, androidOpenService: AndroidOpenService? = nil, androidOpenHandler: (([URL], Bool) -> Void)? = nil, androidVideoHandler: ((AndroidEntry, Bool, ScanCancellation) async throws -> Void)? = nil) {
         self.engine = engine
@@ -221,6 +221,12 @@ final class BrowserModel: ObservableObject {
         self.cleanupBacking = cleanupModel
         self.storageBacking = storageCleanupModel
         self.softwareBacking = softwareCleanupModel
+        categorySettingsSubscription = engine.categoryScan.$configuration.dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] configuration in
+                guard let self, !self.isSuspended, let category = self.categoryFilter else { return }
+                guard configuration.rule(for: category) != self.activeCategoryRule else { return }
+                self.loadCategory(category)
+            }
         androidDevicesSubscription = self.androidRegistry.$devices.dropFirst().sink { [weak self] devices in
             self?.androidConnectionsChanged(devices)
         }
@@ -569,12 +575,12 @@ final class BrowserModel: ObservableObject {
         load(directory: dir, resetCategory: false)
     }
 
-    var canExpandScan: Bool { (isSearching || isCategoryView) && scanReport.isPartial && !isBusy }
+    var canExpandScan: Bool { (isSearching || isCategoryView) && !isBusy && (scanReport.limitReached || scanReport.depthLimited || scanReport.visitLimitReached) }
     func expandScan() {
-        scanEntryLimit = min(scanEntryLimit * 2, 2_000_000)
+        if scanEntryLimit != Int.max { scanEntryLimit = min(scanEntryLimit * 2, 2_000_000) }
         if let category = categoryFilter {
-            categoryLimit += 800
-            categoryDepth += 4
+            if categoryLimit != Int.max { categoryLimit += 800 }
+            if categoryDepth != Int.max { categoryDepth += 4 }
             loadCategory(category, expanding: true)
         } else if isSearching {
             searchLimit += 800
@@ -1614,28 +1620,18 @@ final class BrowserModel: ObservableObject {
         return ok
     }
 
+    func ejectVolume(at url: URL, name: String) {
+        do {
+            try NSWorkspace.shared.unmountAndEjectDevice(at: url)
+            statusMessage = L("status.ejected", "已弹出「%@」", name)
+        } catch {
+            errorMessage = L("error.ejectFailed", "无法弹出「%@」", name)
+        }
+    }
+
     /// 记录「最近打开」——由打开动作调用
     func noteOpened(_ url: URL) {
         FavoritesStore.shared.recordOpened(url)
-    }
-
-    /// 在整个可浏览范围内按类型收集文件（Windows 式「按类型分类」视图）
-    func chooseCategoryPriorityDirectory() {
-        folderPickerRequest = FolderPickerRequest(
-            title: L("category.chooseScope", "选择分类扫描的优先目录"),
-            initialDirectory: categoryPriorityDirectory ?? (currentDirectory?.isFileURL == true ? currentDirectory : nil)
-        ) { [weak self] url in self?.setCategoryPriorityDirectory(url) }
-    }
-
-    func setCategoryPriorityDirectory(_ url: URL?) {
-        categoryPriorityDirectory = url?.standardizedFileURL.resolvingSymlinksInPath()
-        if let category = categoryFilter { loadCategory(category) }
-    }
-
-    func setCategoryIncludeAdditionalRoots(_ include: Bool) {
-        guard categoryIncludeAdditionalRoots != include else { return }
-        categoryIncludeAdditionalRoots = include
-        if let category = categoryFilter { loadCategory(category) }
     }
 
     func loadCategory(_ category: FileCategory, expanding: Bool = false) {
@@ -1644,7 +1640,14 @@ final class BrowserModel: ObservableObject {
         listingTask?.cancel()
         searchCancellation?.cancel()
         searchTask?.cancel()
-        if !expanding { categoryLimit = 800; categoryDepth = 4; scanEntryLimit = 100_000 }
+        let rule = engine.categoryScan.configuration.rule(for: category)
+        activeCategoryRule = rule
+        if !expanding {
+            let configured = engine.scopeOverrideForTesting == nil ? rule.resultLimit : 800
+            categoryLimit = configured == 0 ? Int.max : configured
+            categoryDepth = configured == 0 ? Int.max : 4
+            scanEntryLimit = configured == 0 ? Int.max : 100_000
+        }
         let token = ScanCancellation()
         categoryCancellation = token
         let id = UUID()
@@ -1661,13 +1664,11 @@ final class BrowserModel: ObservableObject {
         isLoadingCategory = true
         isBusy = true
         statusMessage = L("status.categoryLoading", "正在归类「%@」…", category.localizedName)
-        let roots = engine.categoryRoots
-        let priority = categoryPriorityDirectory
-        let includeAdditional = categoryIncludeAdditionalRoots
+        let roots = engine.categoryRoots(for: category)
         categoryTask = Task { [weak self] in
             let report = await Task.detached(priority: .userInitiated) {
                 FileSystemService.categoryReport(category, under: roots, depth: depth, budget: budget,
-                    entryLimit: entryLimit, priorityRoot: priority, includeAdditionalRoots: includeAdditional,
+                    entryLimit: entryLimit,
                     cancelled: { token.isCancelled }, partial: { items in
                         DispatchQueue.main.async { [weak self] in
                             guard let self, self.categoryID == id, self.categoryFilter == category,
@@ -1694,7 +1695,7 @@ final class BrowserModel: ObservableObject {
                         ? "%@：显示前 %d 个（已达上限，可在文件夹中查看更精确的结果）"
                         : "%@：%d 个文件（来自整个浏览范围）"
                     self.statusMessage = L(key, fallback, category.localizedName, found.count)
-                    if priority != nil && !truncated {
+                    if rule.usesCustomRoots && !truncated {
                         self.statusMessage = L("category.scopedCount", "%@：%d 个文件（来自所选扫描范围）", category.localizedName, found.count)
                     }
                 }

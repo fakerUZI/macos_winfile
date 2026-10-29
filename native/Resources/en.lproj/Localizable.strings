@@ -227,7 +227,7 @@
 /* Category view & empty states */
 "empty.category" = "No files in this category";
 "empty.categoryLoading" = "Scanning and sorting, please wait…";
-"empty.category.hint" = "The “%@” category scans everything you can currently browse. If it is empty, there are no such files in those locations yet — authorize more folders from the sidebar.";
+"empty.category.hint" = "No “%@” files were found in the current scan scope. Right-click the sidebar category to check its scan folders and result limit.";
 "empty.folder.hint" = "This folder has no visible items. If you expect files here, they may be hidden — use the button below to show them.";
 
 /* Home */
@@ -1190,14 +1190,36 @@
 "tab.detach" = "Move Tab to New Window";
 "tab.mergeWindows" = "Merge All Windows";
 "window.new" = "New Window";
-"category.chooseScope" = "Choose a Priority Folder for Category Scanning";
-"category.chooseScopeButton" = "Choose Priority Folder…";
 "category.defaultScope" = "Scan scope: default locations";
-"category.includeAdditional" = "Scan other locations";
-"category.resetScope" = "Use Defaults";
 "category.scopedCount" = "%@: %d files (from selected scan locations)";
 
 "action.moveHere" = "Move Items Here";
 "menu.openSelection" = "Open Selected Items / Choose Folder…";
 
 "icon.resetPositions" = "Reset Icon Positions";
+"category.settings.title" = "Category Scan";
+"category.settings.scope" = "Scan locations";
+"category.settings.default" = "Default locations (including visible external drives)";
+"category.settings.custom" = "Only selected folders";
+"category.settings.empty" = "No folders added. Category scans will not search other locations.";
+"category.settings.remove" = "Remove scan folder";
+"category.settings.add" = "Add scan folder…";
+"category.settings.offline" = "Unavailable folders remain in the list and can be scanned when reconnected.";
+"category.settings.limit" = "Category result count";
+"category.settings.unlimited" = "No result limit";
+"category.settings.limitField" = "Maximum results per category";
+"category.settings.apply" = "Apply";
+"category.settings.limitHint" = "Enter 1 to 1,000,000. You can still load more and scan deeper from the category page.";
+"category.settings.unlimitedHint" = "An unlimited scan also traverses the full selected scope. It may take longer and use more memory; you can cancel it.";
+"category.settings.open" = "Scan Settings…";
+"category.configuredScope" = "Scan scope: %d selected folders";
+
+"category.settings.limitLabel" = "Limit per category";
+
+"category.settings.target" = "Category";
+"category.settings.all" = "Defaults for all categories";
+"category.settings.override" = "Customize this category";
+"category.settings.inherited" = "Using the defaults for all categories.";
+"category.settings.multiHint" = "Select multiple folders at once, or add locations in several steps.";
+"category.settings.addResult" = "Added %d folders; %d were already present and %d could not be added.";
+"category.settings.duplicates" = "The selected folders are already in the scan scope.";
