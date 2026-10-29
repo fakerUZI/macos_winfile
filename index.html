@@ -74,20 +74,20 @@
     <div class="intro-strip wrap"><span>少一点来回折腾，<br>多一点得心应手。</span><p><svg class="icon"><use href="#tabs"/></svg> 多页签，自由切换</p><p><svg class="icon"><use href="#folder"/></svg> 文件分类，一眼找到</p><p><svg class="icon"><use href="#globe"/></svg> 中文 / English</p></div>
 
     <section class="release-section section-space wrap" id="whats-new" aria-labelledby="release-title">
-      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">拖放更准确，<br>整理更安心。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
+      <div class="section-heading"><div><p class="eyebrow"><span></span> WHAT’S NEW · v{{VERSION}}</p><h2 id="release-title">扫描更灵活，<br>整理更顺手。</h2></div><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></div>
       <p class="release-status">正式版 v{{VERSION}} · Apple 芯片与 Intel 通用安装包</p>
       <aside class="maintenance-note" aria-labelledby="maintenance-title">
-        <p class="maintenance-label">2026.10.27 · 项目近况</p>
+        <p class="maintenance-label">2026.10.29 · 项目近况</p>
         <h3 id="maintenance-title">专注文件管理，持续打磨日常体验。</h3>
         <p>近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会围绕文件浏览、整理和管理持续完善，后续以界面优化、性能提升和问题修复为主，不扩展无关功能。</p>
-        <p class="maintenance-progress">v{{VERSION}} 修复拖放时意外创建副本的问题。可通过原终端命令安装，或在应用内检查更新。</p>
-        <p class="maintenance-progress">当前文件夹中的项目拖入子文件夹会移动，拖到当前文件夹空白处不会产生副本；从其他目录拖入仍会复制。需要副本时可使用复制与粘贴。</p>
+        <p class="maintenance-progress">v{{VERSION}} 新增分类优先扫描目录、独立窗口与常用快捷操作，并改善外置磁盘容量读取。可通过原终端命令安装，或在应用内检查更新。</p>
+        <p class="maintenance-progress">指定优先目录后，可选择继续扫描其他位置；两个阶段共享扫描上限，避免重复收集。</p>
         <div class="maintenance-links"><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/releases/tag/v{{VERSION}}">查看 v{{VERSION}} 更新 <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/issues">反馈问题 <span aria-hidden="true">↗</span></a></div>
       </aside>
       <div class="release-grid">
-        <article class="release-card release-card-preview"><span class="release-number">01 / 拖放修复</span><h3>整理文件，<br>移动就是移动。</h3><p>在列表或图标视图中，将当前目录的项目拖入子文件夹会移动原项目；其他目录拖入时会复制并保留源文件。</p><button class="screenshot-button release-preview" data-image="./assets/home-quick-access-220.jpg" data-caption="主页快速访问与分类配色 · 生成的示例文件" aria-label="放大查看彩色快速访问主页"><img src="./assets/home-quick-access-220.jpg" width="2360" height="1496" alt="LeafFiles 主页，快速访问的蓝色常用目录、绿色图片、橙色影片与紫色音乐图标呼应左侧分类配色" loading="lazy"><span class="enlarge-hint">↗ 放大截图</span></button><p class="release-note">移动支持撤销；不同来源的项目请分别拖放。配图为 v2.2.0 界面。</p></article>
-        <article class="release-card"><span class="release-number">02 / v2.2.0 侧栏优化</span><h3>收起留空间，<br>展开回原位。</h3><p>左右分隔线增加方向箭头，收起后在窗口边缘保留反向箭头。两侧可分别操作，也能同时收起；点击展开即可恢复之前的宽度。</p><div class="pane-toggle-demo" aria-hidden="true"><span class="pane-demo-arrow">›</span><span>文件区</span><span class="pane-demo-arrow">‹</span></div><p class="release-note">拖动调宽、双击复位和顶部按钮继续可用。窄边条单独占位，不盖住文件或滚动条。</p><a class="text-link" href="#quick-install">使用原安装命令 <svg class="icon"><use href="#arrow"/></svg></a></article>
-        <article class="release-card"><span class="release-number">03 / v2.2.0 图标修复</span><h3>切换文件夹，<br>图标不再闪黄。</h3><p>列表与网格首帧直接显示 macOS 文件夹图标，消除真实图标加载前的黄色占位闪现，自定义图标仍会继续读取。</p><p class="release-note">访达联动、菜单语言同步与解压位置新建目录等已有功能继续保留。</p><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/blob/main/docs/releases/v{{VERSION}}.md">完整更新记录 <svg class="icon"><use href="#arrow"/></svg></a></article>
+        <article class="release-card"><span class="release-number">01 / 分类扫描</span><h3>选定目录，<br>先找重要文件。</h3><p>在分类页选择优先目录，先扫描指定位置；需要更广范围时，再用剩余额度扫描其他位置。</p><p class="release-note">扫描范围作用于当前页签，仍可继续加载与深入扫描。</p></article>
+        <article class="release-card"><span class="release-number">02 / 独立窗口</span><h3>打开新窗口，<br>多处一起整理。</h3><p>从 Dock 右键或使用 ⌘N 新建独立窗口；文件快捷操作和侧栏状态记忆让整理更顺手。</p><p class="release-note">每个窗口拥有自己的页签，现有窗口保持独立。</p></article>
+        <article class="release-card"><span class="release-number">03 / 外置磁盘</span><h3>容量显示，<br>更加可靠。</h3><p>改善 exFAT 等外置磁盘的可用空间读取，无法获取时清楚提示，不再直接显示为满盘。</p><p class="release-note">感谢社区提供问题、截图与排查线索；真实设备上的确认仍在进行。</p></article>
       </div>
       <p class="release-credit">感谢真实使用中的反馈与验证，让每次修复都有依据。<a href="#thanks">认识这些贡献者 ↗</a></p>
     </section>
@@ -143,6 +143,8 @@
           <p class="contributor-history">这些建议与问题已在此前版本完成处理。感谢持续反馈与验证，OrbStack 目录恢复也已获报告者确认。</p>
           <a class="text-link" href="https://github.com/fakerUZI/macos_winfile/issues/3#issuecomment-6361077239">查看修复确认 <span aria-hidden="true">↗</span></a>
         </article>
+        <article class="contributor-card" aria-labelledby="contributor-xuchen"><div class="contributor-profile"><a class="contributor-avatar" href="https://github.com/xuchen521" aria-label="访问 xuchen521 的 GitHub 主页">X</a><div><h3 id="contributor-xuchen"><a href="https://github.com/xuchen521">@xuchen521 <span aria-hidden="true">↗</span></a></h3><p class="contributor-role">问题反馈 · 功能建议</p></div></div><p>感谢报告双击与分类扫描问题，并建议自定义扫描路径及记住详情栏状态。</p><ul class="contribution-links"><li><a href="https://github.com/fakerUZI/macos_winfile/issues/4"><span class="issue-number">#4</span><span>文件和文件夹双击问题</span><span aria-hidden="true">↗</span></a></li></ul><p class="contributor-history">反馈者表示此前问题基本恢复；新功能欢迎继续验证。</p></article>
+        <article class="contributor-card" aria-labelledby="contributor-skinnyshy"><div class="contributor-profile"><a class="contributor-avatar" href="https://github.com/skinnyshy" aria-label="访问 skinnyshy 的 GitHub 主页">S</a><div><h3 id="contributor-skinnyshy"><a href="https://github.com/skinnyshy">@skinnyshy <span aria-hidden="true">↗</span></a></h3><p class="contributor-role">问题反馈 · 截图说明</p></div></div><p>感谢报告外置 exFAT 磁盘容量异常，并提供对比截图。</p><ul class="contribution-links"><li><a href="https://github.com/fakerUZI/macos_winfile/issues/5"><span class="issue-number">#5</span><span>外置磁盘可用容量显示</span><span aria-hidden="true">↗</span></a></li></ul><p class="contributor-history">容量读取已调整，仍需在真实外置磁盘上确认。</p></article>
         <aside class="community-invitation" aria-labelledby="community-invitation-title"><span class="community-mark" aria-hidden="true">✳</span><h3 id="community-invitation-title">反馈，也是贡献。</h3><p>不必先写代码。一份清楚的问题描述、一段可复现的步骤，或一次更新后的确认，都能帮助我们把日常体验继续做好。</p><ol class="feedback-steps"><li><span>01</span><p>描述遇到的问题与操作步骤。</p></li><li><span>02</span><p>按需提供系统版本、截图或已检查的日志。</p></li><li><span>03</span><p>更新后告诉我们，问题是否解决。</p></li></ol><div class="community-actions"><a class="button primary" href="https://github.com/fakerUZI/macos_winfile/issues/new">反馈问题 <svg class="icon"><use href="#arrow"/></svg></a><a class="text-link" href="https://github.com/fakerUZI/macos_winfile/graphs/contributors">代码贡献记录 <span aria-hidden="true">↗</span></a></div></aside>
       </div>
     </section>
