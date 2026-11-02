@@ -22,7 +22,7 @@ final class NativeFileTileView: NSView {
     private static let cutSymbol: NSImage? = {
         guard let symbol = NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .medium)) else { return nil }
-        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.saveGState()
             context.translateBy(x: rect.midX, y: rect.midY)
@@ -42,6 +42,8 @@ final class NativeFileTileView: NSView {
     private var selected = false
     private var hovering = false
     private var isCut = false
+    private var hasBadge = false
+    private var hiddenDragSourceID: String?
     private var imageTask: Task<Void, Never>?
 
     override var isFlipped: Bool { true }
@@ -77,15 +79,20 @@ final class NativeFileTileView: NSView {
 
     func configure(item: FileItem, selected: Bool, badge: NSImage?, isCut: Bool = false) {
         let changed = self.item != item
+        if self.item?.id != item.id {
+            hiddenDragSourceID = DragPreviewGeometry.shared.isDraggingSource(item.id) ? item.id : nil
+            if hiddenDragSourceID != nil { DragPreviewGeometry.shared.registerHiddenSource(self, for: item.id) }
+        }
         if self.isCut != isCut { needsLayout = true }
         self.item = item
         self.selected = selected
         self.isCut = isCut
+        hasBadge = badge != nil
         name.stringValue = item.name
         detail.stringValue = item.isContainer ? item.typeDescription : item.sizeText
         self.badge.image = isCut ? Self.cutSymbol : badge
-        self.badge.contentTintColor = isCut ? .secondaryLabelColor : nil
-        self.badge.isHidden = !isCut && badge == nil
+        self.badge.contentTintColor = isCut ? .labelColor : nil
+        updateSourceVisibility()
         updateColors()
         guard changed else { return }
         hovering = false
@@ -114,10 +121,25 @@ final class NativeFileTileView: NSView {
         }
     }
 
+    func represents(_ id: String) -> Bool { item?.id == id }
+    var dragPreviewImage: NSImage? { icon.image }
+
+    func setDragSourceHidden(_ hidden: Bool, for id: String) {
+        guard item?.id == id else { return }
+        hiddenDragSourceID = hidden ? id : nil
+        updateSourceVisibility()
+    }
+
+    private func updateSourceVisibility() {
+        let hidden = hiddenDragSourceID != nil && hiddenDragSourceID == item?.id
+        icon.isHidden = hidden
+        badge.isHidden = hidden || (!isCut && !hasBadge)
+    }
+
     override func layout() {
         super.layout()
         icon.frame = NSRect(x: (bounds.width - 44) / 2, y: 6, width: 44, height: 44)
-        let badgeSize: CGFloat = isCut ? 14 : 18
+        let badgeSize: CGFloat = isCut ? 16 : 18
         badge.frame = NSRect(x: icon.frame.maxX - badgeSize + 3, y: icon.frame.maxY - badgeSize + 3,
                              width: badgeSize, height: badgeSize)
         name.frame = NSRect(x: 8, y: 54, width: max(0, bounds.width - 16), height: FileItem.tileNameAreaHeight)

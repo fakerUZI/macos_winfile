@@ -106,9 +106,56 @@ final class WindowBridge {
     var modelObjectID: String = ""
 }
 
+enum AppIconChoice: String {
+    case original, green
+}
+
+/// Runtime Dock icons do not modify the signed application bundle.
+final class AppIconPreferences: ObservableObject {
+    static let shared = AppIconPreferences()
+    static let choiceKey = "Appearance.DockIcon.v1"
+    static let promptKey = "Appearance.DockIconPrompt.v1"
+    @Published private(set) var choice: AppIconChoice
+
+    private init() {
+        choice = AppIconChoice(rawValue: UserDefaults.standard.string(forKey: Self.choiceKey) ?? "") ?? .green
+    }
+
+    func select(_ selected: AppIconChoice) {
+        choice = selected
+        UserDefaults.standard.set(selected.rawValue, forKey: Self.choiceKey)
+        UserDefaults.standard.set(true, forKey: Self.promptKey)
+        apply()
+    }
+
+    func apply() {
+        if choice == .original, let url = Bundle.main.url(forResource: "ClassicAppIcon", withExtension: "icns"),
+           let image = NSImage(contentsOf: url) {
+            NSApp.applicationIconImage = image
+        } else {
+            NSApp.applicationIconImage = nil
+        }
+    }
+
+    func promptAfterUpgradeIfNeeded(wasExistingUser: Bool) {
+        guard !UserDefaults.standard.bool(forKey: Self.promptKey) else { return }
+        guard wasExistingUser else {
+            UserDefaults.standard.set(true, forKey: Self.promptKey)
+            return
+        }
+        let alert = NSAlert()
+        alert.messageText = L("icon.prompt.title", "选择 Dock 图标")
+        alert.informativeText = L("icon.prompt.body", "你可以选择绿色叶子图标或保留经典图标，之后可在设置中更改。此选择只影响运行中的 Dock 图标；启动台和访达显示绿色图标。")
+        alert.addButton(withTitle: L("icon.prompt.green", "使用绿色图标"))
+        alert.addButton(withTitle: L("icon.prompt.original", "保留经典图标"))
+        select(alert.runModal() == .alertFirstButtonReturn ? .green : .original)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 标签页保护定时器（补齐后来创建的窗口）
     private var tabbingGuardTimer: Timer?
+    private var wasExistingUserBeforeLaunch = false
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
@@ -137,6 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        if let identifier = Bundle.main.bundleIdentifier,
+           let saved = UserDefaults.standard.persistentDomain(forName: identifier) {
+            let existingKeys = ["BrowserSession.v1", "AddedFolderPaths", "AppLanguage", "PinnedFolders", "ShowHiddenFiles"]
+            wasExistingUserBeforeLaunch = existingKeys.contains { saved[$0] != nil }
+        }
         // 关闭 macOS 自带的窗口标签页。
         //
         // 原因：本应用已有一套完整的页签实现（TabManager + 内容区页签栏），
@@ -237,6 +289,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NativeMenuLocalization.shared.start()
         NSUpdateDynamicServices()
+        if !CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--") }) {
+            AppIconPreferences.shared.apply()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                AppIconPreferences.shared.promptAfterUpgradeIfNeeded(wasExistingUser: self?.wasExistingUserBeforeLaunch ?? false)
+            }
+        }
         AppUpdater.shared.start()
         if let index = CommandLine.arguments.firstIndex(of: "--selftest-native-menus"),
            index + 1 < CommandLine.arguments.count {

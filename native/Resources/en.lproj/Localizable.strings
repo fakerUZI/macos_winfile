@@ -1223,3 +1223,12 @@
 "category.settings.multiHint" = "Select multiple folders at once, or add locations in several steps.";
 "category.settings.addResult" = "Added %d folders; %d were already present and %d could not be added.";
 "category.settings.duplicates" = "The selected folders are already in the scan scope.";
+
+"icon.settings.label" = "Dock icon";
+"icon.settings.original" = "Classic yellow";
+"icon.settings.green" = "Green leaf";
+"icon.settings.hint" = "Changes the Dock icon while the app is running; Launchpad and Finder show the green icon.";
+"icon.prompt.title" = "Choose a Dock icon";
+"icon.prompt.body" = "Choose the green leaf or keep the classic icon. You can change this later in Settings. This changes the Dock icon while the app is running; Launchpad and Finder show the green icon.";
+"icon.prompt.green" = "Use Green Icon";
+"icon.prompt.original" = "Keep Classic Icon";

@@ -60,6 +60,7 @@ CORE=(
   "$SRC/LayoutPreferences.swift"
   "$SRC/TableDoubleClick.swift"
   "$SRC/FileTileMarker.swift"
+  "$SRC/NativeFileTile.swift"
   "$ROOT/native/WinFileTests/AndroidProbe.swift"
   $(find "$SRC/Android" -name "*.swift" | sort)
 )

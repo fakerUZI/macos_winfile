@@ -1241,3 +1241,12 @@
 "category.settings.multiHint" = "可以一次选择多个文件夹，也可以多次添加不同位置。";
 "category.settings.addResult" = "已添加 %d 个目录，%d 个已存在，%d 个无法添加。";
 "category.settings.duplicates" = "所选目录已在扫描范围中。";
+
+"icon.settings.label" = "Dock 图标";
+"icon.settings.original" = "经典黄色";
+"icon.settings.green" = "绿色叶子";
+"icon.settings.hint" = "仅在应用运行时改变 Dock 图标；启动台和访达显示绿色图标。";
+"icon.prompt.title" = "选择 Dock 图标";
+"icon.prompt.body" = "你可以选择绿色叶子图标或保留经典图标，之后可在设置中更改。此选择只影响运行中的 Dock 图标；启动台和访达显示绿色图标。";
+"icon.prompt.green" = "使用绿色图标";
+"icon.prompt.original" = "保留经典图标";

@@ -83,7 +83,19 @@ cp "$BUILD/$NAME-universal" "$APP/Contents/MacOS/$NAME"
 chmod +x "$APP/Contents/MacOS/$NAME"
 cp "$ROOT/native/Info.plist" "$APP/Contents/Info.plist"
 /usr/bin/plutil -lint "$APP/Contents/Info.plist" >/dev/null
-cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
+# Preserve the classic icon for the runtime Dock option; use the green icon
+# as the signed bundle icon shown by Finder, Launchpad and the inactive Dock.
+cp "$ICNS" "$APP/Contents/Resources/ClassicAppIcon.icns"
+cp "$ROOT/native/Resources/LeafFilesGreenIcon.png" "$APP/Contents/Resources/LeafFilesGreenIcon.png"
+ICON_WORK="$(mktemp -d "${TMPDIR:-/tmp}/leaffiles-green-icon.XXXXXX")"
+mkdir "$ICON_WORK/AppIcon.iconset"
+for size in 16 32 128 256 512; do
+  /usr/bin/sips -z "$size" "$size" "$ROOT/native/Resources/LeafFilesGreenIcon.png" --out "$ICON_WORK/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null
+  double=$((size * 2))
+  /usr/bin/sips -z "$double" "$double" "$ROOT/native/Resources/LeafFilesGreenIcon.png" --out "$ICON_WORK/AppIcon.iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+/usr/bin/iconutil -c icns "$ICON_WORK/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$ICON_WORK"
 HELPER="$ROOT/native/vendor/7zip/7zz"
 EXPECTED_HELPER_SHA="36ea959367d8f9ac51d47a56dc1f20bfb851f1cd22d6f206e85cb5cbc6ab4577"
 [[ "$(shasum -a 256 "$HELPER" | awk '{print $1}')" == "$EXPECTED_HELPER_SHA" ]] || { echo "7-Zip engine checksum mismatch"; exit 1; }

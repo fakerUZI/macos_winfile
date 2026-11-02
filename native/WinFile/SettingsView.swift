@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var chooseStartFolder = false
     @State private var chooseFavorites = false
     @ObservedObject private var updater = AppUpdater.shared
+    @ObservedObject private var iconPreferences = AppIconPreferences.shared
     @AppStorage("StartFolderPath") private var startFolderPath: String = ""
     @AppStorage("ShowHiddenFiles") private var showHidden: Bool = false
     @AppStorage("ViewLayout") private var layoutRaw: String = ViewLayout.details.rawValue
@@ -44,6 +45,14 @@ struct SettingsView: View {
                     Text("English").tag(AppLanguage.english)
                 }
                 Text(L("settings.language.hint", "切换后立即生效；不支持的系统语言使用英文。"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker(L("icon.settings.label", "Dock 图标"), selection: Binding(
+                    get: { iconPreferences.choice },
+                    set: { iconPreferences.select($0) })) {
+                    Text(L("icon.settings.original", "经典黄色")).tag(AppIconChoice.original)
+                    Text(L("icon.settings.green", "绿色叶子")).tag(AppIconChoice.green)
+                }
+                Text(L("icon.settings.hint", "仅在应用运行时改变 Dock 图标；启动台和访达显示绿色图标。"))
                     .font(.caption).foregroundStyle(.secondary)
                 Picker(WLocalizedString("settings.layout", comment: "默认视图"), selection: $layoutRaw) {
                     Text(WLocalizedString("layout.details", comment: "详细信息")).tag(ViewLayout.details.rawValue)
