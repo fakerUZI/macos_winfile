@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#安装)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#技术栈)
-[![Tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen.svg)](#测试)
+[![Tests](https://img.shields.io/badge/tests-1394%20passing-brightgreen.svg)](#测试)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles 面向日常文件浏览与整理：在多页签间切换目录，通过路径栏和分类查找文件，在同一界面查看空间占用、整理应用附件与管理安卓设备。支持简体中文、English 和 macOS 深色模式。
@@ -47,7 +47,15 @@ LeafFiles 将这些操作集中在一个原生 macOS 界面中，文件扫描与
 
 截至 2026 年 10 月 26 日，近期修复已完成回归验证，当前本机使用中暂未发现明显问题。LeafFiles 会继续围绕文件浏览、整理和管理打磨体验，后续以界面优化、性能提升和问题修复为主，不扩展与文件管理无关的功能。使用中遇到问题，欢迎通过 [Issues](https://github.com/fakerUZI/macos_winfile/issues) 反馈。
 
-## 本次更新：v2.3.1
+## 本次更新：v2.3.2
+
+- 在「设置 → 通用 → 应用图标」选择绿色叶子或经典黄色，重启后同步 Dock、访达和启动台；应用目录需可写。
+- 优化文件夹拖动，拖入目标时显示剪刀，改善流畅度并消除松手残影。
+- 两种图标版本经过签名校验；更新后会在文件操作完成时恢复已选图标。
+
+[v2.3.2 更新记录](docs/releases/v2.3.2.md) · [v2.3.1 更新记录](docs/releases/v2.3.1.md)
+
+### v2.3.1 更新
 
 - 分类扫描支持为每个类别保存多个指定目录，并可自定义结果上限或选择不限制。
 - 右键侧边栏分类打开独立的扫描设置弹窗，可配置单个类别或所有类别的默认值。

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1326%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1394%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles brings everyday file browsing and organization into one window. Switch between folders in tabs, find files with the path bar and categories, review storage usage, organize app attachments and manage Android files. Supports Simplified Chinese, English and macOS dark mode.
@@ -46,7 +46,15 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.3.1
+## What’s new in v2.3.2
+
+- Choose the green leaf or classic yellow app icon in Settings → General → App Icon. LeafFiles restarts and updates the Dock, Finder and Launchpad icons; the app folder must be writable.
+- Folder dragging now shows scissors over a destination, moves more smoothly and clears the drag image on release.
+- Both icon variants are signature checked, and the selected icon is restored after updating when file operations finish.
+
+See the [v2.3.2 release notes](docs/releases/v2.3.2.md) and [v2.3.1 release notes](docs/releases/v2.3.1.md).
+
+### v2.3.1 update
 
 - Save multiple scan folders independently for each category and configure a result limit or remove it.
 - Right-click a sidebar category to open a dedicated scan settings dialog, with per-category and shared defaults.

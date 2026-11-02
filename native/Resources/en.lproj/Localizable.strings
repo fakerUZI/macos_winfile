@@ -1224,11 +1224,15 @@
 "category.settings.addResult" = "Added %d folders; %d were already present and %d could not be added.";
 "category.settings.duplicates" = "The selected folders are already in the scan scope.";
 
-"icon.settings.label" = "Dock icon";
+"icon.settings.label" = "App icon";
+"icon.switch.busy" = "Wait for file operations to finish before changing the icon.";
+"icon.switch.missing" = "The icon package for this version is missing. Please reinstall LeafFiles.";
+"icon.switch.invalid" = "The icon package could not be verified. The installed app was not changed.";
+"icon.switch.permission" = "The app's folder is not writable. Move LeafFiles to a writable Applications folder.";
 "icon.settings.original" = "Classic yellow";
 "icon.settings.green" = "Green leaf";
-"icon.settings.hint" = "Changes the Dock icon while the app is running; Launchpad and Finder show the green icon.";
-"icon.prompt.title" = "Choose a Dock icon";
-"icon.prompt.body" = "Choose the green leaf or keep the classic icon. You can change this later in Settings. This changes the Dock icon while the app is running; Launchpad and Finder show the green icon.";
+"icon.settings.hint" = "Switching restarts LeafFiles and updates its Dock, Launchpad, and Finder icons.";
+"icon.prompt.title" = "Choose an app icon";
+"icon.prompt.body" = "Choose the green leaf or keep the classic icon. You can change this later in Settings. Switching icons restarts the app.";
 "icon.prompt.green" = "Use Green Icon";
 "icon.prompt.original" = "Keep Classic Icon";

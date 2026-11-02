@@ -111,7 +111,7 @@ enum AppIconChoice: String {
 }
 
 /// Runtime Dock icons do not modify the signed application bundle.
-final class AppIconPreferences: ObservableObject {
+@MainActor final class AppIconPreferences: ObservableObject {
     static let shared = AppIconPreferences()
     static let choiceKey = "Appearance.DockIcon.v1"
     static let promptKey = "Appearance.DockIconPrompt.v1"
@@ -122,10 +122,21 @@ final class AppIconPreferences: ObservableObject {
     }
 
     func select(_ selected: AppIconChoice) {
+        let requiresRestart: Bool
+        do {
+            requiresRestart = try AppIconInstaller.switchIfNeeded(to: selected)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.runModal()
+            return
+        }
         choice = selected
         UserDefaults.standard.set(selected.rawValue, forKey: Self.choiceKey)
         UserDefaults.standard.set(true, forKey: Self.promptKey)
         apply()
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("local.winfile.mac.DockIconChanged"), object: nil, userInfo: nil, deliverImmediately: true)
+        if requiresRestart { NSApp.terminate(nil) }
     }
 
     func apply() {
@@ -292,7 +303,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !CommandLine.arguments.dropFirst().contains(where: { $0.hasPrefix("--") }) {
             AppIconPreferences.shared.apply()
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                AppIconPreferences.shared.promptAfterUpgradeIfNeeded(wasExistingUser: self?.wasExistingUserBeforeLaunch ?? false)
+                let preferences = AppIconPreferences.shared
+                let hadPrompted = UserDefaults.standard.bool(forKey: AppIconPreferences.promptKey)
+                preferences.promptAfterUpgradeIfNeeded(wasExistingUser: self?.wasExistingUserBeforeLaunch ?? false)
+                // Sparkle installs the green bundle. Restore a previously selected
+                // classic variant once the updated bundle has launched.
+                if hadPrompted, UserDefaults.standard.string(forKey: AppIconPreferences.choiceKey) == AppIconChoice.original.rawValue,
+                   AppIconInstaller.installedChoice() == .green {
+                    Task { @MainActor in
+                        while AppUpdatePolicy.hasActiveFileOperations(in: TabManager.allModels) {
+                            try? await Task.sleep(nanoseconds: 1_000_000_000)
+                            guard UserDefaults.standard.string(forKey: AppIconPreferences.choiceKey) == AppIconChoice.original.rawValue else { return }
+                        }
+                        guard AppIconInstaller.installedChoice() == .green else { return }
+                        preferences.select(.original)
+                    }
+                }
             }
         }
         AppUpdater.shared.start()

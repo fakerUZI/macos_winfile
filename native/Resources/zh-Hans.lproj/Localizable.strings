@@ -1242,11 +1242,15 @@
 "category.settings.addResult" = "已添加 %d 个目录，%d 个已存在，%d 个无法添加。";
 "category.settings.duplicates" = "所选目录已在扫描范围中。";
 
-"icon.settings.label" = "Dock 图标";
+"icon.settings.label" = "应用图标";
+"icon.switch.busy" = "请等待文件操作完成后再切换图标。";
+"icon.switch.missing" = "未找到当前版本的图标安装包，请重新安装 LeafFiles。";
+"icon.switch.invalid" = "图标安装包校验失败，当前应用未更改。";
+"icon.switch.permission" = "应用所在文件夹不可写，请将 LeafFiles 移到可写入的应用程序文件夹。";
 "icon.settings.original" = "经典黄色";
 "icon.settings.green" = "绿色叶子";
-"icon.settings.hint" = "仅在应用运行时改变 Dock 图标；启动台和访达显示绿色图标。";
-"icon.prompt.title" = "选择 Dock 图标";
-"icon.prompt.body" = "你可以选择绿色叶子图标或保留经典图标，之后可在设置中更改。此选择只影响运行中的 Dock 图标；启动台和访达显示绿色图标。";
+"icon.settings.hint" = "切换时将重新启动 LeafFiles，并更新 Dock、启动台和访达图标。";
+"icon.prompt.title" = "选择应用图标";
+"icon.prompt.body" = "你可以选择绿色叶子图标或保留经典图标，之后可在设置中更改。切换图标需要重新启动应用。";
 "icon.prompt.green" = "使用绿色图标";
 "icon.prompt.original" = "保留经典图标";

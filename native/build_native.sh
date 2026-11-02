@@ -77,6 +77,11 @@ echo "== 4/6 组装应用包 =="
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/ThirdParty/Sparkle"
+DOCK_PLUGIN="$APP/Contents/PlugIns/LeafFilesDockTile.docktileplugin"
+mkdir -p "$DOCK_PLUGIN/Contents/MacOS"
+cp "$ROOT/native/DockTile/Info.plist" "$DOCK_PLUGIN/Contents/Info.plist"
+/usr/bin/clang -fobjc-arc -bundle -mmacosx-version-min=13.0 -arch arm64 -arch x86_64 \
+  -framework AppKit "$ROOT/native/DockTile/LeafFilesDockTile.m" -o "$DOCK_PLUGIN/Contents/MacOS/LeafFilesDockTile"
 /usr/bin/ditto --noextattr --norsrc "$SPARKLE_SDK/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 cp "$ROOT/native/vendor/sparkle/LICENSE" "$APP/Contents/Resources/ThirdParty/Sparkle/"
 cp "$BUILD/$NAME-universal" "$APP/Contents/MacOS/$NAME"
@@ -147,6 +152,7 @@ IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
   | head -1 | sed -E 's/.*"(.*)"/\1/' || true)"
 if [ -n "$IDENTITY" ]; then
   echo "   使用身份：$IDENTITY"
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$DOCK_PLUGIN"
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP/Contents/Helpers/7zz"
   for binary in "$APP/Contents/Frameworks/"*.dylib "$APP/Contents/Helpers/WinFileMTP"; do
     /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$binary"
@@ -159,12 +165,32 @@ if [ -n "$IDENTITY" ]; then
   /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
 else
   echo "   未找到签名身份，使用 ad-hoc 签名（本机可正常运行）"
+  /usr/bin/codesign --force --sign - "$DOCK_PLUGIN"
   /usr/bin/codesign --force --sign - "$APP/Contents/Helpers/7zz"
   for binary in "$APP/Contents/Frameworks/"*.dylib "$APP/Contents/Helpers/WinFileMTP"; do
     /usr/bin/codesign --force --sign - "$binary"
   done
   /usr/bin/codesign --force --sign - "$APP"
 fi
+
+# The classic bundle is signed before it is embedded in the green bundle.
+# It deliberately does not contain another copy of the archive.
+CLASSIC_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/leaffiles-classic.XXXXXX")"
+/usr/bin/ditto --noextattr --norsrc "$APP" "$CLASSIC_STAGE/LeafFiles.app"
+/usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile ClassicAppIcon' "$CLASSIC_STAGE/LeafFiles.app/Contents/Info.plist"
+if [ -n "$IDENTITY" ]; then
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$CLASSIC_STAGE/LeafFiles.app"
+else
+  /usr/bin/codesign --force --sign - "$CLASSIC_STAGE/LeafFiles.app"
+fi
+/usr/bin/codesign --verify --deep --strict "$CLASSIC_STAGE/LeafFiles.app"
+/usr/bin/ditto -c -k --keepParent --noextattr --norsrc "$CLASSIC_STAGE/LeafFiles.app" "$APP/Contents/Resources/ClassicVariant.zip"
+if [ -n "$IDENTITY" ]; then
+  /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+else
+  /usr/bin/codesign --force --sign - "$APP"
+fi
+rm -rf "$CLASSIC_STAGE"
 
 echo "== 6/6 校验 =="
 /usr/bin/codesign --verify --verbose=1 "$APP/Contents/Helpers/7zz"
