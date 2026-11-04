@@ -123,6 +123,8 @@ final class NativeFileTileView: NSView {
 
     func represents(_ id: String) -> Bool { item?.id == id }
     var dragPreviewImage: NSImage? { icon.image }
+    var representedID: String? { item?.id }
+    var iconFrameInWindow: NSRect { icon.convert(icon.bounds, to: nil) }
 
     func setDragSourceHidden(_ hidden: Bool, for id: String) {
         guard item?.id == id else { return }

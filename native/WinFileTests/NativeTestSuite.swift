@@ -1734,6 +1734,34 @@ enum NativeTestSuite {
         try fm.createDirectory(at: dragTarget, withIntermediateDirectories: true)
         try Data("nested".utf8).write(to: dragFolder.appendingPathComponent("inside.txt"))
         try Data("external".utf8).write(to: externalFile)
+        let dragPasteboard = NSPasteboard(name: NSPasteboard.Name("local.leaffiles.test.\(UUID().uuidString)"))
+        dragPasteboard.clearContents()
+        if let dragItem = SidebarFolderDrop.nativePasteboardItem(for: item(dragFolder)) {
+            check("原生拖动保留会话状态", DragPreviewGeometry.shared.usesManagedDrag && DragMoveIndicator.shared.hasPreview)
+            var indicators: [Bool] = []
+            DragMoveIndicator.shared.nativePreviewUpdater = { indicators.append($0) }
+            DragMoveIndicator.shared.setVisible(true)
+            DragMoveIndicator.shared.setVisible(false)
+            check("移入与离开目标时更新原生剪刀提示", indicators == [true, false])
+            let previewPoint = NSPoint(x: 123, y: 456)
+            DragMoveIndicator.shared.positionOverlay(screenCenter: previewPoint)
+            check("原生拖动命中判断使用显示位置", DragMoveIndicator.shared.lastDisplayedCenter == previewPoint)
+            check("原生拖动可写入文件 URL", dragPasteboard.writeObjects([dragItem]))
+            let urls = dragPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+            check("原生拖动向其他应用提供正确路径", urls?.first?.standardizedFileURL == dragFolder.standardizedFileURL)
+            check("原生拖动保留应用内标记", dragPasteboard.types?.contains(NSPasteboard.PasteboardType("local.leaffiles.internal-file-drag")) == true)
+        } else {
+            check("原生拖动可创建剪贴板数据", false)
+        }
+        DragPreviewGeometry.shared.restoreSourceIcon()
+        dragPasteboard.releaseGlobally()
+        _ = SidebarFolderDrop.provider(for: dragFolder)
+        let localOperation = SidebarFolderDrop.operationForLocalDrag(currentDirectory: source)
+        let isLocalMove: Bool
+        if case .move = localOperation { isLocalMove = true } else { isLocalMove = false }
+        check("识别本地拖动后可重新确定移动操作", isLocalMove)
+        check("目标不变时移动状态恢复仍显示剪刀", SidebarFolderDrop.isMovingToFolder(destination: dragTarget, isMove: isLocalMove))
+        check("本地拖动自身不显示剪刀", !SidebarFolderDrop.isMovingToFolder(destination: dragFolder, isMove: isLocalMove))
         let movingAction = FileDropPolicy.action(for: [dragFolder], currentDirectory: source, destination: dragTarget)
         check("拖入当前目录的子文件夹选择移动", movingAction == .move)
         check("拖到当前目录空白处不创建副本", FileDropPolicy.action(for: [dragFolder], currentDirectory: source, destination: source) == .ignore)
@@ -1741,10 +1769,35 @@ enum NativeTestSuite {
         check("当前目录文件移入其他文件夹显示剪刀", SidebarFolderDrop.isMovingToFolder(source: dragFolder, destination: dragTarget, isMove: true))
         check("拖到自身不显示剪刀", !SidebarFolderDrop.isMovingToFolder(source: dragFolder, destination: dragFolder, isMove: true))
         check("拖到自身不触发失败的文件操作", FileDropPolicy.action(for: [dragFolder], currentDirectory: source, destination: dragFolder) == .ignore)
+        check("源仅允许复制时仍接受同目录移动拖放", FileDropPolicy.permittedOperation(preferMove: true, allowed: .copy) == .copy)
+        check("源允许移动时优先使用移动反馈", FileDropPolicy.permittedOperation(preferMove: true, allowed: [.copy, .move]) == .move)
+        check("源不允许任何操作时拒绝拖放", FileDropPolicy.permittedOperation(preferMove: true, allowed: []) == [])
         let targetFrame = NSRect(x: 100, y: 100, width: 100, height: 100)
         let overlappingCenter = DragPreviewGeometry.previewCenter(cursor: NSPoint(x: 220, y: 150), offset: NSPoint(x: -70, y: 0))
         check("从边缘抓取时按拖动图标中心命中完全重合的文件夹", DragPreviewGeometry.targetIndex(at: overlappingCenter, frames: [targetFrame]) == 0)
         check("拖动图标中心在空白处不误命中文件夹", DragPreviewGeometry.targetIndex(at: NSPoint(x: 250, y: 150), frames: [targetFrame]) == nil)
+        let folderTile = NSRect(x: 0, y: 0, width: 104, height: 106)
+        let actualIcon = NSRect(x: 30, y: 56, width: 44, height: 44)
+        let hitIcon = DragPreviewGeometry.folderIconHitRect(icon: actualIcon, tile: folderTile)
+        check("文件夹图标范围可作为移动目标", hitIcon.contains(NSPoint(x: 52, y: 78)))
+        check("文件夹名称区域不会成为移动目标", !hitIcon.contains(NSPoint(x: 52, y: 40)))
+        check("文件夹下方空白不会成为移动目标", !hitIcon.contains(NSPoint(x: 52, y: 10)))
+        check("图标未加载时按文件夹图标范围判定", DragPreviewGeometry.folderIconHitRect(icon: nil, tile: folderTile) == actualIcon)
+        check("从图标中央拖动时预览与鼠标对齐", DragPreviewGeometry.previewOffset(icon: actualIcon, tile: folderTile, mouseDown: NSPoint(x: 52, y: 78)) == .zero)
+        check("从图标顶部拖动时保持图标中心偏移", DragPreviewGeometry.previewOffset(icon: actualIcon, tile: folderTile, mouseDown: NSPoint(x: 52, y: 98)) == NSPoint(x: 0, y: -20))
+        check("图标下半部分属于有效范围", hitIcon.contains(NSPoint(x: 52, y: 58)))
+        check("拖动图标部分覆盖文件夹上沿时可命中", DragPreviewGeometry.folderOverlapArea(previewCenter: NSPoint(x: 52, y: 110), icon: actualIcon) > 0)
+        check("拖动图标中心位于文件名区域时不命中", DragPreviewGeometry.folderOverlapArea(previewCenter: NSPoint(x: 52, y: 50), icon: actualIcon) == 0)
+        check("拖动图标未接触文件夹时不命中", DragPreviewGeometry.folderOverlapArea(previewCenter: NSPoint(x: 150, y: 78), icon: actualIcon) == 0)
+        let preparedState = IconGridDragState()
+        preparedState.destination = dragTarget
+        preparedState.isLocal = true
+        preparedState.capturePrepared(sequence: 7)
+        preparedState.destination = nil
+        preparedState.isLocal = false
+        let preparedDrop = preparedState.takePrepared(sequence: 7)
+        check("松手确认后的目标不会被后续退出事件清除", preparedDrop?.destination == dragTarget && preparedDrop?.isLocal == true)
+        check("已处理的拖放目标不会重复使用", preparedState.takePrepared(sequence: 7) == nil)
         check("复制到文件夹不显示剪刀", !SidebarFolderDrop.isMovingToFolder(source: externalFile, destination: dragTarget, isMove: false))
         let sourceTile = NativeFileTileView(frame: NSRect(x: 0, y: 0, width: 104, height: 106))
         let sourceItem = item(dragFolder)
@@ -1758,40 +1811,88 @@ enum NativeTestSuite {
         sourceTile.configure(item: item(dragTarget), selected: false, badge: nil)
         check("拖动中复用磁贴不会隐藏其他文件夹", tileImages.first?.isHidden == false)
         _ = NSApplication.shared
-        DragMoveIndicator.shared.setVisible(true)
-        let dragIndicator = NSApp.windows.first { $0.identifier?.rawValue == "drag.move.indicator" }
-        check("拖动剪刀不拦截鼠标且背景透明", dragIndicator?.isVisible == true && dragIndicator?.ignoresMouseEvents == true && dragIndicator?.isOpaque == false)
-        check("拖动提示不使用窗口动画", (dragIndicator as? NSPanel)?.animationBehavior == NSWindow.AnimationBehavior.none)
-        let scissorsImage = dragIndicator?.contentView?.subviews.compactMap { $0 as? NSImageView }
+        let hitTestParent = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let hitTestDocument = NativeIconGridDocumentView(frame: hitTestParent.bounds)
+        hitTestParent.addSubview(hitTestDocument)
+        hitTestDocument.configureDrop(update: { _ in .move }, exit: nil, prepare: nil, perform: { _, _ in true })
+        let coveringRow = NSView(frame: hitTestDocument.bounds)
+        hitTestDocument.addSubview(coveringRow)
+        hitTestDocument.ensureDropSurfaceOnTop()
+        check("未拖动时文件行仍可接收鼠标", hitTestDocument.hitTest(NSPoint(x: 10, y: 10)) === coveringRow)
+        let dropSurfaceParent = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let dropSurface = NativeIconGridDropSurface(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        dropSurfaceParent.addSubview(dropSurface)
+        check("没有拖动时透明接收层不阻挡点击", dropSurface.hitTest(NSPoint(x: 10, y: 10)) == nil)
+        DragMoveIndicator.shared.beginPreview(image: FileIconService.folderPlaceholder, name: "DragFolder")
+        check("内部拖动时透明接收层接收落点", dropSurface.hitTest(NSPoint(x: 10, y: 10)) === dropSurface)
+        check("拖动时文件行上方优先命中接收层", hitTestDocument.hitTest(NSPoint(x: 10, y: 10)) is NativeIconGridDropSurface)
+        let laterRow = NSView(frame: hitTestDocument.bounds)
+        hitTestDocument.addSubview(laterRow)
+        hitTestDocument.ensureDropSurfaceOnTop()
+        check("新增或复用文件行后接收层保持最上方", hitTestDocument.hitTest(NSPoint(x: 10, y: 10)) is NativeIconGridDropSurface)
+        let dragIndicator = DragMoveIndicator.shared.overlayViewForTesting
+        let previewName = dragIndicator?.subviews.compactMap { $0 as? NSTextField }
+            .first { $0.identifier?.rawValue == "drag.preview.name" }
+        let scissorsImage = dragIndicator?.subviews.compactMap { $0 as? NSImageView }
             .first { $0.identifier?.rawValue == "drag.move.scissors" }
-        check("拖动提示加载了剪刀图像", scissorsImage?.image != nil)
-        DragMoveIndicator.shared.setVisible(false)
-        check("离开文件夹后拖动剪刀隐藏", dragIndicator?.isVisible == false)
-        DragMoveIndicator.shared.beginPreview(image: FileIconService.folderPlaceholder)
-        check("拖动时显示自有预览", dragIndicator?.isVisible == true && DragMoveIndicator.shared.hasPreview)
+        check("拖动预览不拦截鼠标或落点", dragIndicator?.hitTest(.zero) == nil)
+        check("拖动预览显示文件夹名称", previewName?.stringValue == "DragFolder" && previewName?.isHidden == false)
+        check("拖动提示加载剪刀图像", scissorsImage?.image != nil)
         check("拖动空白位置时隐藏剪刀", scissorsImage?.isHidden == true)
         DragMoveIndicator.shared.setVisible(true)
-        check("指向目标文件夹时预览显示剪刀", scissorsImage?.isHidden == false && DragMoveIndicator.shared.hasPreview)
-        DragMoveIndicator.shared.updateForMouseButtons(1)
-        check("鼠标按住时继续显示拖动预览", dragIndicator?.isVisible == true && DragMoveIndicator.shared.hasPreview)
+        check("指向目标文件夹时显示剪刀", scissorsImage?.isHidden == false)
         DragMoveIndicator.shared.setVisible(false)
-        check("移出目标时保留预览并隐藏剪刀", dragIndicator?.isVisible == true && DragMoveIndicator.shared.hasPreview && scissorsImage?.isHidden == true)
+        check("移出目标时保留预览并隐藏剪刀", DragMoveIndicator.shared.hasPreview && scissorsImage?.isHidden == true)
         DragMoveIndicator.shared.updateForMouseButtons(0)
-        check("释放后立即清除拖动预览", dragIndicator?.isVisible == false && !DragMoveIndicator.shared.hasPreview)
+        check("松手后透明接收层恢复穿透", dropSurface.hitTest(NSPoint(x: 10, y: 10)) == nil)
+        check("释放后立即移除拖动预览", dragIndicator?.superview == nil && !DragMoveIndicator.shared.hasPreview)
+        check("释放后清除拖动预览名称", previewName?.isHidden == true && previewName?.stringValue == "")
+        DragMoveIndicator.shared.setVisible(true)
+        check("列表视图拖动时仍可显示剪刀", scissorsImage?.isHidden == false && !DragMoveIndicator.shared.hasPreview)
+        DragMoveIndicator.shared.setVisible(false)
+        check("列表视图离开目标时隐藏剪刀", scissorsImage?.isHidden == true)
         let dragWindow = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 400, height: 400),
                                   styleMask: .borderless, backing: .buffered, defer: false)
+        let previewProbe = NSView(frame: NSRect(x: 30, y: 40, width: 48, height: 48))
+        dragWindow.contentView?.addSubview(previewProbe)
+        let expectedPreviewCenter = dragWindow.convertPoint(toScreen: NSPoint(x: 54, y: 64))
+        check("拖动图标位置读取视图的真实屏幕坐标", DragMoveIndicator.screenCenter(of: previewProbe) == expectedPreviewCenter)
+        previewProbe.removeFromSuperview()
         let marker = FileTileMarkerView(frame: targetFrame)
         marker.item = item(dragTarget)
         dragWindow.contentView?.addSubview(marker)
+        let overlappingSourceMarker = FileTileMarkerView(frame: targetFrame)
+        overlappingSourceMarker.item = item(dragFolder)
+        dragWindow.contentView?.addSubview(overlappingSourceMarker)
         dragWindow.orderFrontRegardless()
         DragPreviewGeometry.shared.begin(url: dragFolder)
         let overlappingScreenPoint = dragWindow.convertPoint(toScreen: NSPoint(x: 150, y: 150))
         let emptyScreenPoint = dragWindow.convertPoint(toScreen: NSPoint(x: 300, y: 300))
-        DragMoveIndicator.shared.beginPreview(image: FileIconService.folderPlaceholder)
-        dragIndicator?.setFrameOrigin(NSPoint(x: overlappingScreenPoint.x - 24, y: overlappingScreenPoint.y - 28))
+        DragMoveIndicator.shared.beginPreview(image: FileIconService.folderPlaceholder, name: "DragFolder")
+        DragMoveIndicator.shared.positionOverlay(screenCenter: overlappingScreenPoint)
+        let fixedOverlayFrame = DragMoveIndicator.shared.overlayViewForTesting?.frame
+        let firstCenter = DragMoveIndicator.shared.lastDisplayedCenter
+        check("拖动图标实际位置与请求位置一致", firstCenter.map { hypot($0.x - overlappingScreenPoint.x, $0.y - overlappingScreenPoint.y) < 1 } == true)
+        DragMoveIndicator.shared.positionOverlay(screenCenter: emptyScreenPoint)
+        let secondCenter = DragMoveIndicator.shared.lastDisplayedCenter
+        check("移动预览时覆盖层范围保持固定", DragMoveIndicator.shared.overlayViewForTesting?.frame == fixedOverlayFrame)
+        check("预览移动后实际图标位置保持准确", secondCenter.map { hypot($0.x - emptyScreenPoint.x, $0.y - emptyScreenPoint.y) < 1 } == true)
+        check("覆盖层移动内容时仍不拦截鼠标", DragMoveIndicator.shared.overlayViewForTesting?.hitTest(.zero) == nil)
         let resolvedTarget = DragPreviewGeometry.shared.destination(currentDirectory: source, center: overlappingScreenPoint)
         check("完全重合时解析出实际目标文件夹", resolvedTarget?.path == dragTarget.path,
               "目标=\(resolvedTarget?.path ?? "无"), 标记=\(marker.item?.isDirectory == true), 窗口=\(dragWindow.isVisible)")
+        check("图标中心在目标内、指针在外时仍可移入", DragPreviewGeometry.shared.destination(currentDirectory: source, preview: overlappingScreenPoint, cursor: emptyScreenPoint)?.path == dragTarget.path)
+        check("指针在目标内、图标中心在外时仍可移入", DragPreviewGeometry.shared.destination(currentDirectory: source, preview: emptyScreenPoint, cursor: overlappingScreenPoint)?.path == dragTarget.path)
+        check("自有预览在目标外时不因鼠标位置误触发", DragPreviewGeometry.shared.destination(currentDirectory: source, preview: emptyScreenPoint, cursor: overlappingScreenPoint, allowCursorFallback: false) == nil)
+        check("指针和图标都在空白处时不误命中", DragPreviewGeometry.shared.destination(currentDirectory: source, preview: emptyScreenPoint, cursor: emptyScreenPoint) == nil)
+        let labelScreenPoint = dragWindow.convertPoint(toScreen: NSPoint(x: 150, y: 125))
+        check("拖到文件名时不命中文件夹", DragPreviewGeometry.shared.destination(currentDirectory: source, preview: labelScreenPoint, cursor: labelScreenPoint) == nil)
+        DragPreviewGeometry.shared.begin(url: dragTarget)
+        check("反方向拖动时能识别另一个文件夹", DragPreviewGeometry.shared.destination(currentDirectory: source, center: overlappingScreenPoint)?.path == dragFolder.path)
+        DragPreviewGeometry.shared.begin(url: dragFolder)
+        let sourceAlias = root.appendingPathComponent("SourceAlias")
+        try fm.createSymbolicLink(at: sourceAlias, withDestinationURL: source)
+        check("符号链接目录与实际目录使用相同的拖放目标", DragPreviewGeometry.shared.destination(currentDirectory: sourceAlias, center: overlappingScreenPoint)?.path == dragTarget.path)
         DragMoveIndicator.shared.endPreview()
         let scansBeforeMoves = DragPreviewGeometry.shared.targetScanCount
         var stableTarget = true
@@ -1800,6 +1901,8 @@ enum NativeTestSuite {
         }
         check("连续拖动复用目标范围而不反复扫描视图", stableTarget && DragPreviewGeometry.shared.targetScanCount == scansBeforeMoves)
         check("预览中心在空白处不解析出目标", DragPreviewGeometry.shared.destination(currentDirectory: source, center: emptyScreenPoint) == nil)
+        overlappingSourceMarker.removeFromSuperview()
+        DragPreviewGeometry.shared.invalidateTargets()
         DragPreviewGeometry.shared.begin(url: dragTarget)
         check("源文件夹自身不作为移入目标", DragPreviewGeometry.shared.destination(currentDirectory: source, center: overlappingScreenPoint) == nil)
         dragWindow.orderOut(nil)
@@ -5573,6 +5676,32 @@ enum NativeTestSuite {
         // 关键：排序后 UI 依赖的 displayedItems 必须同步变化
         check("displayedItems 跟随排序", model.displayedItems.map(\.name) == model.items.map(\.name),
               "\(model.displayedItems.count) 项")
+
+        let defaults = UserDefaults.standard
+        let previousPositions = defaults.object(forKey: IconPositionStorage.key)
+        defer {
+            if let previousPositions { defaults.set(previousPositions, forKey: IconPositionStorage.key) }
+            else { defaults.removeObject(forKey: IconPositionStorage.key) }
+        }
+        let directoryID = FileItem.canonicalID(for: dir)
+        let otherID = FileItem.canonicalID(for: sandbox.appendingPathComponent("其他目录"))
+        let savedPositions: [String: [String: [Double]]] = [directoryID: ["item": [42, 84]], otherID: ["item": [1, 2]]]
+        defaults.set(savedPositions, forKey: IconPositionStorage.key)
+        var notifiedDirectory: String?
+        let observer = NotificationCenter.default.addObserver(forName: IconPositionStorage.didReset, object: nil, queue: nil) {
+            notifiedDirectory = $0.object as? String
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        model.sortByUser(field: model.sortField)
+        let remaining = defaults.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]] ?? [:]
+        check("主动重新选择相同排序清除当前目录的位置", remaining[directoryID] == nil)
+        check("排序保留其他目录的自定义位置", remaining[otherID] != nil)
+        check("排序通知同目录的其他页签更新布局", notifiedDirectory == directoryID)
+        defaults.set(savedPositions, forKey: IconPositionStorage.key)
+        model.sortField = .name
+        check("恢复排序状态不会清除自定义位置", (defaults.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]])?[directoryID] != nil)
+        model.sortByUser(ascending: !model.sortAscendingFlag)
+        check("切换升降序清除自定义位置", (defaults.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]])?[directoryID] == nil)
 
     }
 

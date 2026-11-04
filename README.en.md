@@ -46,7 +46,15 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.3.2
+## What’s new in v2.3.3
+
+- Improved folder dragging in icon view, with a move indicator over a destination folder and free arrangement on empty space.
+- Choosing a sort order resets custom icon positions in the current folder.
+- The drag preview retains the file name and improves the display after release.
+
+See the [v2.3.3 release notes](docs/releases/v2.3.3.md) and [v2.3.2 release notes](docs/releases/v2.3.2.md).
+
+### v2.3.2 update
 
 - Choose the green leaf or classic yellow app icon in Settings → General → App Icon. LeafFiles restarts and updates the Dock, Finder and Launchpad icons; the app folder must be writable.
 - Folder dragging now shows scissors over a destination, moves more smoothly and clears the drag image on release.

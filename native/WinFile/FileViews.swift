@@ -151,8 +151,9 @@ struct FileTableView: View {
             set: { newValue in
                 guard let first = newValue.first,
                       let field = SortOrderBridge.field(for: first) else { return }
-                model.sortField = field
-                model.sortAscendingFlag = first.order == .forward
+                let ascending = first.order == .forward
+                guard field != model.sortField || ascending != model.sortAscendingFlag else { return }
+                model.sortByUser(field: field, ascending: ascending)
             }
         )
     }
@@ -313,19 +314,19 @@ struct FileTableView: View {
         let sortMenu = NSMenu()
         for field in SortField.allCases {
             let item = ClosureMenuItem(title: field.localizedTitle, closure: { [weak model] in
-                model?.sortField = field
+                model?.sortByUser(field: field)
             })
             item.state = model.sortField == field ? .on : .off
             sortMenu.addItem(item)
         }
         sortMenu.addItem(.separator())
         let ascending = ClosureMenuItem(title: L("menu.ascending", "升序"), closure: { [weak model] in
-            model?.sortAscendingFlag = true
+            model?.sortByUser(ascending: true)
         })
         ascending.state = model.sortAscendingFlag ? .on : .off
         sortMenu.addItem(ascending)
         let descending = ClosureMenuItem(title: L("menu.descending", "降序"), closure: { [weak model] in
-            model?.sortAscendingFlag = false
+            model?.sortByUser(ascending: false)
         })
         descending.state = model.sortAscendingFlag ? .off : .on
         sortMenu.addItem(descending)
@@ -389,6 +390,25 @@ final class IconGridDragState {
     var isLocal = false
     var isMove = false
     var destination: URL?
+    var showsMoveIndicator = false
+    var nativeActive = false
+    var nativeExitGeneration: UInt64 = 0
+    var nextGeometrySample: TimeInterval = 0
+    private var preparedSequence: Int?
+    private var preparedDestination: URL?
+    private var preparedLocal = false
+
+    func capturePrepared(sequence: Int) {
+        preparedSequence = sequence
+        preparedDestination = destination
+        preparedLocal = isLocal
+    }
+
+    func takePrepared(sequence: Int) -> (destination: URL?, isLocal: Bool)? {
+        guard preparedSequence == sequence else { return nil }
+        preparedSequence = nil
+        return (preparedDestination, preparedLocal)
+    }
 }
 
 struct FileIconGridView: View {
@@ -405,11 +425,10 @@ struct FileIconGridView: View {
 
     private var canArrange: Bool { !model.isCategoryView && !model.isSearching && model.currentDirectory?.isFileURL == true }
     private var positionKey: String { model.currentDirectory.map { FileItem.canonicalID(for: $0) } ?? "" }
-    private static let positionsKey = "IconPositions.v1"
 
     private func loadPositions() {
         guard canArrange else { iconPositions = [:]; return }
-        let all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
+        let all = UserDefaults.standard.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]] ?? [:]
         iconPositions = (all[positionKey] ?? [:]).reduce(into: [:]) { result, pair in
             if pair.value.count == 2, pair.value[0].isFinite, pair.value[1].isFinite {
                 result[pair.key] = CGPoint(x: min(100_000, max(0, pair.value[0])), y: min(100_000, max(0, pair.value[1])))
@@ -424,16 +443,14 @@ struct FileIconGridView: View {
         let x = min(100_000, max(0, point.x + scrollOffset.x - 52))
         let y = min(100_000, max(0, point.y + scrollOffset.y - 53))
         iconPositions[FileItem.canonicalID(for: url)] = CGPoint(x: x, y: y)
-        var all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
+        var all = UserDefaults.standard.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]] ?? [:]
         all[positionKey] = iconPositions.mapValues { [Double($0.x), Double($0.y)] }
-        UserDefaults.standard.set(all, forKey: Self.positionsKey)
+        UserDefaults.standard.set(all, forKey: IconPositionStorage.key)
     }
 
     private func resetPositions() {
         iconPositions = [:]
-        var all = UserDefaults.standard.dictionary(forKey: Self.positionsKey) as? [String: [String: [Double]]] ?? [:]
-        all.removeValue(forKey: positionKey)
-        UserDefaults.standard.set(all, forKey: Self.positionsKey)
+        model.resetIconPositions()
     }
 
     var body: some View {
@@ -441,10 +458,19 @@ struct FileIconGridView: View {
             positions: canArrange ? iconPositions : [:], onScrollOffset: { offset in
                 if scrollOffset != offset { scrollOffset = offset }
             }, locateIndex: locateTarget?.index, locateRequest: locateTarget?.request,
-            makeTile: { AnyView(tile(for: $0)) })
+            makeTile: { AnyView(tile(for: $0)) },
+            onNativeDragUpdate: { info in nativeDragUpdate(info) },
+            onNativeDragExit: { nativeDragExit() },
+            onNativeDragPrepare: { info in dragState.capturePrepared(sequence: info.draggingSequenceNumber) },
+            onNativeSourceMove: { point in nativeSourceMove(point) },
+            onNativeSourceEnd: { nativeSourceEnd() },
+            onNativeDrop: { info, point in nativeDrop(info, point: point) })
             .onAppear { DragPreviewGeometry.shared.install(); loadPositions(); selectPendingItem() }
             .onChange(of: positionKey) { _ in loadPositions() }
             .onChange(of: canArrange) { _ in loadPositions() }
+            .onReceive(NotificationCenter.default.publisher(for: IconPositionStorage.didReset)) { notification in
+                if notification.object as? String == positionKey { loadPositions() }
+            }
             .onReceive(model.$pendingSelectionID.compactMap { $0 }.receive(on: RunLoop.main)) { _ in
                 selectPendingItem()
             }
@@ -452,7 +478,7 @@ struct FileIconGridView: View {
                 DragPreviewGeometry.shared.invalidateTargets()
                 selectPendingItem()
             }
-        .onDrop(of: [.fileURL], delegate: IconPlacementDropDelegate(model: model, canArrange: canArrange,
+        .onDrop(of: [.fileURL], delegate: IconGridFallbackDropDelegate(model: model, canArrange: canArrange,
             place: savePosition, state: dragState))
         // 空白处右键菜单（与详细信息视图一致）
         // 未命中原生滚动容器的空白区域仍使用同一份菜单兜底。
@@ -487,9 +513,122 @@ struct FileIconGridView: View {
         _ = model.consumePendingSelection()
     }
 
+    private func nativeDragUpdate(_ info: NSDraggingInfo) -> NSDragOperation {
+        guard let current = model.currentDirectory else { return [] }
+        let wasNativeActive = dragState.nativeActive
+        dragState.nativeExitGeneration &+= 1
+        dragState.nativeActive = true
+        let isLocal = dragState.isLocal || DragMoveIndicator.shared.hasPreview
+            || info.draggingPasteboard.types?.contains(NSPasteboard.PasteboardType("local.leaffiles.internal-file-drag")) == true
+        dragState.isLocal = isLocal
+        if isLocal, case .move = SidebarFolderDrop.operationForLocalDrag(currentDirectory: current) {
+            dragState.isMove = true
+        } else { dragState.isMove = false }
+        let cursor = info.draggingDestinationWindow?.convertPoint(toScreen: info.draggingLocation)
+        if DragPreviewGeometry.shared.usesManagedDrag, let cursor {
+            DragMoveIndicator.shared.positionOverlay(screenCenter: cursor)
+        }
+        let target = DragPreviewGeometry.shared.destination(currentDirectory: current, local: isLocal, cursor: cursor)
+        let show = SidebarFolderDrop.isMovingToFolder(destination: target, isMove: dragState.isMove)
+        if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1",
+           ProcessInfo.processInfo.systemUptime >= dragState.nextGeometrySample {
+            dragState.nextGeometrySample = ProcessInfo.processInfo.systemUptime + 0.5
+            let details = DragPreviewGeometry.shared.diagnosticOffsets(currentDirectory: current, local: isLocal, eventCursor: cursor)
+            TabDiagnostics.shared.record("grid.drag.geometry", detail: "folder=\(target != nil) scissors=\(show) \(DragMoveIndicator.shared.diagnosticStatus) \(details)")
+        }
+        if dragState.destination != target || dragState.showsMoveIndicator != show || !wasNativeActive {
+            dragState.destination = target
+            dragState.showsMoveIndicator = show
+            DragMoveIndicator.shared.setVisible(show)
+            TabDiagnostics.shared.record("grid.native.drag.target", detail: "folder=\(target != nil) scissors=\(show) sourceMask=\(info.draggingSourceOperationMask.rawValue)")
+        }
+        // SwiftUI's source may offer only copy even when our file policy is a
+        // move. The system needs an allowed operation to deliver the drop; the
+        // actual move/copy decision remains in model.dropFiles.
+        return FileDropPolicy.permittedOperation(preferMove: dragState.isMove, allowed: info.draggingSourceOperationMask)
+    }
+
+    private func nativeSourceMove(_ screenPoint: NSPoint?) {
+        guard DragPreviewGeometry.shared.usesManagedDrag, let current = model.currentDirectory else { return }
+        dragState.nativeExitGeneration &+= 1
+        dragState.isLocal = true
+        if case .move = SidebarFolderDrop.operationForLocalDrag(currentDirectory: current) { dragState.isMove = true }
+        else { dragState.isMove = false }
+        let target = screenPoint.flatMap {
+            DragPreviewGeometry.shared.destination(currentDirectory: current, local: true, cursor: $0)
+        }
+        let show = SidebarFolderDrop.isMovingToFolder(destination: target, isMove: dragState.isMove)
+        if dragState.destination != target || dragState.showsMoveIndicator != show {
+            dragState.destination = target
+            dragState.showsMoveIndicator = show
+            if dragState.nativeActive { DragMoveIndicator.shared.setVisible(show) }
+            TabDiagnostics.shared.record("grid.source.drag.target", detail: "folder=\(target != nil) scissors=\(show)")
+        }
+    }
+
+    private func nativeSourceEnd() {
+        dragState.nativeExitGeneration &+= 1
+        dragState.nativeActive = false
+        dragState.isLocal = false
+        dragState.isMove = false
+        dragState.destination = nil
+        dragState.showsMoveIndicator = false
+        DragMoveIndicator.shared.setVisible(false)
+    }
+
+    private func nativeDragExit() {
+        // The source session continues to supply position while the pointer
+        // crosses hosted destination views; it owns the indicator state.
+        if DragPreviewGeometry.shared.usesManagedDrag { return }
+        if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1" {
+            TabDiagnostics.shared.record("grid.native.exit", detail: DragMoveIndicator.shared.diagnosticStatus)
+        }
+        // Crossing between hosted views produces exit/enter pairs. Clear the
+        // actionable target immediately, but defer hiding the indicator so a
+        // same-session re-entry does not visibly flicker.
+        dragState.destination = nil
+        dragState.nativeExitGeneration &+= 1
+        let generation = dragState.nativeExitGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard dragState.nativeExitGeneration == generation else { return }
+            dragState.nativeActive = false
+            dragState.isLocal = false
+            dragState.isMove = false
+            dragState.showsMoveIndicator = false
+            DragMoveIndicator.shared.setVisible(false)
+        }
+    }
+
+    private func nativeDrop(_ info: NSDraggingInfo, point: NSPoint) -> Bool {
+        guard let current = model.currentDirectory else { return false }
+        let prepared = dragState.takePrepared(sequence: info.draggingSequenceNumber)
+        let target = prepared?.destination ?? (prepared == nil ? dragState.destination : nil)
+        let local = prepared?.isLocal ?? dragState.isLocal
+        let urls = (info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+            options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? []
+        let sources = urls.isEmpty && local ? SidebarFolderDrop.currentDraggedURL.map { [$0] } ?? [] : urls
+        TabDiagnostics.shared.record("grid.native.drag.drop", detail: "folder=\(target != nil) count=\(sources.count)")
+        dragState.destination = nil
+        dragState.isLocal = false
+        dragState.isMove = false
+        dragState.showsMoveIndicator = false
+        dragState.nativeActive = false
+        dragState.nativeExitGeneration &+= 1
+        DragPreviewGeometry.shared.restoreSourceIcon()
+        guard !sources.isEmpty else { return false }
+        if let target {
+            model.dropFiles(sources, from: current, to: target, failed: 0)
+        } else if canArrange, sources.count == 1,
+                  FileItem.canonicalID(for: sources[0].deletingLastPathComponent()) == FileItem.canonicalID(for: current) {
+            savePosition(sources[0], at: point)
+        } else {
+            model.dropFiles(sources, from: current, to: current, failed: 0)
+        }
+        return true
+    }
+
     private func tile(for item: FileItem) -> some View {
         FileTile(item: item, selected: model.selectedIDs.contains(item.id), isCut: model.cutItemIDs.contains(item.id))
-            .modifier(LocalFileDrag(url: item.url, isDirectory: item.isDirectory))
             // 图标视图没有 NSTableView，双击通过标记交给窗口级鼠标监听处理
             .background(
                 FileTileMarker(item: item) {
@@ -509,65 +648,50 @@ struct FileIconGridView: View {
     }
 }
 
-/// Dropping a single local item onto empty space changes only its visual position.
-struct IconPlacementDropDelegate: DropDelegate {
+/// Keeps the SwiftUI hosting surface registered as a destination; the native
+/// document view handles its own drops without having its state cleared here.
+struct IconGridFallbackDropDelegate: DropDelegate {
     let model: BrowserModel
     let canArrange: Bool
     let place: (URL, CGPoint) -> Void
     let state: IconGridDragState
 
     func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.fileURL]) }
-    func dropEntered(info: DropInfo) {
-        DragPreviewGeometry.shared.invalidateTargets()
-        state.isLocal = SidebarFolderDrop.isLocal(info)
-        if case .move = SidebarFolderDrop.operation(for: info, currentDirectory: model.currentDirectory) { state.isMove = true }
-        else { state.isMove = false }
-        refreshDestination(info: info)
-    }
-    func dropExited(info: DropInfo) {
-        state.destination = nil
-        state.isLocal = false
-        state.isMove = false
-        DragMoveIndicator.shared.setVisible(false)
-    }
-    private func refreshDestination(info: DropInfo) {
-        guard let current = model.currentDirectory else { return }
-        let next = DragPreviewGeometry.shared.destination(currentDirectory: current, local: state.isLocal)
-        if state.destination != next {
-            state.destination = next
-            DragMoveIndicator.shared.setVisible(SidebarFolderDrop.isMovingToFolder(info, currentDirectory: current, destination: next))
-        }
-        if next != nil { DragMoveIndicator.shared.updatePosition() }
-    }
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        refreshDestination(info: info)
-        return DropProposal(operation: state.isMove ? .move : .copy)
+        guard let directory = model.currentDirectory else { return nil }
+        if state.nativeActive { return DropProposal(operation: state.isMove ? .move : .copy) }
+        let local = SidebarFolderDrop.isLocal(info) || DragMoveIndicator.shared.hasPreview
+        let move: Bool
+        if local, case .move = SidebarFolderDrop.operationForLocalDrag(currentDirectory: directory) { move = true }
+        else { move = false }
+        let target = DragPreviewGeometry.shared.destination(currentDirectory: directory, local: local)
+        let show = SidebarFolderDrop.isMovingToFolder(destination: target, isMove: move)
+        state.isLocal = local
+        state.isMove = move
+        state.destination = target
+        state.showsMoveIndicator = show
+        DragMoveIndicator.shared.setVisible(show)
+        return DropProposal(operation: move ? .move : .copy)
     }
     func performDrop(info: DropInfo) -> Bool {
-        guard let directory = model.currentDirectory else {
-            DragPreviewGeometry.shared.restoreSourceIcon()
-            return false
-        }
+        guard let directory = model.currentDirectory else { return false }
         let providers = info.itemProviders(for: [.fileURL])
-        guard !providers.isEmpty else {
-            DragPreviewGeometry.shared.restoreSourceIcon()
-            return false
-        }
-        let target = DragPreviewGeometry.shared.destination(currentDirectory: directory, local: state.isLocal)
+        guard !providers.isEmpty else { return false }
+        // Keep the most recent accepted drag target; querying the global mouse
+        // position after release can resolve a different location.
+        let target = state.destination
+        let point = info.location
         state.destination = nil
         state.isLocal = false
         state.isMove = false
+        state.showsMoveIndicator = false
         DragPreviewGeometry.shared.restoreSourceIcon()
-        let point = info.location
         SidebarFolderDrop.load(providers) { urls, failed in
-            if let target {
-                model.dropFiles(urls, from: directory, to: target, failed: failed)
-            } else if canArrange, failed == 0, urls.count == 1,
-               FileItem.canonicalID(for: urls[0].deletingLastPathComponent()) == FileItem.canonicalID(for: directory) {
+            if let target { model.dropFiles(urls, from: directory, to: target, failed: failed) }
+            else if canArrange, failed == 0, urls.count == 1,
+                    FileItem.canonicalID(for: urls[0].deletingLastPathComponent()) == FileItem.canonicalID(for: directory) {
                 place(urls[0], point)
-            } else {
-                model.dropFiles(urls, from: directory, to: directory, failed: failed)
-            }
+            } else { model.dropFiles(urls, from: directory, to: directory, failed: failed) }
         }
         return true
     }

@@ -36,23 +36,28 @@ struct FileTileMarker: NSViewRepresentable {
     }
 }
 
-/// The system centers the 48-point drag preview on its source tile, rather than
-/// on the initial mouse-down. Keep that offset so drop targets match the image.
+/// Keep the preview aligned with the source icon, including when the drag
+/// begins on an edge or on its filename.
 @MainActor
 final class DragPreviewGeometry {
     static let shared = DragPreviewGeometry()
     private var monitor: Any?
     private var pendingURL: URL?
     private var pendingID: String?
+    private var pendingItem: FileItem?
+    private var pendingDownEvent: NSEvent?
     private weak var pendingMarker: FileTileMarkerView?
     private weak var pendingDocument: NSView?
     private var pendingDownPoint = NSPoint.zero
     private var pendingOffset = NSPoint.zero
     private var activeOffset = NSPoint.zero
-    private var activeURL: URL?
+    private var activeURLID: String?
+    private var usesCustomPreview = false
+    private(set) var usesManagedDrag = false
+    private var cachedDirectoryURL: URL?
+    private var cachedDirectoryID: String?
     private(set) var activeSourceID: String?
     private var hiddenSourceTiles: [WeakTile] = []
-    private var pendingRestoreTimer: Timer?
     private weak var cachedWindow: NSWindow?
     private weak var cachedScroll: NSScrollView?
     private var cachedBounds = NSRect.null
@@ -61,8 +66,10 @@ final class DragPreviewGeometry {
 
     private struct Target {
         let frame: NSRect
+        var iconFrame: NSRect?
         let url: URL
-        let parent: URL
+        let id: String
+        let parentID: String
     }
 
     private final class WeakTile {
@@ -75,21 +82,25 @@ final class DragPreviewGeometry {
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
             guard let self else { return event }
             if event.type == .leftMouseDragged {
-                if let id = self.pendingID, self.activeSourceID != id,
+                if let item = self.pendingItem, let downEvent = self.pendingDownEvent,
+                   let document = self.pendingDocument as? NativeIconGridDocumentView,
                    hypot(event.locationInWindow.x - self.pendingDownPoint.x,
-                         event.locationInWindow.y - self.pendingDownPoint.y) >= 2 {
-                    self.hideSourceIcon(id: id)
-                    TabDiagnostics.shared.record("grid.drag.lift", detail: "hidden=\(!self.hiddenSourceTiles.isEmpty)")
-                    self.startPendingRestoreTimer()
+                         event.locationInWindow.y - self.pendingDownPoint.y) >= 2,
+                   document.beginNativeDrag(item: item, mouseDown: downEvent) {
+                    self.pendingDownEvent = nil
+                    return nil
                 }
                 return event
             }
             if event.type == .leftMouseUp {
+                self.pendingDownEvent = nil
                 if !DragMoveIndicator.shared.hasPreview { self.restoreSourceIcon() }
                 return event
             }
             self.pendingURL = nil
             self.pendingID = nil
+            self.pendingItem = nil
+            self.pendingDownEvent = nil
             self.pendingMarker = nil
             self.pendingDocument = nil
             guard let window = event.window, let root = window.contentView,
@@ -98,24 +109,35 @@ final class DragPreviewGeometry {
                   let marker = EmptyAreaContextMenu.InstallerView.tileMarker(at: event.locationInWindow, in: document),
                   let item = marker.item, item.url.isFileURL else { return event }
             let frame = marker.convert(marker.bounds, to: nil)
+            func findIcon(in view: NSView) -> NSRect? {
+                guard !view.isHidden else { return nil }
+                if let tile = view as? NativeFileTileView, tile.represents(item.id) {
+                    let icon = tile.iconFrameInWindow
+                    return icon.isEmpty ? nil : icon
+                }
+                for child in view.subviews {
+                    if let icon = findIcon(in: child) { return icon }
+                }
+                return nil
+            }
+            let icon = findIcon(in: document)
             self.pendingURL = item.url.standardizedFileURL
             self.pendingID = item.id
+            self.pendingItem = item
+            self.pendingDownEvent = event
             self.pendingMarker = marker
             self.pendingDocument = document
             self.pendingDownPoint = event.locationInWindow
-            self.pendingOffset = NSPoint(x: frame.midX - event.locationInWindow.x,
-                                         y: frame.midY - event.locationInWindow.y)
+            self.pendingOffset = Self.previewOffset(icon: icon, tile: frame, mouseDown: event.locationInWindow)
             return event
         }
     }
 
-    func begin(url: URL, customPreview: Bool = false, isDirectory: Bool = false) {
+    func begin(url: URL, customPreview: Bool = false, isDirectory: Bool = false, managedSession: Bool = false) {
         let expectedID = pendingURL == url.standardizedFileURL ? pendingID : nil
         if activeSourceID != expectedID { restoreSourceIcon() }
-        pendingRestoreTimer?.invalidate()
-        pendingRestoreTimer = nil
         activeOffset = pendingURL == url.standardizedFileURL ? pendingOffset : .zero
-        activeURL = url.standardizedFileURL
+        activeURLID = FileItem.canonicalID(for: url)
         var previewImage: NSImage?
         if let id = expectedID {
             if activeSourceID != id || hiddenSourceTiles.isEmpty { hideSourceIcon(id: id) }
@@ -125,9 +147,14 @@ final class DragPreviewGeometry {
                 previewImage = item.isDirectory ? FileIconService.folderPlaceholder : NSWorkspace.shared.icon(forFile: item.url.path)
             }
         }
+        // Hiding a new source may restore the previous source, which clears the
+        // session flags. Set them only after that cleanup has finished.
+        usesCustomPreview = customPreview
+        usesManagedDrag = managedSession
         if customPreview {
             let image = previewImage ?? (isDirectory ? FileIconService.folderPlaceholder : NSWorkspace.shared.icon(forFile: url.path))
-            DragMoveIndicator.shared.beginPreview(image: image)
+            DragMoveIndicator.shared.beginPreview(image: image, name: pendingMarker?.item?.name ?? url.lastPathComponent,
+                                                  managedSession: managedSession)
         }
         invalidateTargets()
     }
@@ -158,21 +185,6 @@ final class DragPreviewGeometry {
         }
     }
 
-    private func startPendingRestoreTimer() {
-        guard pendingRestoreTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if NSEvent.pressedMouseButtons & 1 == 0 && !DragMoveIndicator.shared.hasPreview {
-                    self.restoreSourceIcon()
-                }
-            }
-        }
-        pendingRestoreTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-        RunLoop.main.add(timer, forMode: .eventTracking)
-    }
-
     func isDraggingSource(_ id: String) -> Bool { activeSourceID == id }
 
     func registerHiddenSource(_ tile: NativeFileTileView, for id: String) {
@@ -181,8 +193,7 @@ final class DragPreviewGeometry {
     }
 
     func restoreSourceIcon() {
-        pendingRestoreTimer?.invalidate()
-        pendingRestoreTimer = nil
+        usesManagedDrag = false
         DragMoveIndicator.shared.endPreview()
         if let id = activeSourceID {
             for tile in hiddenSourceTiles { tile.value?.setDragSourceHidden(false, for: id) }
@@ -196,15 +207,26 @@ final class DragPreviewGeometry {
         cachedWindow = nil
         cachedScroll = nil
         cachedTargets.removeAll()
+        cachedDirectoryURL = nil
+        cachedDirectoryID = nil
     }
 
     func previewCenter(local: Bool) -> NSPoint {
-        let point = NSEvent.mouseLocation
-        return Self.previewCenter(cursor: point, offset: local ? activeOffset : .zero)
+        previewCenter(cursor: NSEvent.mouseLocation, local: local)
+    }
+
+    func previewCenter(cursor: NSPoint, local: Bool) -> NSPoint {
+        Self.previewCenter(cursor: cursor, offset: local ? activeOffset : .zero)
     }
 
     static func previewCenter(cursor: NSPoint, offset: NSPoint) -> NSPoint {
         NSPoint(x: cursor.x + offset.x, y: cursor.y + offset.y)
+    }
+
+    static func previewOffset(icon: NSRect?, tile: NSRect, mouseDown: NSPoint) -> NSPoint {
+        let hitRect = folderIconHitRect(icon: icon, tile: tile)
+        let center = hitRect.isNull || hitRect.isEmpty ? NSPoint(x: tile.midX, y: tile.midY) : NSPoint(x: hitRect.midX, y: hitRect.midY)
+        return NSPoint(x: center.x - mouseDown.x, y: center.y - mouseDown.y)
     }
 
     static func targetIndex(at point: NSPoint, frames: [NSRect]) -> Int? {
@@ -213,8 +235,79 @@ final class DragPreviewGeometry {
         }
     }
 
-    func destination(currentDirectory: URL, local: Bool) -> URL? {
-        destination(currentDirectory: currentDirectory, center: previewCenter(local: local), excludeSource: local)
+    func destination(currentDirectory: URL, local: Bool, cursor eventCursor: NSPoint? = nil) -> URL? {
+        let cursor = eventCursor ?? NSEvent.mouseLocation
+        let computedPreview = Self.previewCenter(cursor: cursor, offset: local ? activeOffset : .zero)
+        // For our own grid preview, the displayed icon is the visual contract.
+        // The pointer can be offset when the user grabs an icon edge or its name;
+        // combining both positions produces a larger, misleading target area.
+        let customPreview = local && usesCustomPreview
+        let visiblePreview = customPreview ? DragMoveIndicator.shared.lastDisplayedCenter : nil
+        return destination(currentDirectory: currentDirectory,
+                           preview: visiblePreview ?? computedPreview,
+                           cursor: cursor, excludeSource: local,
+                           allowCursorFallback: !customPreview, allowIconOverlap: customPreview)
+    }
+
+    func destination(currentDirectory: URL, preview: NSPoint, cursor: NSPoint,
+                     excludeSource: Bool = true, allowCursorFallback: Bool = true,
+                     allowIconOverlap: Bool = false) -> URL? {
+        if let target = destination(currentDirectory: currentDirectory, center: preview, excludeSource: excludeSource) {
+            return target
+        }
+        if allowIconOverlap, let target = overlappingIconDestination(currentDirectory: currentDirectory, preview: preview, excludeSource: excludeSource) {
+            return target
+        }
+        guard allowCursorFallback, cursor != preview else { return nil }
+        return destination(currentDirectory: currentDirectory, center: cursor, excludeSource: excludeSource)
+    }
+
+    static func folderIconHitRect(icon: NSRect?, tile: NSRect) -> NSRect {
+        let fallback = NSRect(x: tile.midX - 22, y: tile.maxY - 50, width: 44, height: 44)
+        return (icon ?? fallback).intersection(tile)
+    }
+
+    /// Accept a visible overlap above the folder, but do not extend the target
+    /// down into the filename even when the dragged image still touches it.
+    static func folderOverlapArea(previewCenter: NSPoint, icon: NSRect) -> CGFloat {
+        guard !icon.isNull, !icon.isEmpty, previewCenter.y >= icon.minY else { return 0 }
+        let draggedIcon = NSRect(x: previewCenter.x - 24, y: previewCenter.y - 24, width: 48, height: 48)
+        let overlap = draggedIcon.intersection(icon)
+        guard !overlap.isNull, !overlap.isEmpty else { return 0 }
+        let area = overlap.width * overlap.height
+        return area >= icon.width * icon.height * 0.1 ? area : 0
+    }
+
+    private func overlappingIconDestination(currentDirectory: URL, preview: NSPoint, excludeSource: Bool) -> URL? {
+        guard let window = cachedWindow, cachedDirectoryURL == currentDirectory, let directory = cachedDirectoryID else { return nil }
+        let point = window.convertPoint(fromScreen: preview)
+        return cachedTargets.filter { $0.parentID == directory && (!excludeSource || $0.id != activeURLID) }
+            .compactMap { target -> (URL, CGFloat)? in
+                let icon = Self.folderIconHitRect(icon: target.iconFrame, tile: target.frame)
+                let area = Self.folderOverlapArea(previewCenter: point, icon: icon)
+                return area > 0 ? (target.url, area) : nil
+            }.max { $0.1 < $1.1 }?.0
+    }
+
+    func diagnosticOffsets(currentDirectory: URL, local: Bool, eventCursor: NSPoint? = nil) -> String {
+        guard let window = cachedWindow, let directory = cachedDirectoryID,
+              cachedDirectoryURL == currentDirectory else { return "geometry=unavailable" }
+        let pointer = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        let point = local && usesCustomPreview ? (DragMoveIndicator.shared.lastDisplayedCenter ?? previewCenter(local: local)) : previewCenter(local: local)
+        let preview = window.convertPoint(fromScreen: point)
+        let candidates = cachedTargets.filter { $0.parentID == directory && (!local || $0.id != activeURLID) }
+        guard let nearest = candidates.min(by: {
+            hypot($0.frame.midX - preview.x, $0.frame.midY - preview.y) < hypot($1.frame.midX - preview.x, $1.frame.midY - preview.y)
+        }) else { return "geometry=no-target" }
+        func offset(_ point: NSPoint) -> String {
+            "\(TabDiagnostics.coordinate(point.x - nearest.frame.midX)),\(TabDiagnostics.coordinate(point.y - nearest.frame.midY))"
+        }
+        let icon = Self.folderIconHitRect(icon: nearest.iconFrame, tile: nearest.frame)
+        let event = eventCursor.map { window.convertPoint(fromScreen: $0) }
+        func iconOffset(_ point: NSPoint) -> String {
+            "\(TabDiagnostics.coordinate(point.x - icon.midX)),\(TabDiagnostics.coordinate(point.y - icon.midY))"
+        }
+        return "previewOffset=\(offset(preview)) pointerOffset=\(offset(pointer)) tileSize=\(TabDiagnostics.coordinate(nearest.frame.width))x\(TabDiagnostics.coordinate(nearest.frame.height)) iconSize=\(TabDiagnostics.coordinate(icon.width))x\(TabDiagnostics.coordinate(icon.height)) iconSource=\(nearest.iconFrame == nil ? "fallback" : "view") previewIcon=\(iconOffset(preview)) pointerIcon=\(iconOffset(pointer)) eventIcon=\(event.map(iconOffset) ?? "unavailable")"
     }
 
     func destination(currentDirectory: URL, center: NSPoint, excludeSource: Bool = true) -> URL? {
@@ -232,9 +325,13 @@ final class DragPreviewGeometry {
             cachedWindow = window
             targetScanCount += 1
             var found: [Target] = []
+            var iconFrames: [String: NSRect] = [:]
             var scroll: NSScrollView?
             func collect(_ view: NSView) {
                 guard !view.isHidden else { return }
+                if let tile = view as? NativeFileTileView, let id = tile.representedID {
+                    iconFrames[id] = tile.iconFrameInWindow
+                }
                 if let marker = view as? FileTileMarkerView, let item = marker.item {
                     if scroll == nil { scroll = marker.enclosingScrollView }
                     guard item.isDirectory, !item.isBundle, item.url.isFileURL else { return }
@@ -245,22 +342,36 @@ final class DragPreviewGeometry {
                         ancestor = view.superview
                     }
                     if !frame.isNull && !frame.isEmpty {
-                        found.append(Target(frame: frame, url: item.url.standardizedFileURL, parent: item.url.deletingLastPathComponent().standardizedFileURL))
+                        found.append(Target(frame: frame, iconFrame: nil, url: item.url.standardizedFileURL,
+                                            id: FileItem.canonicalID(for: item.url),
+                                            parentID: item.url.deletingLastPathComponent().standardizedFileURL.resolvingSymlinksInPath().path))
                     }
                     return
                 }
                 for child in view.subviews { collect(child) }
             }
             collect(root)
-            cachedTargets = found
+            cachedTargets = found.map { target in
+                var value = target
+                value.iconFrame = iconFrames[target.id]
+                return value
+            }
             cachedScroll = scroll
             cachedBounds = cachedScroll?.contentView.bounds ?? .null
         }
         let point = window.convertPoint(fromScreen: center)
-        let directory = currentDirectory.standardizedFileURL.path
+        if cachedDirectoryURL != currentDirectory {
+            cachedDirectoryURL = currentDirectory
+            cachedDirectoryID = currentDirectory.standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        guard let directory = cachedDirectoryID else { return nil }
         var best: Target?
-        for target in cachedTargets where target.parent.path == directory && target.frame.contains(point) {
-            if excludeSource && target.url == activeURL { continue }
+        for target in cachedTargets where target.parentID == directory {
+            if excludeSource && target.id == activeURLID { continue }
+            // Restrict moves to the actual folder icon, never its filename or
+            // the surrounding tile. A fallback is needed while a tile is loading.
+            let icon = Self.folderIconHitRect(icon: target.iconFrame, tile: target.frame)
+            guard !icon.isNull && icon.contains(point) else { continue }
             if best == nil || target.frame.width * target.frame.height < best!.frame.width * best!.frame.height { best = target }
         }
         return best?.url

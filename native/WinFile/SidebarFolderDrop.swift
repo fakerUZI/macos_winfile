@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 enum SidebarFolderDrop {
     private static let localDragType = "local.leaffiles.internal-file-drag"
     private static var draggedURL: URL?
+    static var currentDraggedURL: URL? { draggedURL }
     private static var draggedParent: URL?
     private static var checkedDirectory: URL?
     private static var checkedDirectoryMatches = false
@@ -13,10 +14,8 @@ enum SidebarFolderDrop {
     @MainActor static func provider(for url: URL, customPreview: Bool = false, isDirectory: Bool = false) -> NSItemProvider? {
         guard url.isFileURL else { return nil }
         DispatchQueue.main.async { TabDiagnostics.shared.record("sidebar.drag.source") }
+        rememberSource(url)
         DragPreviewGeometry.shared.begin(url: url, customPreview: customPreview, isDirectory: isDirectory)
-        draggedURL = url
-        draggedParent = url.deletingLastPathComponent().standardizedFileURL
-        checkedDirectory = nil
         let provider = NSItemProvider(object: url as NSURL)
         provider.registerDataRepresentation(forTypeIdentifier: localDragType, visibility: .ownProcess) { completion in
             completion(Data(), nil)
@@ -25,11 +24,30 @@ enum SidebarFolderDrop {
         return provider
     }
 
+    private static func rememberSource(_ url: URL) {
+        draggedURL = url
+        draggedParent = url.deletingLastPathComponent().standardizedFileURL
+        checkedDirectory = nil
+    }
+
+    @MainActor static func nativePasteboardItem(for item: FileItem) -> NSPasteboardItem? {
+        guard item.url.isFileURL else { return nil }
+        let pasteboardItem = NSPasteboardItem()
+        guard pasteboardItem.setString(item.url.absoluteString, forType: .fileURL),
+              pasteboardItem.setData(Data(), forType: NSPasteboard.PasteboardType(localDragType)) else { return nil }
+        rememberSource(item.url)
+        DragPreviewGeometry.shared.begin(url: item.url, customPreview: true,
+                                         isDirectory: item.isDirectory, managedSession: true)
+        return pasteboardItem
+    }
+
     static func operation(for info: DropInfo, currentDirectory: URL?) -> DropOperation {
-        guard let directory = currentDirectory, let parent = draggedParent,
-              isLocal(info) else {
-            return .copy
-        }
+        guard isLocal(info) else { return .copy }
+        return operationForLocalDrag(currentDirectory: currentDirectory)
+    }
+
+    static func operationForLocalDrag(currentDirectory: URL?) -> DropOperation {
+        guard let directory = currentDirectory, let parent = draggedParent else { return .copy }
         if checkedDirectory != directory {
             checkedDirectory = directory
             checkedDirectoryMatches = parent == directory.standardizedFileURL
@@ -60,6 +78,11 @@ enum SidebarFolderDrop {
         return FileItem.canonicalID(for: source) != FileItem.canonicalID(for: destination)
     }
 
+    static func isMovingToFolder(destination: URL?, isMove: Bool) -> Bool {
+        guard let destination else { return false }
+        return isMovingToFolder(source: draggedURL, destination: destination, isMove: isMove)
+    }
+
     static func load(_ providers: [NSItemProvider], completion: @escaping ([URL], Int) -> Void) {
         let group = DispatchGroup()
         let lock = NSLock()
@@ -83,6 +106,14 @@ enum SidebarFolderDrop {
 enum FileDropPolicy {
     enum Action { case move, copy, ignore, mixed }
 
+    static func permittedOperation(preferMove: Bool, allowed: NSDragOperation) -> NSDragOperation {
+        let preferred: NSDragOperation = preferMove ? .move : .copy
+        if allowed.contains(preferred) { return preferred }
+        if allowed.contains(.copy) { return .copy }
+        if allowed.contains(.move) { return .move }
+        return []
+    }
+
     static func action(for urls: [URL], currentDirectory: URL, destination: URL) -> Action {
         let sources = urls.filter(\.isFileURL)
         guard !sources.isEmpty, currentDirectory.isFileURL, destination.isFileURL else { return .ignore }
@@ -98,75 +129,85 @@ enum FileDropPolicy {
     }
 }
 
-/// A transparent, mouse-ignoring badge follows the drag image without changing
-/// the drag source or the folder's hit testing. It exists only over a move target.
+/// A hit-test-transparent in-window preview follows the drag, with scissors
+/// shown only when the current target is a move destination.
 @MainActor
 final class DragMoveIndicator {
     static let shared = DragMoveIndicator()
-    private var panel: NSPanel?
+    private final class PassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    private var overlay: NSView?
+    var overlayViewForTesting: NSView? { overlay }
     private var cleanupTimer: Timer?
     private var previewView: NSImageView?
     private var scissorsView: NSImageView?
+    private var nameView: NSTextField?
     private(set) var hasPreview = false
-    private var pendingOrigin: NSPoint?
+    private var standaloneIndicator = false
+    private var managedBySession = false
+    private(set) var lastDisplayedCenter: NSPoint?
+    var nativePreviewUpdater: ((Bool) -> Void)?
 
-    /// SwiftUI's system preview is transparent; this owned image can disappear
-    /// immediately on release, without waiting for the system's drop animation.
-    func beginPreview(image: NSImage) {
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
+    func beginPreview(image: NSImage, name: String, managedSession: Bool = false) {
+        let view = overlay ?? makeOverlay()
+        overlay = view
         hasPreview = true
-        TabDiagnostics.shared.record("grid.drag.preview", detail: "visible=true")
+        standaloneIndicator = false
+        managedBySession = managedSession
+        lastDisplayedCenter = nil
+        if managedSession { return }
         previewView?.image = image
         previewView?.isHidden = false
+        nameView?.stringValue = name
+        nameView?.isHidden = false
         scissorsView?.isHidden = true
         updatePosition()
-        if !panel.isVisible { panel.orderFrontRegardless() }
-        startTimer()
+        if !managedSession { startTimer() }
     }
 
     func endPreview() {
-        if hasPreview { TabDiagnostics.shared.record("grid.drag.preview", detail: "visible=false") }
         hasPreview = false
+        standaloneIndicator = false
+        managedBySession = false
+        nativePreviewUpdater = nil
         previewView?.image = nil
         previewView?.isHidden = true
+        nameView?.stringValue = ""
+        nameView?.isHidden = true
         scissorsView?.isHidden = true
         cleanupTimer?.invalidate()
         cleanupTimer = nil
-        pendingOrigin = nil
-        panel?.orderOut(nil)
+        overlay?.removeFromSuperview()
     }
 
     func setVisible(_ visible: Bool) {
+        if managedBySession {
+            nativePreviewUpdater?(visible)
+            return
+        }
         if hasPreview {
             scissorsView?.isHidden = !visible
-            if visible { updatePosition() }
+            if !managedBySession { updatePosition() }
             return
         }
         guard visible else {
-            cleanupTimer?.invalidate()
-            cleanupTimer = nil
-            pendingOrigin = nil
-            scissorsView?.isHidden = true
-            panel?.orderOut(nil)
+            endPreview()
             return
         }
-        let panel = self.panel ?? makePanel()
-        self.panel = panel
+        if overlay == nil { overlay = makeOverlay() }
+        standaloneIndicator = true
         previewView?.isHidden = true
+        nameView?.isHidden = true
         scissorsView?.isHidden = false
         updatePosition()
-        if !panel.isVisible { panel.orderFrontRegardless() }
         startTimer()
     }
 
     private func startTimer() {
         if cleanupTimer == nil {
             let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.updateForMouseButtons(NSEvent.pressedMouseButtons)
-                }
+                MainActor.assumeIsolated { self?.updateForMouseButtons(NSEvent.pressedMouseButtons) }
             }
             cleanupTimer = timer
             RunLoop.main.add(timer, forMode: .common)
@@ -174,59 +215,96 @@ final class DragMoveIndicator {
         }
     }
 
+    var diagnosticStatus: String {
+        let attached = overlay?.window != nil
+        let visible = overlay?.window?.isVisible == true && overlay?.isHiddenOrHasHiddenAncestor == false
+        return "preview=\(hasPreview) attached=\(attached) viewVisible=\(visible) scissorsHidden=\(scissorsView?.isHidden ?? true)"
+    }
+
     func updateForMouseButtons(_ buttons: Int) {
         if buttons & 1 == 0 {
+            if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1", hasPreview {
+                TabDiagnostics.shared.record("grid.preview.timerEnd", detail: diagnosticStatus)
+            }
             endPreview()
             DragPreviewGeometry.shared.restoreSourceIcon()
         } else {
             updatePosition()
-            flushPosition()
         }
     }
 
     func updatePosition() {
-        guard let panel else { return }
-        let center = DragPreviewGeometry.shared.previewCenter(local: true)
-        let origin = NSPoint(x: center.x - 24, y: center.y - 28)
-        if !panel.isVisible {
-            pendingOrigin = nil
-            if panel.frame.origin != origin { move(panel, to: origin) }
+        positionOverlay(screenCenter: DragPreviewGeometry.shared.previewCenter(local: true))
+    }
+
+    /// The overlay itself stays fixed over the window; only its pass-through
+    /// contents move. Moving the overlay's hit-test bounds during an AppKit
+    /// drag can cause the destination to receive a spurious exit.
+    func positionOverlay(screenCenter center: NSPoint) {
+        if managedBySession {
+            lastDisplayedCenter = center
             return
         }
-        pendingOrigin = origin
-    }
-
-    private func flushPosition() {
-        guard let panel, panel.isVisible, let origin = pendingOrigin else { return }
-        pendingOrigin = nil
-        if panel.frame.origin != origin { move(panel, to: origin) }
-    }
-
-    private func move(_ panel: NSPanel, to origin: NSPoint) {
+        guard (hasPreview || standaloneIndicator), let view = overlay else { return }
+        guard let window = NSApp.orderedWindows.first(where: {
+            $0.isVisible && !$0.ignoresMouseEvents && $0.frame.contains(center) && $0.contentView != nil
+        }), let root = window.contentView else {
+            view.removeFromSuperview()
+            return
+        }
+        if view.superview !== root {
+            view.removeFromSuperview()
+            view.frame = root.bounds
+            view.autoresizingMask = [.width, .height]
+            root.addSubview(view, positioned: .above, relativeTo: nil)
+        } else if view.frame != root.bounds {
+            view.frame = root.bounds
+        }
+        let point = view.convert(window.convertPoint(fromScreen: center), from: nil)
+        let iconFrame = NSRect(x: point.x - 24, y: point.y - 24, width: 48, height: 48)
+        let nameFrame = NSRect(x: point.x - 76, y: point.y - 61, width: 152, height: 32)
+        let scissorsFrame = NSRect(x: point.x + 12, y: point.y - 28, width: 20, height: 20)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        panel.setFrameOrigin(origin)
+        if previewView?.frame != iconFrame { previewView?.frame = iconFrame }
+        if nameView?.frame != nameFrame { nameView?.frame = nameFrame }
+        if scissorsView?.frame != scissorsFrame { scissorsView?.frame = scissorsFrame }
         CATransaction.commit()
+        if hasPreview, let previewView {
+            lastDisplayedCenter = Self.screenCenter(of: previewView)
+        }
     }
 
-    private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 56, height: 56),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.isOpaque = false
-        panel.identifier = NSUserInterfaceItemIdentifier("drag.move.indicator")
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.animationBehavior = .none
-        panel.ignoresMouseEvents = true
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.draggingWindow)) + 1)
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: 56, height: 56))
-        let preview = NSImageView(frame: NSRect(x: 0, y: 4, width: 48, height: 48))
+    static func screenCenter(of view: NSView) -> NSPoint? {
+        guard let window = view.window else { return nil }
+        let center = NSPoint(x: view.bounds.midX, y: view.bounds.midY)
+        return window.convertPoint(toScreen: view.convert(center, to: nil))
+    }
+
+    private func makeOverlay() -> NSView {
+        let content = PassthroughView(frame: NSRect(x: 0, y: 0, width: 160, height: 92))
+        content.identifier = NSUserInterfaceItemIdentifier("drag.move.indicator")
+        content.wantsLayer = true
+        content.layer?.zPosition = 10000
+        let preview = NSImageView(frame: NSRect(x: 56, y: 40, width: 48, height: 48))
         preview.imageScaling = .scaleProportionallyUpOrDown
         preview.isHidden = true
         content.addSubview(preview)
         previewView = preview
-        let imageView = NSImageView(frame: NSRect(x: 36, y: 0, width: 20, height: 20))
+        let label = NSTextField(labelWithString: "")
+        label.identifier = NSUserInterfaceItemIdentifier("drag.preview.name")
+        label.frame = NSRect(x: 4, y: 3, width: 152, height: 32)
+        label.alignment = .center
+        label.font = .systemFont(ofSize: 11)
+        label.textColor = .labelColor
+        label.maximumNumberOfLines = 2
+        label.cell?.wraps = true
+        label.cell?.usesSingleLineMode = false
+        label.lineBreakMode = .byTruncatingMiddle
+        label.isHidden = true
+        content.addSubview(label)
+        nameView = label
+        let imageView = NSImageView(frame: NSRect(x: 92, y: 36, width: 20, height: 20))
         imageView.identifier = NSUserInterfaceItemIdentifier("drag.move.scissors")
         imageView.wantsLayer = true
         imageView.layer?.actions = ["position": NSNull(), "bounds": NSNull(), "contents": NSNull()]
@@ -248,8 +326,7 @@ final class DragMoveIndicator {
         imageView.isHidden = true
         content.addSubview(imageView)
         scissorsView = imageView
-        panel.contentView = content
-        return panel
+        return content
     }
 }
 
@@ -350,18 +427,5 @@ struct SidebarFolderDropDelegate: DropDelegate {
         guard !providers.isEmpty else { return false }
         SidebarFolderDrop.load(providers, completion: onFolders)
         return true
-    }
-}
-
-struct LocalFileDrag: ViewModifier {
-    let url: URL
-    let isDirectory: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if url.isFileURL {
-            content.onDrag {
-                SidebarFolderDrop.provider(for: url, customPreview: true, isDirectory: isDirectory) ?? NSItemProvider()
-            } preview: { Color.black.opacity(0.004).frame(width: 48, height: 48) }
-        }
-        else { content }
     }
 }

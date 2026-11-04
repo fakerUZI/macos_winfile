@@ -12,6 +12,12 @@ struct NativeIconGrid: NSViewRepresentable {
     let locateIndex: Int?
     let locateRequest: UUID?
     let makeTile: (FileItem) -> AnyView
+    var onNativeDragUpdate: ((NSDraggingInfo) -> NSDragOperation)? = nil
+    var onNativeDragExit: (() -> Void)? = nil
+    var onNativeDragPrepare: ((NSDraggingInfo) -> Void)? = nil
+    var onNativeSourceMove: ((NSPoint?) -> Void)? = nil
+    var onNativeSourceEnd: (() -> Void)? = nil
+    var onNativeDrop: ((NSDraggingInfo, NSPoint) -> Bool)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NativeIconGridScrollView {
@@ -20,6 +26,10 @@ struct NativeIconGrid: NSViewRepresentable {
         return scroll
     }
     func updateNSView(_ scroll: NativeIconGridScrollView, context: Context) {
+        if let document = scroll.documentView as? NativeIconGridDocumentView {
+            document.configureDrop(update: onNativeDragUpdate, exit: onNativeDragExit, prepare: onNativeDragPrepare,
+                                   sourceMove: onNativeSourceMove, sourceEnd: onNativeSourceEnd, perform: onNativeDrop)
+        }
         context.coordinator.configure(items: items, selectedIDs: selectedIDs, cutIDs: cutIDs, positions: positions,
             onScrollOffset: onScrollOffset, environment: context.environment, makeTile: makeTile,
             locateIndex: locateIndex, locateRequest: locateRequest)
@@ -184,7 +194,7 @@ struct NativeIconGrid: NSViewRepresentable {
                 let host: NSHostingView<AnyView>
                 if let existing = hosts[index] { host = existing }
                 else {
-                    host = spareHosts.popLast() ?? NSHostingView(rootView: freeItemView(index))
+                    host = spareHosts.popLast() ?? NativeIconGridRowHost(rootView: freeItemView(index))
                     host.rootView = freeItemView(index)
                     host.sizingOptions = []
                     if host.superview == nil { document.addSubview(host); scroll.createdRowHosts += 1 }
@@ -193,6 +203,7 @@ struct NativeIconGrid: NSViewRepresentable {
                 if host.frame != freeFrames[index] { host.frame = freeFrames[index] }
             }
             while spareHosts.count > 4 { spareHosts.removeLast().removeFromSuperview() }
+            (document as? NativeIconGridDocumentView)?.ensureDropSurfaceOnTop()
             (document as? NativeIconGridDocumentView)?.refreshHover()
         }
 
@@ -243,7 +254,7 @@ struct NativeIconGrid: NSViewRepresentable {
                         host = reused
                         host.rootView = rowView(row)
                     } else {
-                        host = NSHostingView(rootView: rowView(row))
+                        host = NativeIconGridRowHost(rootView: rowView(row))
                         host.sizingOptions = []
                         document.addSubview(host)
                         scroll.createdRowHosts += 1
@@ -255,9 +266,57 @@ struct NativeIconGrid: NSViewRepresentable {
                 }
             }
             while spareHosts.count > 4 { spareHosts.removeLast().removeFromSuperview() }
+            (document as? NativeIconGridDocumentView)?.ensureDropSurfaceOnTop()
             (document as? NativeIconGridDocumentView)?.refreshHover()
         }
     }
+}
+
+/// The hosting rows cover file icons and labels. Forward drag events to the
+/// document so moving across a row cannot lose the active drop destination.
+final class NativeIconGridRowHost: NSHostingView<AnyView> {
+    required init(rootView: AnyView) {
+        super.init(rootView: rootView)
+        registerForDraggedTypes([.fileURL])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    private var gridDocument: NativeIconGridDocumentView? {
+        enclosingScrollView?.documentView as? NativeIconGridDocumentView
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        gridDocument?.draggingEntered(sender) ?? []
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        gridDocument?.draggingUpdated(sender) ?? []
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) { gridDocument?.draggingExited(sender) }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        gridDocument?.prepareForDragOperation(sender) ?? false
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        gridDocument?.performDragOperation(sender) ?? false
+    }
+}
+
+/// Only participates in hit testing during a local grid drag. This keeps the
+/// destination stable while the pointer crosses hosted SwiftUI rows and tiles.
+final class NativeIconGridDropSurface: NSView {
+    weak var document: NativeIconGridDocumentView?
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard DragMoveIndicator.shared.hasPreview else { return nil }
+        return bounds.contains(convert(point, from: superview)) ? self : nil
+    }
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        registerForDraggedTypes([.fileURL])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { document?.draggingEntered(sender) ?? [] }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { document?.draggingUpdated(sender) ?? [] }
+    override func draggingExited(_ sender: NSDraggingInfo?) { document?.draggingExited(sender) }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { document?.prepareForDragOperation(sender) ?? false }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { document?.performDragOperation(sender) ?? false }
 }
 
 final class NativeIconGridScrollView: NSScrollView {
@@ -284,7 +343,171 @@ final class NativeIconGridScrollView: NSScrollView {
         onResize?()
     }
 }
+@MainActor
+private final class NativeIconGridDragSource: NSObject, NSDraggingSource {
+    weak var document: NativeIconGridDocumentView?
+    init(document: NativeIconGridDocumentView) { self.document = document }
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .withinApplication ? [.move, .copy] : .copy
+    }
+    func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
+        document?.nativeSourceMoved(to: screenPoint)
+    }
+    func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) {
+        document?.nativeSourceMoved(to: screenPoint)
+    }
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+        if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1" {
+            TabDiagnostics.shared.record("grid.source.drag.end", detail: "operation=\(operation.rawValue)")
+        }
+        document?.nativeSourceEnded()
+    }
+}
+
 final class NativeIconGridDocumentView: NSView {
+    private lazy var dropSurface: NativeIconGridDropSurface = {
+        let view = NativeIconGridDropSurface(frame: bounds)
+        view.document = self
+        view.autoresizingMask = [.width, .height]
+        view.wantsLayer = true
+        view.layer?.zPosition = 10000
+        return view
+    }()
+    private var dragUpdate: ((NSDraggingInfo) -> NSDragOperation)?
+    private var dragExit: (() -> Void)?
+    private var dragPrepare: ((NSDraggingInfo) -> Void)?
+    private var sourceMove: ((NSPoint?) -> Void)?
+    private var sourceEnd: (() -> Void)?
+    private var activeDragSource: NativeIconGridDragSource?
+    private var drop: ((NSDraggingInfo, NSPoint) -> Bool)?
+    private var acceptsFileDrops = false
+
+    func configureDrop(update: ((NSDraggingInfo) -> NSDragOperation)?, exit: (() -> Void)?,
+                       prepare: ((NSDraggingInfo) -> Void)?, sourceMove: ((NSPoint?) -> Void)? = nil,
+                       sourceEnd: (() -> Void)? = nil, perform: ((NSDraggingInfo, NSPoint) -> Bool)?) {
+        dragUpdate = update
+        dragExit = exit
+        dragPrepare = prepare
+        self.sourceMove = sourceMove
+        self.sourceEnd = sourceEnd
+        drop = perform
+        let enabled = update != nil && perform != nil
+        if enabled != acceptsFileDrops {
+            acceptsFileDrops = enabled
+            if enabled {
+                registerForDraggedTypes([.fileURL])
+                addSubview(dropSurface, positioned: .above, relativeTo: nil)
+            } else {
+                unregisterDraggedTypes()
+                dropSurface.removeFromSuperview()
+            }
+        }
+    }
+
+    /// Start an AppKit drag so position and completion come from one session,
+    /// even when destination views send transient exit/enter events.
+    func beginNativeDrag(item: FileItem, mouseDown: NSEvent) -> Bool {
+        guard activeDragSource == nil, window != nil, sourceMove != nil,
+              let pasteboardItem = SidebarFolderDrop.nativePasteboardItem(for: item) else { return false }
+        let source = NativeIconGridDragSource(document: self)
+        activeDragSource = source
+        let draggingItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+        let origin = convert(mouseDown.locationInWindow, from: nil)
+        let icon = item.isDirectory ? FileIconService.folderPlaceholder : NSWorkspace.shared.icon(forFile: item.url.path)
+        func image(_ scissors: Bool) -> NSImage {
+            NSImage(size: NSSize(width: 112, height: 76), flipped: false) { _ in
+                icon.draw(in: NSRect(x: 32, y: 28, width: 48, height: 48))
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.alignment = .center
+                paragraph.lineBreakMode = .byTruncatingMiddle
+                (item.name as NSString).draw(in: NSRect(x: 0, y: 1, width: 112, height: 24), withAttributes: [
+                    .font: NSFont.systemFont(ofSize: 11),
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: paragraph
+                ])
+                if scissors, let symbol = NSImage(systemSymbolName: "scissors", accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: 15, weight: .medium)) {
+                    symbol.draw(in: NSRect(x: 62, y: 28, width: 18, height: 18))
+                }
+                return true
+            }
+        }
+        let plainImage = image(false)
+        let moveImage = image(true)
+        draggingItem.setDraggingFrame(NSRect(x: origin.x - 56, y: origin.y - 24, width: 112, height: 76),
+                                      contents: plainImage)
+        let session = beginDraggingSession(with: [draggingItem], event: mouseDown, source: source)
+        session.animatesToStartingPositionsOnCancelOrFail = false
+        DragMoveIndicator.shared.nativePreviewUpdater = { [weak self, weak session] scissors in
+            DispatchQueue.main.async {
+                guard DragPreviewGeometry.shared.usesManagedDrag, let self, let session else { return }
+                let preview = scissors ? moveImage : plainImage
+                session.enumerateDraggingItems(options: [], for: self, classes: [NSPasteboardItem.self], searchOptions: [:]) { draggingItem, _, _ in
+                    draggingItem.imageComponentsProvider = {
+                        let component = NSDraggingImageComponent(key: .icon)
+                        component.contents = preview
+                        component.frame = NSRect(x: 0, y: 0, width: 112, height: 76)
+                        return [component]
+                    }
+                }
+            }
+        }
+        return true
+    }
+
+    fileprivate func nativeSourceMoved(to screenPoint: NSPoint) {
+        guard DragPreviewGeometry.shared.usesManagedDrag, let window else { return }
+        let point = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
+        guard visibleRect.contains(point) else {
+            sourceMove?(nil)
+            return
+        }
+        DragMoveIndicator.shared.positionOverlay(screenCenter: screenPoint)
+        sourceMove?(screenPoint)
+    }
+
+    fileprivate func nativeSourceEnded() {
+        sourceEnd?()
+        DragPreviewGeometry.shared.restoreSourceIcon()
+        activeDragSource = nil
+    }
+
+    /// NSView hit testing follows subview order, independently of layer
+    /// zPosition. Rows created after the surface must not cover its hit area.
+    func ensureDropSurfaceOnTop() {
+        guard acceptsFileDrops, dropSurface.superview === self, subviews.last !== dropSurface else { return }
+        dropSurface.removeFromSuperview()
+        addSubview(dropSurface, positioned: .above, relativeTo: nil)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1" {
+            TabDiagnostics.shared.record("grid.native.drag.enter")
+        }
+        DragPreviewGeometry.shared.invalidateTargets()
+        return dragUpdate?(sender) ?? []
+    }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dragUpdate?(sender) ?? []
+    }
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        if ProcessInfo.processInfo.environment["WINFILE_DRAG_GEOMETRY"] == "1" {
+            TabDiagnostics.shared.record("grid.native.drag.exit")
+        }
+        dragExit?()
+    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let accepted = dragUpdate?(sender).isEmpty == false && drop != nil
+        if accepted { dragPrepare?(sender) }
+        TabDiagnostics.shared.record("grid.native.drag.prepare", detail: "accepted=\(accepted)")
+        return accepted
+    }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let documentPoint = convert(sender.draggingLocation, from: nil)
+        let visibleOrigin = enclosingScrollView?.contentView.bounds.origin ?? .zero
+        let point = NSPoint(x: documentPoint.x - visibleOrigin.x, y: documentPoint.y - visibleOrigin.y)
+        return drop?(sender, point) ?? false
+    }
     private var tracking: NSTrackingArea?
     private(set) weak var hoveredTile: NativeFileTileView?
     override var isFlipped: Bool { true }

@@ -38,6 +38,11 @@ enum SortField: String, CaseIterable {
     }
 }
 
+enum IconPositionStorage {
+    static let key = "IconPositions.v1"
+    static let didReset = Notification.Name("LeafFiles.IconPositionsDidReset")
+}
+
 struct ClipboardPayload {
     enum Mode { case copy, cut }
     var mode: Mode
@@ -1753,6 +1758,25 @@ final class BrowserModel: ObservableObject {
     }
 
     // MARK: - 排序
+
+    /// Only explicit user sorting resets manual positions. Session restoration
+    /// and background refreshes continue to preserve the saved arrangement.
+    func sortByUser(field: SortField? = nil, ascending: Bool? = nil) {
+        resetIconPositions()
+        if let field { sortFieldRaw = field.rawValue }
+        if let ascending { sortAscending = ascending }
+        applySort()
+    }
+
+    func resetIconPositions() {
+        guard !isCategoryView, !isSearching, let directory = currentDirectory,
+              directory.isFileURL else { return }
+        let directoryID = FileItem.canonicalID(for: directory)
+        var all = UserDefaults.standard.dictionary(forKey: IconPositionStorage.key) as? [String: [String: [Double]]] ?? [:]
+        all.removeValue(forKey: directoryID)
+        UserDefaults.standard.set(all, forKey: IconPositionStorage.key)
+        NotificationCenter.default.post(name: IconPositionStorage.didReset, object: directoryID)
+    }
 
     private func applySort() {
         items = FileSystemService.sort(items, field: sortField, ascending: sortAscending)

@@ -506,10 +506,10 @@ struct MainView: View {
 
     private var presentationControls: some View {
         HStack(spacing: 8) {
-            Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortField = $0 })) {
+            Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortByUser(field: $0) })) {
                 ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
             }.labelsHidden().frame(width: 110)
-            Button { model.sortAscendingFlag.toggle() } label: {
+            Button { model.sortByUser(ascending: !model.sortAscendingFlag) } label: {
                 Image(systemName: model.sortAscendingFlag ? "arrow.up" : "arrow.down")
             }.help(WLocalizedString("action.toggleSortOrder", comment: "切换升序/降序"))
             Picker(L("layout.options", "显示与排序"), selection: Binding(get: { model.layout }, set: { model.setLayout($0) })) {
@@ -521,10 +521,10 @@ struct MainView: View {
 
     @ViewBuilder
     private var presentationMenu: some View {
-        Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortField = $0 })) {
+        Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortByUser(field: $0) })) {
             ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
         }
-        Toggle(L("sort.ascending", "升序"), isOn: Binding(get: { model.sortAscendingFlag }, set: { model.sortAscendingFlag = $0 }))
+        Toggle(L("sort.ascending", "升序"), isOn: Binding(get: { model.sortAscendingFlag }, set: { model.sortByUser(ascending: $0) }))
         Divider()
         Button(L("layout.details", "详细信息")) { model.setLayout(.details) }
         Button(L("layout.icons", "大图标")) { model.setLayout(.icons) }
