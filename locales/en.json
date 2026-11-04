@@ -472,5 +472,19 @@
   "保留选择，": "Keep your choice,",
   "安心更新。": "update with confidence.",
   "切换前校验图标版本并保留回退副本；更新后恢复你的图标选择。": "Icon variants are verified before switching, with a rollback copy and your selection restored after updates.",
-  "文件操作完成后再重启，继续保留原有设置和页签。": "Restart after file operations finish; your settings and tabs stay in place."
+  "文件操作完成后再重启，继续保留原有设置和页签。": "Restart after file operations finish; your settings and tabs stay in place.",
+  "文件拖放，": "File dragging,",
+  "更自然。": "made more natural.",
+  "2026.11.04 · 项目近况": "2026.11.04 · Project update",
+  "v{{VERSION}} 改进文件夹拖放与图标排列。可通过原终端命令安装，或在应用内检查更新。": "v{{VERSION}} improves folder dragging and icon arrangement. Install with the existing terminal command or check for updates in the app.",
+  "拖入文件夹时显示移动提示；在空白处可自由排列图标，重新排序时恢复所选顺序。": "A move indicator appears over a destination folder. Arrange icons freely on empty space, or choose a sort order to reset their positions.",
+  "01 / 文件拖放": "01 / DRAG AND DROP",
+  "拖动到目标文件夹时显示移动提示，松开后将文件移入。": "A move indicator appears over a destination folder; release to move the item inside.",
+  "拖动预览保留文件名称。": "The drag preview keeps the file name.",
+  "02 / 图标排列": "02 / ICON ARRANGEMENT",
+  "自由摆放，": "Arrange freely,",
+  "也可重新排序。": "or sort again.",
+  "在空白处拖动图标调整位置；选择排序方式后，按规则重新排列。": "Drag icons onto empty space to arrange them. Choose a sort order to arrange them by that rule.",
+  "只重置当前文件夹的自定义位置。": "Only custom positions in the current folder are reset.",
+  "03 / 应用图标": "03 / APP ICON"
 }
