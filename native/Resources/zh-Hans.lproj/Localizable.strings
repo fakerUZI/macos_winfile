@@ -111,7 +111,8 @@
 "search.placeholder" = "在当前文件夹中搜索";
 "search.inFolder" = "搜索结果";
 "path.placeholder" = "输入路径，例如 ~/Documents";
-"path.hint" = "双击可编辑路径，支持 Tab 补全";
+"path.hint" = "点击空白处或编辑按钮输入路径，支持 Tab 补全";
+"path.edit" = "输入路径";
 
 /* 状态栏 */
 "status.itemCount" = "%d 个项目（%d 个文件夹，%d 个文件）";
@@ -830,6 +831,10 @@
 "layout.inspectorWidth" = "详细信息宽度";
 "layout.options" = "显示与排序";
 "sort.ascending" = "升序";
+"sort.switchDescending" = "当前升序，点击切换为降序";
+"sort.switchAscending" = "当前降序，点击切换为升序";
+"layout.switchDetails" = "切换为列表视图";
+"layout.switchIcons" = "切换为图标视图";
 
 "button.close" = "关闭";
 "duplicates.chooseHint" = "选择要检查的本机文件夹";
@@ -1254,3 +1259,6 @@
 "icon.prompt.body" = "你可以选择绿色叶子图标或保留经典图标，之后可在设置中更改。切换图标需要重新启动应用。";
 "icon.prompt.green" = "使用绿色图标";
 "icon.prompt.original" = "保留经典图标";
+"split.open" = "左右分屏";
+"split.close" = "退出分屏";
+"split.newTab" = "新建标签页并分屏";

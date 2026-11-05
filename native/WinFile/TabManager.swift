@@ -55,6 +55,20 @@ final class TabManager: ObservableObject {
 
     @Published private(set) var tabs: [WinFileTab] = []
     @Published private(set) var activeID: UUID?
+    private var additionalVisibleIDs: Set<UUID> = []
+
+    func setAdditionalVisibleTabs(_ ids: Set<UUID>) {
+        let previous = additionalVisibleIDs
+        additionalVisibleIDs = ids.intersection(Set(tabs.map(\.id)))
+        for tab in tabs where additionalVisibleIDs.contains(tab.id) { tab.model.resumeReadOnlyResults() }
+        for tab in tabs where previous.contains(tab.id) && !additionalVisibleIDs.contains(tab.id) && tab.id != activeID {
+            tab.model.stopWatchingDirectory()
+        }
+    }
+
+    func isVisible(_ model: BrowserModel) -> Bool {
+        activeModel === model || tabs.contains { additionalVisibleIDs.contains($0.id) && $0.model === model }
+    }
     /// Prevents a drag from one window from reordering another window's tabs.
     let reorderIdentifier = UUID()
 
@@ -143,7 +157,7 @@ final class TabManager: ObservableObject {
 
     func reclaimInactiveTabs(immediately: Bool = false) {
         let warm = Set(recentIDs.suffix(3))
-        for tab in tabs where tab.id != activeID {
+        for tab in tabs where tab.id != activeID && !additionalVisibleIDs.contains(tab.id) {
             if immediately || (!warm.contains(tab.id) && Date().timeIntervalSince(inactiveSince[tab.id] ?? .distantPast) >= 60) {
                 tab.model.reclaimReadOnlyResults()
             }
@@ -329,11 +343,16 @@ final class TabManager: ObservableObject {
         saved.apply(to: tab.model)
     }
 
-    func visibleTabs(width: CGFloat) -> [WinFileTab] {
-        let capacity = max(1, Int(max(0, width - 84) / 160))
-        var visible = Array(tabs.prefix(capacity))
-        if !visible.contains(where: { $0.id == activeID }), let active = tabs.first(where: { $0.id == activeID }) {
-            visible[visible.count - 1] = active
+    func visibleTabs(width: CGFloat, excluding: Set<UUID> = [], preferred: UUID? = nil,
+                     itemWidth: CGFloat = 160) -> [WinFileTab] {
+        let candidates = tabs.filter { !excluding.contains($0.id) }
+        guard !candidates.isEmpty else { return [] }
+        let capacity = max(1, Int(max(0, width - 84) / max(1, itemWidth)))
+        var visible = Array(candidates.prefix(capacity))
+        let priorityID = candidates.contains(where: { $0.id == activeID }) ? activeID : preferred
+        if !visible.contains(where: { $0.id == priorityID }),
+           let priority = candidates.first(where: { $0.id == priorityID }) {
+            visible[visible.count - 1] = priority
         }
         return visible
     }

@@ -2083,6 +2083,11 @@ enum NativeTestSuite {
         model.openPath(file.url.absoluteString)
         waitFor { model.selectedIDs == [file.id] && !model.isBusy }
         check("输入文件 URL 可定位所属目录中的文件", model.currentDirectory?.path == root.path && model.selectedIDs == [file.id], "directory=\(model.currentDirectory?.path ?? "nil"), selection=\(model.selectedIDs)")
+        let linkedDirectory = root.appendingPathComponent("directory-link")
+        try FileManager.default.createSymbolicLink(at: linkedDirectory, withDestinationURL: root)
+        let linkedItems = try FileSystemService.list(linkedDirectory, showHidden: false)
+        check("通过符号链接路径可读取文件夹", linkedItems.contains(where: { $0.name == file.name }))
+        try FileManager.default.removeItem(at: linkedDirectory)
         let absent = root.appendingPathComponent("removed")
         model.selectFolder(absent); waitFor { !model.isBusy }
         model.errorMessage = nil
@@ -2114,6 +2119,10 @@ enum NativeTestSuite {
         let first = manager.activeTab
         let active = manager.newTab(startDirectory: root)
         waitFor { !active.model.isBusy }
+        manager.setAdditionalVisibleTabs([first.id, active.id])
+        manager.reclaimInactiveTabs(immediately: true)
+        check("分屏中两个可见页签不被内存回收", !first.model.isSuspended && !active.model.isSuspended && manager.isVisible(first.model))
+        manager.setAdditionalVisibleTabs([])
         manager.reclaimInactiveTabs(immediately: true)
         check("内存压力只回收非活动页签", first.model.isSuspended && !active.model.isSuspended && active.model.items.count == 18)
         manager.select(first)
@@ -2455,6 +2464,23 @@ enum NativeTestSuite {
         check("固定页签不能误关闭", manager.count == 2)
         let visible = manager.visibleTabs(width: 260)
         check("溢出布局始终显示当前页签", visible.count == 1 && visible[0].id == second.id)
+        let splitManager = TabManager(engine: engine, startDirectory: one.deletingLastPathComponent())
+        let splitLeft = splitManager.activeTab
+        let splitRight = splitManager.newTab(startDirectory: a.deletingLastPathComponent())
+        let ordinary = splitManager.newTab()
+        splitManager.select(splitLeft)
+        let splitIDs: Set<UUID> = [splitLeft.id, splitRight.id]
+        let visibleBesideGroup = splitManager.visibleTabs(width: 0, excluding: splitIDs, preferred: ordinary.id)
+        check("窄窗口切回分屏后普通页签仍显示", visibleBesideGroup.map(\.id) == [ordinary.id])
+        let newer = splitManager.newTab()
+        let activeBesideGroup = splitManager.visibleTabs(width: 0, excluding: splitIDs, preferred: ordinary.id)
+        check("普通页签活动时优先显示当前页签", activeBesideGroup.map(\.id) == [newer.id])
+        splitManager.select(splitRight)
+        let recentBesideGroup = splitManager.visibleTabs(width: 0, excluding: splitIDs, preferred: newer.id)
+        check("切回分屏后保留最近普通页签入口", recentBesideGroup.map(\.id) == [newer.id])
+        let multipleBesideGroup = splitManager.visibleTabs(width: 244, excluding: splitIDs, preferred: newer.id, itemWidth: 80)
+        check("分屏旁有足够空间时显示多个普通页签", multipleBesideGroup.map(\.id) == [ordinary.id, newer.id])
+        check("没有普通页签时分屏组不产生重复页签", splitManager.visibleTabs(width: 0, excluding: Set(splitManager.tabs.map(\.id))).isEmpty)
         manager.close(second)
         check("关闭页签进入恢复栈", manager.closedTabs.count == 1 && manager.activeID == first.id)
         manager.restoreClosedTab()

@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/macOS-13.0%2B-black.svg)](#installation)
 [![Swift](https://img.shields.io/badge/Swift-5-orange.svg)](#tech-stack)
-[![Tests](https://img.shields.io/badge/tests-1394%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1448%20passing-brightgreen.svg)](#testing)
 [![Release](https://img.shields.io/github/v/release/fakerUZI/macos_winfile)](../../releases/latest)
 
 LeafFiles brings everyday file browsing and organization into one window. Switch between folders in tabs, find files with the path bar and categories, review storage usage, organize app attachments and manage Android files. Supports Simplified Chinese, English and macOS dark mode.
@@ -46,7 +46,16 @@ LeafFiles brings these tasks together in a native macOS interface, with file sca
 
 As of October 26, 2026, the recent fixes have passed regression checks, with no obvious issues found in local use. LeafFiles will stay focused on browsing, organizing and managing files. Future work will prioritize interface improvements, performance and bug fixes; unrelated features are outside the project’s scope. Please report any issues on [GitHub](https://github.com/fakerUZI/macos_winfile/issues).
 
-## What’s new in v2.3.3
+## What’s new in v2.4.0
+
+- Browse two existing or new tabs side by side. The active pane is outlined, and sorting and view controls apply to it.
+- Streamlined page controls and direct path entry, with Tab completion and click-away cancellation.
+- Open the current category’s scan settings directly from its scan scope indicator.
+- Tabs are retained after quitting; split groups need to be selected again after restarting.
+
+See the [v2.4.0 release notes](docs/releases/v2.4.0.md).
+
+### v2.3.3 update
 
 - Improved folder dragging in icon view, with a move indicator over a destination folder and free arrangement on empty space.
 - Choosing a sort order resets custom icon positions in the current folder.
@@ -104,7 +113,7 @@ See the [v2.2.0 release notes](docs/releases/v2.2.0.md), [release QA record](doc
 
 | Feature | Details |
 | --- | --- |
-| **Tabs** | Multiple tabs per window, each with its own directory, history, sort order and selection. `⌘T` to open, `⌘W` to close, right-click for "Close Others / Duplicate Tab" |
+| **Tabs** | Multiple tabs per window, each with its own directory, history, sort order and selection. `⌘T` to open, `⌘W` to close, right-click for "Close Others / Duplicate Tab". Use the split button to view two tabs side by side as a group. Opening or switching to another tab leaves the pair intact. |
 | **Path bar** | Breadcrumb of the current path; double-click to type. Supports `~`. Live suggestions while typing: `Tab` to complete, `↑↓` to move, `Enter` to go |
 | **Two views** | Detail table (sortable by name / date / type / size) and a large icon grid |
 | **Categories** | 15 types — images, video, music, documents, spreadsheets, presentations, PDF, archives, code, ebooks, design assets, databases, fonts, disk images, executables — each with a count badge |

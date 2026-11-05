@@ -63,7 +63,6 @@ struct AdvancedSearchSheet: View {
             && request.isValid
     }
     private var results: [FileItem] { FileSystemService.sort(search.report.items, field: sortField, ascending: ascending) }
-    private var selected: FileItem? { search.report.items.first { $0.id == selectedID } }
     private var changed: Bool { search.request != nil && search.request != request }
 
     var body: some View {
@@ -72,7 +71,6 @@ struct AdvancedSearchSheet: View {
                 PageIcon(symbol: "magnifyingglass")
                 Text(L("search.windowTitle", "搜索文件")).font(.title2.weight(.semibold))
                 Spacer()
-                Text("LeafFiles").foregroundStyle(.secondary)
             }
             scopeControls
             queryControls
@@ -281,8 +279,6 @@ struct AdvancedSearchSheet: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             HStack {
-                Button(L("action.open", "打开")) { if let selected { open(selected) } }.disabled(selected == nil)
-                Button(L("search.locate", "在新页签中打开所在文件夹")) { if let selected { locate(selected) } }.disabled(selected == nil)
                 Spacer()
                 if search.canExpand && !changed {
                     Button(L("search.expand", "扩大扫描")) { selectedID = nil; search.expand() }

@@ -11,6 +11,7 @@ struct CachedTabContent: NSViewRepresentable {
     let tabs: [WinFileTab]
     @Binding var dialog: DialogKind?
     let openFolderPanel: () -> Void
+    var onActivate: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> TabContentContainerView { TabContentContainerView() }
@@ -45,6 +46,7 @@ struct CachedTabContent: NSViewRepresentable {
 
         func activate(_ input: CachedTabContent, in container: TabContentContainerView) {
             container.manager = input.manager
+            container.onActivate = input.onActivate
             if let window = container.window { BrowserWindowCommands.shared.register(input.manager, for: window) }
             let live = Set(input.tabs.map(\.id))
             for id in Array(hosts.keys) where !live.contains(id) {
@@ -88,8 +90,19 @@ struct CachedTabContent: NSViewRepresentable {
 final class TabContentContainerView: NSView {
     var retainedHostCount = 0
     weak var manager: TabManager?
+    var onActivate: (() -> Void)?
+    private var mouseMonitor: Any?
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor); self.mouseMonitor = nil }
         if let window, let manager { BrowserWindowCommands.shared.register(manager, for: window) }
+        guard window != nil else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, event.window === window,
+                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else { return event }
+            self.onActivate?()
+            return event
+        }
     }
+    deinit { if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) } }
 }

@@ -49,7 +49,7 @@ enum SnapshotRenderer {
 
     /// 视图模式：详情 / 大图标 / 主页 / 此电脑
     /// （分类与搜索依赖 Table 异步回填，不适合离屏截图，见文件头说明）
-    enum Mode: String { case details, icons, home, thisPC, category, wechat, storage, software, search, archive }
+    enum Mode: String { case details, icons, split, home, thisPC, category, wechat, storage, software, search, archive }
 
     @MainActor
     static func render(path: String, mode: Mode = .details) {
@@ -83,7 +83,7 @@ enum SnapshotRenderer {
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         }
         switch mode {
-        case .icons:
+        case .icons, .split:
             engine.restrictScopeForTesting([demo])
             model.layout = .icons
         case .details:
@@ -125,7 +125,16 @@ enum SnapshotRenderer {
         // 让主界面直接打开示例目录：MainView 从 StartFolderPath 读取起始位置，
         // 不设置的话内容区会停在空目录上（快照只剩界面框架）。
         UserDefaults.standard.set(demo.path, forKey: "StartFolderPath")
-        let hosting = NSHostingView(rootView: MainView(engine: engine, skipAutoNavigation: true))
+        let previewManager: TabManager?
+        if mode == .split {
+            let manager = TabManager(engine: engine, startDirectory: demo)
+            manager.activeModel.setLayout(.icons)
+            let second = manager.newTab(startDirectory: demo.appendingPathComponent("项目文档"), activate: false)
+            second.model.setLayout(.icons)
+            previewManager = manager
+        } else { previewManager = nil }
+        let hosting = NSHostingView(rootView: MainView(engine: engine, skipAutoNavigation: true,
+                                                      existingManager: previewManager, initialSplit: mode == .split))
         hosting.frame = NSRect(origin: .zero, size: contentSize)
         window.contentView = hosting
         window.makeKeyAndOrderFront(nil)
@@ -142,7 +151,7 @@ enum SnapshotRenderer {
             switch mode {
             case .home: displayed.loadHome()
             case .thisPC: displayed.loadThisPC()
-            case .icons: displayed.setLayout(.icons)
+            case .icons, .split: displayed.setLayout(.icons)
             case .details:
                 displayed.setLayout(.details)
                 if let first = displayed.items.first(where: { $0.supportsThumbnail }) { displayed.selectedIDs = [first.id] }

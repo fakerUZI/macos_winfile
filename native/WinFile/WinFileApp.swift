@@ -507,6 +507,12 @@ struct WinFileCommands: Commands {
 
         // 前往
         CommandMenu(WLocalizedString("menu.go", comment: "前往")) {
+            Button(L("path.edit", "输入路径")) {
+                NotificationCenter.default.post(name: .winFileEditPath, object: windowCommands.manager)
+            }
+            .keyboardShortcut("g", modifiers: [.command, .shift])
+            .disabled(windowCommands.manager == nil || (model?.isAndroidPath ?? false))
+            Divider()
             Button(WLocalizedString("menu.back", comment: "后退")) { model?.goBack() }
                 .keyboardShortcut("[", modifiers: .command)
                 .disabled(!(model?.canGoBack ?? false))
@@ -561,6 +567,7 @@ extension Notification.Name {
     static let winFileDeleteSelection = Notification.Name("WinFileDeleteSelection")
     static let winFileBeginRename = Notification.Name("WinFileBeginRename")
     static let winFileSearch = Notification.Name("WinFileSearch")
+    static let winFileEditPath = Notification.Name("WinFileEditPath")
     static let winFileOpenFolder = Notification.Name("WinFileOpenFolder")
     static let winFileShowHelp = Notification.Name("WinFileShowHelp")
     static let winFileGetInfo = Notification.Name("WinFileGetInfo")

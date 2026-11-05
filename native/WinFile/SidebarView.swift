@@ -284,7 +284,7 @@ struct AndroidSidebarSection: View {
 }
 
 
-private struct CategoryScanSettingsSheet: View {
+struct CategoryScanSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var localization = Localization.shared
     @ObservedObject var preferences: CategoryScanPreferences

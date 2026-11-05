@@ -12,6 +12,7 @@ struct PathBarHost: View {
     @ObservedObject var model: BrowserModel
     @Binding var editingPath: Bool
     @Binding var pathText: String
+    @StateObject private var editingRegions = PathEditingRegions()
     let suggestions: [PathSuggestion]
     let onCommitPath: () -> Void
     let onTextChange: (String) -> Void
@@ -42,6 +43,7 @@ struct PathBarHost: View {
             if editingPath {
                 PathField(
                     text: $pathText,
+                    regions: editingRegions,
                     suggestions: suggestions,
                     onSubmit: { value in
                         pathText = value
@@ -88,20 +90,39 @@ struct PathBarHost: View {
                                     .fill(index == crumbSegments.count - 1 ? Color.accentColor.opacity(0.12) : .clear)
                             )
                         }
-                        Spacer(minLength: 0)
+                        Color.clear.frame(minWidth: 20, maxWidth: .infinity)
+                            .frame(height: 24)
+                            .contentShape(Rectangle())
+                            .onTapGesture { onBeginEditing() }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, model.isAndroidPath ? 0 : 28)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { onBeginEditing() }
                 .help(WLocalizedString("path.hint", comment: "双击可编辑路径，支持补全"))
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 24)
+        .frame(maxWidth: .infinity)
+        .frame(height: 26)
+        .overlay(alignment: .trailing) {
+            if !editingPath && !model.isAndroidPath {
+                Button(action: onBeginEditing) {
+                    Image(systemName: "pencil").foregroundStyle(.secondary)
+                        .frame(width: 26, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(L("path.edit", "输入路径"))
+                .accessibilityLabel(L("path.edit", "输入路径"))
+                .accessibilityIdentifier("path.edit")
+            }
+        }
         .overlay(alignment: .topLeading) {
             if editingPath && !suggestions.isEmpty {
                 PathSuggestionList(suggestions: suggestions) { suggestion in
                     onAcceptSuggestion(suggestion, false)
                 }
+                .background(PathSuggestionRegion(regions: editingRegions))
                 .offset(y: 30)
                 .zIndex(10)
             }

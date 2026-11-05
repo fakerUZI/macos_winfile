@@ -13,6 +13,7 @@ struct TabContentHost: View {
     /// Each cached view is permanently bound to its own tab model.
     @ObservedObject var model: BrowserModel
     @Binding var dialog: DialogKind?
+    @State private var categoryForScanSettings: FileCategory?
     let openFolderPanel: () -> Void
 
     /// 当前渲染的视图类型（供自动化验证内容区是否真的切换）
@@ -55,6 +56,9 @@ struct TabContentHost: View {
         .background(FileKeyboardShortcuts(model: model).frame(width: 0, height: 0))
         .onAppear { model.beginWatchingDirectory() }
         .onChange(of: model.currentDirectory) { _ in model.beginWatchingDirectory() }
+        .sheet(item: $categoryForScanSettings) { category in
+            CategoryScanSettingsSheet(preferences: engine.categoryScan, category: category)
+        }
     }
 
     private var content: some View {
@@ -110,16 +114,24 @@ struct TabContentHost: View {
 
     private var activityBanners: some View {
         VStack(spacing: 0) {
-            if model.isCategoryView {
+            if model.isCategoryView, let category = model.categoryFilter {
                 HStack(spacing: 8) {
-                    let rule = engine.categoryScan.configuration.rule(for: model.categoryFilter)
+                    let rule = engine.categoryScan.configuration.rule(for: category)
                     let defaultLabel = rule.usesCustomRoots
                         ? L("category.configuredScope", "扫描范围：%d 个指定目录", rule.paths.count)
                         : L("category.defaultScope", "扫描范围：默认位置")
-                    Image(systemName: "folder.badge.gearshape").foregroundStyle(.secondary)
-                    Text(defaultLabel)
-                        .font(.caption).lineLimit(1).truncationMode(.middle)
-                        .help(defaultLabel)
+                    Button { categoryForScanSettings = category } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "folder.badge.gearshape").foregroundStyle(.secondary)
+                            Text(defaultLabel)
+                                .font(.caption).lineLimit(1).truncationMode(.middle)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("category.settings.open", "扫描设置…"))
+                    .accessibilityLabel(defaultLabel + " · " + L("category.settings.open", "扫描设置…"))
+                    .accessibilityIdentifier("category.scan.settings")
                     Spacer(minLength: 4)
                 }.padding(8).background(.regularMaterial)
             }

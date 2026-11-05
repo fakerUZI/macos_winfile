@@ -104,7 +104,8 @@
 "search.placeholder" = "Search this folder";
 "search.inFolder" = "Search Results";
 "path.placeholder" = "Enter a path, e.g. ~/Documents";
-"path.hint" = "Double-click to edit the path; Tab completes";
+"path.hint" = "Click the blank area or edit button to enter a path; Tab completes";
+"path.edit" = "Enter a Path";
 
 "status.itemCount" = "%d items (%d folders, %d files)";
 "status.appCount" = "%d applications";
@@ -812,6 +813,10 @@
 "layout.inspectorWidth" = "Inspector width";
 "layout.options" = "View and Sort";
 "sort.ascending" = "Ascending";
+"sort.switchDescending" = "Ascending; click to sort descending";
+"sort.switchAscending" = "Descending; click to sort ascending";
+"layout.switchDetails" = "Switch to List View";
+"layout.switchIcons" = "Switch to Icon View";
 
 "button.close" = "Close";
 "duplicates.chooseHint" = "Choose a local folder to inspect";
@@ -1236,3 +1241,6 @@
 "icon.prompt.body" = "Choose the green leaf or keep the classic icon. You can change this later in Settings. Switching icons restarts the app.";
 "icon.prompt.green" = "Use Green Icon";
 "icon.prompt.original" = "Keep Classic Icon";
+"split.open" = "Split View";
+"split.close" = "Exit Split View";
+"split.newTab" = "Split with New Tab";

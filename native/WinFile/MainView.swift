@@ -9,6 +9,7 @@ struct MainView: View {
     @ObservedObject var engine: FSEngine
     /// 自动化渲染（截图/测试）时置为 true，跳过 onAppear 的自动导航，避免覆盖预设状态
     var skipAutoNavigation: Bool = false
+    private var initialSplit: Bool = false
     /// 页签管理（一个窗口内可开多个页签）
     @StateObject private var tabManager: TabManager
     @AppStorage("Layout.ShowSidebar") private var showSidebar = true
@@ -21,21 +22,23 @@ struct MainView: View {
     @State private var suggestions: [PathSuggestion] = []
     @State private var suggestionTask: Task<Void, Never>?
     @State private var editingPath = false
-    @State private var searchText = ""
-    @FocusState private var pathFieldFocused: Bool
     @Environment(\.openWindow) private var openWindow
     @State private var tabFrames: [UUID: CGRect] = [:]
     @State private var draggingTabID: UUID?
     @State private var dragTargetID: UUID?
+    @State private var splitLeftID: UUID?
+    @State private var splitRightID: UUID?
+    @State private var lastRegularTabID: UUID?
 
     /// 兼容旧测试入口
     static var currentTabManager: TabManager? { WindowBridge.shared.tabManager }
     /// 外层视图（承载标题/命令栏/地址栏）的求值次数，供验证刷新是否发生
     static var outerBodyEvaluations = 0
 
-    init(engine: FSEngine, skipAutoNavigation: Bool = false, existingManager: TabManager? = nil) {
+    init(engine: FSEngine, skipAutoNavigation: Bool = false, existingManager: TabManager? = nil, initialSplit: Bool = false) {
         self.engine = engine
         self.skipAutoNavigation = skipAutoNavigation
+        self.initialSplit = initialSplit
         let start: URL? = UserDefaults.standard.string(forKey: "StartFolderPath").flatMap { path in
             guard !path.isEmpty else { return nil }
             var isDirectory: ObjCBool = false
@@ -55,6 +58,10 @@ struct MainView: View {
     private var activeTab: WinFileTab { reader.tab }
     private var model: BrowserModel { reader.model }
     private var tabs: [WinFileTab] { reader.tabs }
+    private var isSplitDisplayed: Bool {
+        guard let active = tabManager.activeID, let left = splitLeftID, let right = splitRightID else { return false }
+        return active == left || active == right
+    }
 
     /// 页签切换后无需手工同步：reader 会自行重新绑定
     private func adopt(_ tab: WinFileTab) { _ = tab }
@@ -96,10 +103,7 @@ struct MainView: View {
     private var contentPane: some View {
         VStack(spacing: 0) {
             tabStrip
-            if !model.isStorageCleanupView && !model.isWeChatCleanupView {
-                commandBar
-            }
-            addressBar
+            addressBar.zIndex(1)
             Divider().opacity(0.6)
             contentArea
         }
@@ -129,6 +133,8 @@ struct MainView: View {
         let _ = reader.refreshToken
         return splitLayout
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onChange(of: tabManager.activeID) { _ in syncSplitSelection() }
+            .onChange(of: tabs.map(\.id)) { _ in reconcileSplitTabs() }
             .toolbar { toolbarContent }
             .navigationTitle(model.windowSubtitle)
             .navigationSubtitle(windowSubtitleSuffix)
@@ -149,6 +155,10 @@ struct MainView: View {
             }
             engine.scheduleCategoryCount()
             adopt(tabManager.activeTab)
+            if initialSplit && splitRightID == nil,
+               let other = tabs.first(where: { $0.id != tabManager.activeTab.id }) {
+                startSplit(with: other)
+            }
             WindowBridge.shared.tabManager = tabManager
             TabDiagnostics.shared.record("startup.view",
                                          detail: "选择=\(String(describing: model.selection)) 布局=\(model.layout.rawValue)")
@@ -180,6 +190,10 @@ struct MainView: View {
         .onReceive(NotificationCenter.default.publisher(for: .winFileOpenFolder)) { notification in
             guard (notification.object as? TabManager ?? BrowserWindowCommands.shared.manager) === tabManager else { return }
             openFolderPanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .winFileEditPath)) { notification in
+            guard (notification.object as? TabManager) === tabManager else { return }
+            beginEditingPath()
         }
         .onReceive(NotificationCenter.default.publisher(for: .winFileSearch)) { notification in
             guard let manager = notification.object as? TabManager, manager === tabManager else { return }
@@ -221,7 +235,7 @@ struct MainView: View {
                     }
                 })
             case .advancedSearch:
-                AdvancedSearchSheet(model: model, initialQuery: searchText)
+                AdvancedSearchSheet(model: model)
             case .duplicates:
                 DuplicateFilesSheet(model: model)
             case .rename(let item):
@@ -277,7 +291,8 @@ struct MainView: View {
     // MARK: - 页签管理
 
     private func newTab(startDirectory: URL? = nil, activate: Bool = true) {
-        tabManager.newTab(startDirectory: startDirectory, activate: activate)
+        let tab = tabManager.newTab(startDirectory: startDirectory, activate: activate)
+        if activate && splitRightID != nil { lastRegularTabID = tab.id }
         adopt(tabManager.activeTab)
     }
 
@@ -295,10 +310,10 @@ struct MainView: View {
             TabDiagnostics.shared.record("selectTab.skipped", detail: "已是活动页签")
             return
         }
+        if splitRightID != nil && tab.id != splitLeftID && tab.id != splitRightID { lastRegularTabID = tab.id }
         resetTransientState()
         tabManager.select(tab)
         adopt(tabManager.activeTab)
-        syncSearchFieldFromModel()
         TabDiagnostics.shared.record("selectTab.done", detail: "现在=\(tabManager.activeTab.id.uuidString.prefix(4)) 数量=\(tabManager.count)")
     }
 
@@ -315,11 +330,6 @@ struct MainView: View {
         pathText = ""
     }
 
-    /// 搜索框跟随当前页签的模型状态
-    private func syncSearchFieldFromModel() {
-        if let store = model.activeStorageCleanup { searchText = store.search }
-        else { searchText = model.isWeChatCleanupView ? model.weChatCleanup.search : model.searchQuery }
-    }
     private func closeCurrentTab() { tabManager.closeActive() }
     var tabCount: Int { tabManager.count }
 
@@ -328,41 +338,60 @@ struct MainView: View {
     /// 实测会导致页签点击无响应。页签数量有限，普通 HStack 足够。
     private var tabStrip: some View {
         GeometryReader { geometry in
-            let visible = tabManager.visibleTabs(width: geometry.size.width)
+            let grouped = Set([splitLeftID, splitRightID].compactMap { $0 })
+            let visible = tabManager.visibleTabs(width: geometry.size.width - (grouped.isEmpty ? 0 : 180),
+                                                 excluding: grouped, preferred: lastRegularTabID,
+                                                 itemWidth: grouped.isEmpty ? 160 : 80)
             HStack(spacing: 4) {
+                if let left = tabs.first(where: { $0.id == splitLeftID }),
+                   let right = tabs.first(where: { $0.id == splitRightID }) {
+                    HStack(spacing: 1) {
+                        tabChip(left, grouped: true)
+                        Rectangle().fill(InterfaceStyle.border.opacity(0.7)).frame(width: 1, height: 15)
+                        tabChip(right, grouped: true)
+                        Button { toggleSplit() } label: {
+                            Image(systemName: "xmark").font(.system(size: 9, weight: .semibold))
+                                .frame(width: 20, height: 24)
+                        }.buttonStyle(.plain).foregroundStyle(.secondary)
+                            .help(L("split.close", "退出分屏"))
+                            .accessibilityLabel(L("split.close", "退出分屏"))
+                            .accessibilityIdentifier("tabs.split.toggle")
+                    }
+                    .padding(2)
+                    .background(InterfaceStyle.softAccent, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(InterfaceStyle.border.opacity(0.55)))
+                    .frame(maxWidth: 260)
+                    .accessibilityIdentifier("tabs.split.group")
+                }
                 ForEach(visible) { tab in
-                    TabChipView(tab: tab, manager: tabManager,
-                                onSelect: { selectTab(tab) }, onClose: { closeTab(tab) },
-                                onCloseOthers: { closeOtherTabs(keeping: tab) }, onNew: { newTab() },
-                                onDuplicate: { tabManager.duplicate(tab) },
-                                onDetach: {
-                                    if let id = BrowserWindowCommands.shared.prepareDetachedWindow(from: tabManager, tab: tab, engine: engine) {
-                                        openWindow(value: id)
-                                    }
-                                },
-                                onMerge: { BrowserWindowCommands.shared.mergeOtherWindows(into: tabManager) },
-                                isDropTargeted: dragTargetID == tab.id)
-                        .background(GeometryReader { proxy in
-                            Color.clear.preference(key: TabFramePreferenceKey.self,
-                                value: [tab.id: proxy.frame(in: .named("tabStrip"))])
-                        })
-                        .simultaneousGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named("tabStrip"))
-                            .onChanged { value in
-                                draggingTabID = tab.id
-                                dragTargetID = tabFrames.first { $0.value.contains(value.location) && $0.key != tab.id }?.key
-                            }
-                            .onEnded { value in
-                                if draggingTabID == tab.id,
-                                   let target = tabFrames.first(where: { $0.value.contains(value.location) && $0.key != tab.id })?.key {
-                                    tabManager.moveTab(tab.id, over: target)
-                                }
-                                draggingTabID = nil
-                                dragTargetID = nil
-                            })
-                        .frame(maxWidth: 200)
+                    tabChip(tab)
                 }
                 Button { newTab() } label: { Image(systemName: "plus").frame(width: 22, height: 22) }
                     .buttonStyle(.plain).help(L("tab.new", "新标签页") + " (⌘T)")
+                if splitRightID == nil {
+                    Menu {
+                        Button {
+                            let tab = tabManager.newTab(activate: false)
+                            startSplit(with: tab)
+                        } label: {
+                            Label(L("split.newTab", "新建标签页并分屏"), systemImage: "plus")
+                        }
+                        if tabs.contains(where: { $0.id != activeTab.id }) {
+                            Divider()
+                            ForEach(tabs.filter { $0.id != activeTab.id }) { tab in
+                                Button { startSplit(with: tab) } label: {
+                                    Label(tab.title, systemImage: tab.symbol)
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "rectangle.split.2x1").frame(width: 22, height: 22)
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help(L("split.open", "左右分屏"))
+                    .accessibilityLabel(L("split.open", "左右分屏"))
+                    .accessibilityIdentifier("tabs.split.toggle")
+                }
                 Menu {
                     ForEach(tabs) { tab in
                         Button { selectTab(tab) } label: {
@@ -384,151 +413,36 @@ struct MainView: View {
         }.frame(height: 36).background(InterfaceStyle.chrome).background(BrowserInteractionBoundary())
     }
 
-    // MARK: - 命令栏
-
-    private var commandBar: some View {
-        HStack(spacing: 8) {
-            if model.supportsDirectoryCreation {
-                Menu {
-                    Button(WLocalizedString("action.newFolder", comment: "新建文件夹")) { dialog = .newFolder }
-                    Button(WLocalizedString("action.newFile", comment: "新建文本文档")) { dialog = .newFile }
-                    if model.clipboardHasText {
-                        Divider()
-                        Button(WLocalizedString("action.pasteClipboardAsFile", comment: "把剪贴板文本存成文件")) {
-                            _ = model.saveClipboardTextAsFile()
+    private func tabChip(_ tab: WinFileTab, grouped: Bool = false) -> some View {
+        TabChipView(tab: tab, manager: tabManager,
+                    onSelect: { selectTab(tab) }, onClose: { closeTab(tab) },
+                    onCloseOthers: { closeOtherTabs(keeping: tab) }, onNew: { newTab() },
+                    onDuplicate: { tabManager.duplicate(tab) },
+                    onDetach: {
+                        if let id = BrowserWindowCommands.shared.prepareDetachedWindow(from: tabManager, tab: tab, engine: engine) {
+                            openWindow(value: id)
                         }
-                    }
-                } label: {
-                    Label(WLocalizedString("action.new", comment: "新建"), systemImage: "plus")
+                    },
+                    onMerge: { BrowserWindowCommands.shared.mergeOtherWindows(into: tabManager) },
+                    isDropTargeted: dragTargetID == tab.id, grouped: grouped)
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: TabFramePreferenceKey.self,
+                    value: [tab.id: proxy.frame(in: .named("tabStrip"))])
+            })
+            .simultaneousGesture(DragGesture(minimumDistance: 6, coordinateSpace: .named("tabStrip"))
+                .onChanged { value in
+                    draggingTabID = tab.id
+                    dragTargetID = tabFrames.first { $0.value.contains(value.location) && $0.key != tab.id }?.key
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .labelStyle(.titleAndIcon)
-                .fixedSize()
-                .help(WLocalizedString("action.new", comment: "新建"))
-                .disabled(!model.canMutateFiles)
-
-                Divider().frame(height: 18)
-            }
-
-            Button {
-                model.cutSelectionToClipboard()
-            } label: {
-                Label(WLocalizedString("action.cut", comment: "剪切"), systemImage: "scissors")
-            }
-            .help(WLocalizedString("action.cut", comment: "剪切"))
-            .disabled(model.selectedIDs.isEmpty)
-
-            Button {
-                model.copySelectionToClipboard()
-            } label: {
-                Label(WLocalizedString("action.copy", comment: "复制"), systemImage: "doc.on.doc")
-            }
-            .help(WLocalizedString("action.copy", comment: "复制"))
-            .disabled(model.selectedIDs.isEmpty)
-
-            Menu {
-                Button(WLocalizedString("action.copyPath", comment: "复制完整路径")) { model.copyPathToClipboard() }
-                Button(WLocalizedString("action.copyName", comment: "复制文件名")) { model.copyNameToClipboard() }
-                Button(WLocalizedString("action.copyDir", comment: "复制所在目录")) { model.copyPathToClipboard(includeDirectory: true) }
-            } label: {
-                Label(WLocalizedString("action.copyAs", comment: "复制为"), systemImage: "link")
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help(WLocalizedString("action.copyAs", comment: "复制为"))
-            .disabled(model.selectedIDs.isEmpty)
-
-            if model.supportsDirectoryCreation {
-                Button {
-                    model.paste()
-                } label: {
-                    Label(WLocalizedString("action.paste", comment: "粘贴"), systemImage: "clipboard")
-                }
-                .help(WLocalizedString("action.paste", comment: "粘贴"))
-                .disabled(!model.canPaste)
-            }
-
-            Divider().frame(height: 18)
-
-            Button {
-                if model.selectedCount > 1, !model.isAndroidPath { dialog = .batchRename(model.selectedItems) }
-                else if let item = model.selectedItems.first { dialog = .rename(item) }
-            } label: {
-                Label(WLocalizedString("action.rename", comment: "重命名"), systemImage: "pencil")
-            }
-            .help(WLocalizedString("action.rename", comment: "重命名"))
-            .disabled(model.selectedCount == 0 || (model.isAndroidPath && model.selectedCount != 1) || !model.canMutateFiles)
-
-            Button(role: .destructive) {
-                confirmDelete()
-            } label: {
-                Label(WLocalizedString("action.delete", comment: "删除"), systemImage: "trash")
-            }
-            .help(model.deleteActionTitle)
-            .disabled(model.selectedIDs.isEmpty)
-
-            Spacer()
-
-            if !model.isAndroidPath {
-                Menu {
-                    Button(L("rename.batch", "批量重命名")) { dialog = .batchRename(model.selectedItems) }
-                        .disabled(model.selectedCount < 2 || !model.canMutateFiles)
-                    if model.supportsDirectorySearch {
-                        Button(L("search.advanced", "组合搜索")) { dialog = .advancedSearch }
+                .onEnded { value in
+                    if draggingTabID == tab.id,
+                       let target = tabFrames.first(where: { $0.value.contains(value.location) && $0.key != tab.id })?.key {
+                        tabManager.moveTab(tab.id, over: target)
                     }
-                    Button(L("duplicates.title", "查找重复文件")) { dialog = .duplicates }
-                } label: { Image(systemName: "ellipsis") }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help(L("organize.tools", "文件整理工具"))
-                .accessibilityLabel(L("organize.tools", "文件整理工具"))
-            }
-
-            if model.showsFileList {
-                Divider().frame(height: 18)
-                ViewThatFits(in: .horizontal) {
-                    presentationControls
-                    Menu {
-                        presentationMenu
-                    } label: { Image(systemName: "slider.horizontal.3") }
-                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .help(L("layout.options", "显示与排序"))
-                }.frame(maxWidth: 260, alignment: .trailing)
-            }
-        }
-        .buttonStyle(LeafToolbarButtonStyle())
-        .labelStyle(.iconOnly)          // 图标按钮，避免中文标签被挤压裁剪
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .controlSize(.regular)
-        .background(InterfaceStyle.chrome)
-    }
-
-    private var presentationControls: some View {
-        HStack(spacing: 8) {
-            Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortByUser(field: $0) })) {
-                ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
-            }.labelsHidden().frame(width: 110)
-            Button { model.sortByUser(ascending: !model.sortAscendingFlag) } label: {
-                Image(systemName: model.sortAscendingFlag ? "arrow.up" : "arrow.down")
-            }.help(WLocalizedString("action.toggleSortOrder", comment: "切换升序/降序"))
-            Picker(L("layout.options", "显示与排序"), selection: Binding(get: { model.layout }, set: { model.setLayout($0) })) {
-                Image(systemName: "list.bullet").tag(ViewLayout.details)
-                Image(systemName: "square.grid.2x2").tag(ViewLayout.icons)
-            }.pickerStyle(.segmented).labelsHidden().frame(width: 84)
-        }
-    }
-
-    @ViewBuilder
-    private var presentationMenu: some View {
-        Picker(L("wechat.sort", "排序"), selection: Binding(get: { model.sortField }, set: { model.sortByUser(field: $0) })) {
-            ForEach(SortField.allCases, id: \.self) { field in Text(field.localizedTitle).tag(field) }
-        }
-        Toggle(L("sort.ascending", "升序"), isOn: Binding(get: { model.sortAscendingFlag }, set: { model.sortByUser(ascending: $0) }))
-        Divider()
-        Button(L("layout.details", "详细信息")) { model.setLayout(.details) }
-        Button(L("layout.icons", "大图标")) { model.setLayout(.icons) }
-        Toggle(WLocalizedString("action.toggleInspector", comment: "显示详细信息"), isOn: $showInspector)
+                    draggingTabID = nil
+                    dragTargetID = nil
+                })
+            .frame(maxWidth: grouped ? 138 : 200)
     }
 
     // MARK: - 地址栏
@@ -544,7 +458,7 @@ struct MainView: View {
                     .disabled(!model.canGoUp)
                 Button { model.reload() } label: { Image(systemName: "arrow.clockwise") }
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(LeafToolbarButtonStyle())
 
             // 独立视图直接观察模型：路径变化即重绘（计算属性做不到这点）
             PathBarHost(
@@ -564,37 +478,62 @@ struct MainView: View {
                 },
                 onCancelEdit: {
                     editingPath = false
+                    suggestionTask?.cancel()
                     suggestions = []
                 },
                 onBeginEditing: beginEditingPath
             )
 
-            if model.supportsDirectorySearch {
-                HStack(spacing: 4) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(WLocalizedString("search.placeholder", comment: "搜索"), text: $searchText)
-                        .textFieldStyle(.plain)
-                        .onSubmit { dialog = .advancedSearch }
-                        .onChange(of: searchText) { newValue in
-                            if newValue.isEmpty && !model.searchCriteria.isActive { model.clearSearch() }
+            if !model.isCleanupView {
+                if !model.isAndroidPath {
+                    Menu {
+                        Button(L("rename.batch", "批量重命名")) { dialog = .batchRename(model.selectedItems) }
+                            .disabled(model.selectedCount < 2 || !model.canMutateFiles)
+                        if model.supportsDirectorySearch {
+                            Button(L("search.advanced", "组合搜索")) { dialog = .advancedSearch }
                         }
-                    if model.isSearching {
-                        Button {
-                            searchText = ""
-                            model.searchCriteria = FileSearchCriteria()
-                            model.clearSearch()
-                        } label: { Image(systemName: "xmark.circle.fill") }
-                        .buttonStyle(.borderless)
-                    }
+                        Button(L("duplicates.title", "查找重复文件")) { dialog = .duplicates }
+                    } label: { Image(systemName: "ellipsis").frame(width: 24, height: 24) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .help(L("organize.tools", "文件整理工具"))
+                    .accessibilityLabel(L("organize.tools", "文件整理工具"))
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .textBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor)))
-                .frame(minWidth: 120, idealWidth: 200, maxWidth: 240)
-                Button { dialog = .advancedSearch } label: {
-                    Image(systemName: model.searchCriteria.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
-                }.buttonStyle(.borderless).help(L("search.advanced", "组合搜索"))
+                if model.showsFileList {
+                    Menu {
+                        ForEach(SortField.allCases, id: \.self) { field in
+                            Button { model.sortByUser(field: field) } label: {
+                                if model.sortField == field { Label(field.localizedTitle, systemImage: "checkmark") }
+                                else { Text(field.localizedTitle) }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.up.arrow.down")
+                            Text(model.sortField.localizedTitle).lineLimit(1)
+                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                        }.frame(height: 24)
+                    }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help(L("menu.sortBy", "排序方式"))
+                        .accessibilityLabel(L("menu.sortBy", "排序方式") + ": " + model.sortField.localizedTitle)
+                        .accessibilityIdentifier("sort.field")
+                    Button { model.sortByUser(ascending: !model.sortAscendingFlag) } label: {
+                        Image(systemName: model.sortAscendingFlag ? "arrow.up" : "arrow.down")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(LeafToolbarButtonStyle())
+                    .help(model.sortAscendingFlag ? L("sort.switchDescending", "当前升序，点击切换为降序") : L("sort.switchAscending", "当前降序，点击切换为升序"))
+                    .accessibilityLabel(model.sortAscendingFlag ? L("sort.switchDescending", "当前升序，点击切换为降序") : L("sort.switchAscending", "当前降序，点击切换为升序"))
+                    .accessibilityIdentifier("sort.direction")
+                    Button { model.setLayout(model.layout == .icons ? .details : .icons) } label: {
+                        Image(systemName: model.layout == .icons ? "list.bullet" : "square.grid.2x2")
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(LeafToolbarButtonStyle())
+                    .help(model.layout == .icons ? L("layout.switchDetails", "切换为列表视图") : L("layout.switchIcons", "切换为图标视图"))
+                    .accessibilityLabel(model.layout == .icons ? L("layout.switchDetails", "切换为列表视图") : L("layout.switchIcons", "切换为图标视图"))
+                    .accessibilityIdentifier("layout.toggle")
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -603,10 +542,9 @@ struct MainView: View {
     }
 
     private func beginEditingPath() {
-        guard let dir = model.currentDirectory else { return }
-        pathText = dir.path
+        guard !model.isAndroidPath else { return }
+        pathText = model.currentDirectory?.isFileURL == true ? model.currentDirectory!.path : ""
         editingPath = true
-        pathFieldFocused = true
         refreshSuggestions(for: pathText)
     }
 
@@ -644,17 +582,81 @@ struct MainView: View {
 
     // MARK: - 内容区
 
-    private var contentArea: some View {
+    @ViewBuilder private var contentArea: some View {
         // 内容区必须自行观察模型：MainView 这一层不随模型变化重绘，
         // 否则文件列表会一直绑在旧模型上（表现为"点了跳转，要切页签才看到"）
-        CachedTabContent(
-            engine: engine,
-            manager: tabManager,
-            tab: activeTab,
-            tabs: tabs,
-            dialog: $dialog,
-            openFolderPanel: { openFolderPanel() }
-        )
+        if let leftID = splitLeftID, let rightID = splitRightID,
+           let left = tabs.first(where: { $0.id == leftID }),
+           let right = tabs.first(where: { $0.id == rightID }) {
+            ZStack {
+                HSplitView {
+                    splitPane(left)
+                    splitPane(right)
+                }
+                .opacity(isSplitDisplayed ? 1 : 0)
+                .allowsHitTesting(isSplitDisplayed)
+                .accessibilityHidden(!isSplitDisplayed)
+                if !isSplitDisplayed {
+                    CachedTabContent(engine: engine, manager: tabManager, tab: activeTab, tabs: tabs,
+                                     dialog: $dialog, openFolderPanel: { openFolderPanel() })
+                }
+            }
+        } else {
+            CachedTabContent(engine: engine, manager: tabManager, tab: activeTab, tabs: tabs,
+                             dialog: $dialog, openFolderPanel: { openFolderPanel() })
+        }
+    }
+
+    private func splitPane(_ tab: WinFileTab) -> some View {
+        CachedTabContent(engine: engine, manager: tabManager, tab: tab, tabs: tabs, dialog: $dialog,
+                         openFolderPanel: { selectTab(tab); openFolderPanel() },
+                         onActivate: { if isSplitDisplayed { selectTab(tab) } })
+            .frame(minWidth: 220, maxWidth: .infinity, maxHeight: .infinity)
+            .overlay {
+                if isSplitDisplayed && tab.id == tabManager.activeID {
+                    Rectangle()
+                        .strokeBorder(InterfaceStyle.accent.opacity(0.7), lineWidth: 2)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+    }
+
+    private func updateVisibleSplitTabs() {
+        tabManager.setAdditionalVisibleTabs(isSplitDisplayed ? Set([splitLeftID, splitRightID].compactMap { $0 }) : [])
+    }
+
+    private func toggleSplit() {
+        if splitRightID != nil {
+            splitLeftID = nil; splitRightID = nil
+            tabManager.setAdditionalVisibleTabs([])
+        }
+    }
+
+    private func startSplit(with right: WinFileTab) {
+        let left = tabManager.activeTab
+        guard left.id != right.id, tabs.contains(where: { $0.id == right.id }) else { return }
+        splitLeftID = left.id; splitRightID = right.id
+        updateVisibleSplitTabs()
+    }
+
+    private func syncSplitSelection() {
+        guard splitRightID != nil else { return }
+        if let active = tabManager.activeID, active != splitLeftID && active != splitRightID {
+            lastRegularTabID = active
+        }
+        updateVisibleSplitTabs()
+    }
+
+    private func reconcileSplitTabs() {
+        guard let left = splitLeftID, let right = splitRightID else { return }
+        let live = Set(tabs.map(\.id))
+        guard live.contains(left), live.contains(right) else {
+            splitLeftID = nil; splitRightID = nil
+            tabManager.setAdditionalVisibleTabs([])
+            return
+        }
+        updateVisibleSplitTabs()
     }
 
     // MARK: - 工具栏
@@ -864,7 +866,7 @@ struct EmptyStateView: View {
 /// （此前挂在 MainView 上，那一层在切页签时不再重绘，导致高亮不跟手。）
 struct TabChipView: View {
     @ObservedObject private var localization = Localization.shared
-    let tab: WinFileTab
+    @ObservedObject var tab: WinFileTab
     @ObservedObject var manager: TabManager
     let onSelect: () -> Void
     let onClose: () -> Void
@@ -874,6 +876,8 @@ struct TabChipView: View {
     let onDetach: () -> Void
     let onMerge: () -> Void
     let isDropTargeted: Bool
+    var grouped = false
+    @State private var isHovering = false
 
     private var isActive: Bool { manager.activeTab.id == tab.id }
 
@@ -903,7 +907,7 @@ struct TabChipView: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 150, alignment: .leading)
                     .foregroundStyle(isActive ? Color.primary : Color.secondary)
-                if !tab.isPinned {
+                if !tab.isPinned && !grouped {
                 Button {
                     onClose()
                 } label: {
@@ -914,29 +918,23 @@ struct TabChipView: View {
                 .buttonStyle(.borderless)
                 .opacity(isActive || manager.count > 1 ? 0.7 : 0)
                 .help(L("tab.close", "关闭标签页"))
-                } else { Image(systemName: "pin.fill").font(.caption2) }
+                } else if tab.isPinned { Image(systemName: "pin.fill").font(.caption2) }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isActive ? InterfaceStyle.surface : Color.clear)
+                    .fill(isActive ? InterfaceStyle.surface : (isHovering ? InterfaceStyle.softAccent : Color.clear))
             )
-            // A single accent marks the active tab; keyboard focus remains native.
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(isActive ? Color.accentColor : Color.clear)
-                    .frame(height: 2)
-                    .padding(.horizontal, 6)
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .overlay {
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(isDropTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+                .strokeBorder(isDropTargeted ? Color.accentColor : (isActive && !grouped ? InterfaceStyle.border.opacity(0.55) : Color.clear), lineWidth: isDropTargeted ? 2 : 1)
                 .allowsHitTesting(false)
         }
+        .onHover { isHovering = $0 }
         .contextMenu {
             Button(tab.isPinned ? L("tab.unpin", "取消固定标签页") : L("tab.pin", "固定标签页")) { manager.togglePin(tab) }
             Button(L("tab.moveLeft", "向左移动标签页")) { manager.moveTab(tab, direction: -1) }

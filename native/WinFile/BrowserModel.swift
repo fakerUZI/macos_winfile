@@ -740,7 +740,7 @@ final class BrowserModel: ObservableObject {
     }
 
     func beginWatchingDirectory() {
-        guard tabManager == nil || tabManager?.activeModel === self else { return }
+        guard tabManager == nil || tabManager?.isVisible(self) == true else { return }
         watchesChanges = true
         installDirectoryWatcher()
     }

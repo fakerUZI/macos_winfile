@@ -49,7 +49,10 @@ enum FileSystemService {
         let fm = FileManager.default
         do {
             let values = try directory.resourceValues(forKeys: [.isDirectoryKey])
-            guard values.isDirectory == true else {
+            var targetIsDirectory: ObjCBool = false
+            let isDirectory = values.isDirectory == true ||
+                (fm.fileExists(atPath: directory.path, isDirectory: &targetIsDirectory) && targetIsDirectory.boolValue)
+            guard isDirectory else {
                 if !fm.fileExists(atPath: directory.path),
                    (try? requested.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
                     throw FSError.unavailableSymlink(requested)

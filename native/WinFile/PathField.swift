@@ -3,8 +3,46 @@
 import AppKit
 import SwiftUI
 
+/// Tracks the actual suggestion view so clicks on suggestions remain part of editing.
+final class PathEditingRegions: ObservableObject {
+    weak var suggestionView: NSView?
+}
+
+struct PathSuggestionRegion: NSViewRepresentable {
+    let regions: PathEditingRegions
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) { regions.suggestionView = view }
+}
+
+final class PathEditingTextField: NSTextField {
+    weak var regions: PathEditingRegions?
+    var onOutsideClick: (() -> Void)?
+    private var mouseMonitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeMouseMonitor()
+        guard window != nil else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self, let window = self.window, event.window === window else { return event }
+            if self.bounds.contains(self.convert(event.locationInWindow, from: nil)) { return event }
+            if let suggestionView = self.regions?.suggestionView, suggestionView.window === window,
+               suggestionView.bounds.contains(suggestionView.convert(event.locationInWindow, from: nil)) { return event }
+            DispatchQueue.main.async { [weak self] in self?.onOutsideClick?() }
+            return event
+        }
+    }
+
+    func removeMouseMonitor() {
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor); self.mouseMonitor = nil }
+    }
+
+    deinit { removeMouseMonitor() }
+}
+
 struct PathField: NSViewRepresentable {
     @Binding var text: String
+    let regions: PathEditingRegions
     var suggestions: [PathSuggestion]
     var onSubmit: (String) -> Void
     var onCancel: () -> Void
@@ -13,8 +51,10 @@ struct PathField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeNSView(context: Context) -> NSTextField {
-        let field = NSTextField(string: text)
+    func makeNSView(context: Context) -> PathEditingTextField {
+        let field = PathEditingTextField(string: text)
+        field.regions = regions
+        field.onOutsideClick = { [weak coordinator = context.coordinator] in coordinator?.parent.onCancel() }
         field.delegate = context.coordinator
         field.isBordered = true
         field.isBezeled = true
@@ -32,12 +72,20 @@ struct PathField: NSViewRepresentable {
         return field
     }
 
-    func updateNSView(_ field: NSTextField, context: Context) {
+    func updateNSView(_ field: PathEditingTextField, context: Context) {
         context.coordinator.parent = self
-        if field.stringValue != text, field.currentEditor() == nil {
+        if field.stringValue != text {
             field.stringValue = text
+            if let editor = field.currentEditor() {
+                editor.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+            }
         }
         context.coordinator.suggestions = suggestions
+    }
+
+    static func dismantleNSView(_ field: PathEditingTextField, coordinator: Coordinator) {
+        field.onOutsideClick = nil
+        field.removeMouseMonitor()
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
